@@ -2,36 +2,51 @@ async function updateHeaderStats() {
   try {
   const me = await SessionManager.getCurrentUser();
   if (!me) return;
-  const [user, enrollments, assigns, submissions, badges] = await Promise.all([
+  const [user, enrollmentsCount, dueSoonCount, badgesCount] = await Promise.all([
     SupabaseDB.getUser(me.email),
-    SupabaseDB.getEnrollments(me.email),
-    SupabaseDB.getAssignments(),
-    SupabaseDB.getSubmissions(null, me.email),
-    SupabaseDB.getUserBadges(me.email)
+    SupabaseDB.getCount('enrollments', q => q.eq('student_email', me.email)),
+    _getDueSoonCount(me.email),
+    SupabaseDB.getCount('user_badges', q => q.eq('user_email', me.email))
   ]);
   
-  const enrolledCourseIds = enrollments.map(e => e.course_id);
-  const now = Date.now();
-  const dueSoon = assigns.filter(a => {
-    const isEnrolled = enrolledCourseIds.includes(a.course_id);
-    const dueDate = new Date(a.due_date).getTime();
-    const isSubmitted = submissions.some(s => s.assignment_id === a.id);
-    return isEnrolled && a.status === 'published' && !isSubmitted && dueDate > now && (dueDate - now) < (7 * 24 * 60 * 60 * 1000);
-  });
   const statCourses = document.getElementById('statCourses');
   const statDue = document.getElementById('statDue');
   const statLevel = document.getElementById('statLevel');
   const statBadges = document.getElementById('statBadges');
   const profileName = document.getElementById('profileName');
-  if (statCourses) statCourses.textContent = enrollments.length;
-  if (statDue) statDue.textContent = dueSoon.length;
+  if (statCourses) statCourses.textContent = enrollmentsCount;
+  if (statDue) statDue.textContent = dueSoonCount;
   if (statLevel) statLevel.textContent = user.level || 1;
-  if (statBadges) statBadges.textContent = badges.length;
+  if (statBadges) statBadges.textContent = badgesCount;
   if (profileName) profileName.textContent = user.full_name || 'Student';
   } catch (e) {
       console.warn('Failed to update header stats:', e);
   }
 }
+
+async function _getDueSoonCount(email) {
+  try {
+    const enrollments = await SupabaseDB.getEnrollments(email);
+    const enrolledCourseIds = enrollments.map(e => e.course_id);
+    if (enrolledCourseIds.length === 0) return 0;
+
+    const [assigns, submissions] = await Promise.all([
+      SupabaseDB.getAssignments(null, null, enrolledCourseIds),
+      SupabaseDB.getSubmissions(null, email)
+    ]);
+
+    const now = Date.now();
+    return assigns.filter(a => {
+      const dueDate = new Date(a.due_date).getTime();
+      const isSubmitted = submissions.some(s => s.assignment_id === a.id);
+      return a.status === 'published' && !isSubmitted && dueDate > now && (dueDate - now) < (7 * 24 * 60 * 60 * 1000);
+    }).length;
+  } catch (e) {
+    console.warn('Due soon count error:', e);
+    return 0;
+  }
+}
+window._getDueSoonCount = _getDueSoonCount;
 
 async function renderCourses() {
   const container = document.getElementById('pageContent');
@@ -39,13 +54,11 @@ async function renderCourses() {
 
   try {
     const user = await SessionManager.getCurrentUser();
-    const [courses, enrollments] = await Promise.all([
-      SupabaseDB.getCourses(),
+    const [publishedCourses, enrollments] = await Promise.all([
+      SupabaseDB.getCourses(null, 'published'),
       SupabaseDB.getEnrollments(user.email)
     ]);
     updateHeaderStats().catch(e => console.warn('Header stats error:', e));
-
-    const publishedCourses = courses.filter(c => c.status === 'published');
 
   container.innerHTML = `
     <div class="flex-between mb-20">
@@ -112,14 +125,11 @@ function filterCatalog() {
 
 async function renderMyCourses() {
   const user = await SessionManager.getCurrentUser();
-  const [courses, enrollments] = await Promise.all([
-    SupabaseDB.getCourses(),
+  const [myCourses, enrollments] = await Promise.all([
+    SupabaseDB.getEnrolledCourses(user.email),
     SupabaseDB.getEnrollments(user.email)
   ]);
   updateHeaderStats().catch(e => console.warn('Header stats error:', e));
-
-  const enrolledCourseIds = enrollments.map(e => e.course_id);
-  const myCourses = courses.filter(c => enrolledCourseIds.includes(c.id));
 
   const container = document.getElementById('pageContent');
   if (!container) return;
@@ -162,9 +172,11 @@ async function enroll(courseId) {
 async function viewCourse(courseId, fromMyCourses = false) {
   // Ensure any active study session is stopped if navigating to course view
   if (studyInterval) await stopStudySession();
-  const lessons = await SupabaseDB.getLessons(courseId);
-  const assignments = await SupabaseDB.getAssignments();
-  const courseAssignments = assignments.filter(a => a.course_id === courseId && a.status === 'published');
+  const [lessons, allCourseAssignments] = await Promise.all([
+      SupabaseDB.getLessons(courseId),
+      SupabaseDB.getAssignments(null, courseId)
+  ]);
+  const courseAssignments = allCourseAssignments.filter(a => a.status === 'published');
   const container = document.getElementById('pageContent');
   if (!container) return;
 
@@ -207,6 +219,12 @@ async function showLesson(lessonId, courseId, fromMyCourses = false) {
   // Automate Focus Timer: Start session when lesson is viewed
   startStudySession(courseId);
 
+  // Track lesson completion
+  const user = await SessionManager.getCurrentUser();
+  if (user && user.role === 'student') {
+      SupabaseDB.markLessonComplete(courseId, user.email, lessonId).catch(e => console.warn('Completion tracking failed:', e));
+  }
+
   container.innerHTML = `
     <button class="button secondary w-auto mb-15" onclick="viewCourse('${escapeAttr(courseId)}', ${fromMyCourses})">← Back to Lessons</button>
     <div class="card">
@@ -228,14 +246,15 @@ async function renderAssignments(){
     const user = await SessionManager.getCurrentUser();
     if(!user || user.role!=='student'){ alert('Login as student'); window.location.href='index.html'; return; }
 
-    const [courses, enrollments, assigns, submissions] = await Promise.all([
-      SupabaseDB.getCourses(),
-      SupabaseDB.getEnrollments(user.email),
-      SupabaseDB.getAssignments(),
+    const enrollments = await SupabaseDB.getEnrollments(user.email);
+    const enrolledCourseIds = enrollments.map(e => e.course_id);
+
+    const [courses, assigns, submissions] = await Promise.all([
+      SupabaseDB.getEnrolledCourses(user.email),
+      SupabaseDB.getAssignments(null, null, enrolledCourseIds),
       SupabaseDB.getSubmissions(null, user.email)
     ]);
     updateHeaderStats().catch(e => console.warn('Header stats error:', e));
-  const enrolledCourseIds = enrollments.map(e => e.course_id);
 
   // From inline: filter active assignments
   const now = Date.now();
@@ -497,18 +516,24 @@ async function renderAchievements() {
 async function renderDashboardOverview() {
   NotificationManager.initPolling();
   const user = await SessionManager.getCurrentUser();
-  const [enrollments, submissions, allAssignments] = await Promise.all([
+
+  const [enrollments, gradedCount] = await Promise.all([
     SupabaseDB.getEnrollments(user.email),
-    SupabaseDB.getSubmissions(null, user.email),
-    SupabaseDB.getAssignments()
+    SupabaseDB.getCount('submissions', q => q.eq('student_email', user.email).eq('status', 'graded'))
   ]);
+
+  const enrolledCourseIds = enrollments.map(e => e.course_id);
+
+  const [assigns, submissions] = await Promise.all([
+      SupabaseDB.getAssignments(null, null, enrolledCourseIds),
+      SupabaseDB.getSubmissions(null, user.email)
+  ]);
+
   updateHeaderStats().catch(e => console.warn('Header stats error:', e));
   const container = document.getElementById('pageContent');
   if (!container) return;
 
-  const enrolledCourseIds = enrollments.map(e => e.course_id);
-  const pendingAssignments = allAssignments.filter(a =>
-    enrolledCourseIds.includes(a.course_id) &&
+  const pendingAssignments = assigns.filter(a =>
     a.status === 'published' &&
     !submissions.some(s => s.assignment_id === a.id) &&
     new Date(a.due_date) > new Date()
@@ -518,7 +543,7 @@ async function renderDashboardOverview() {
     <h2>Welcome Back, ${escapeHtml(user.full_name)}!</h2>
     <div class="stats-grid">
       <div class="stat-card"><h4>Enrolled Courses</h4><div class="value">${escapeHtml(enrollments.length)}</div></div>
-      <div class="stat-card"><h4>Completed Assignments</h4><div class="value">${escapeHtml(submissions.filter(s => s.status === 'graded').length)}</div></div>
+      <div class="stat-card"><h4>Completed Assignments</h4><div class="value">${escapeHtml(gradedCount)}</div></div>
       <div class="stat-card"><h4>Current XP</h4><div class="value">${escapeHtml(user.xp || 0)}</div></div>
     </div>
 
@@ -746,20 +771,19 @@ async function renderMaterials() {
 
   try {
     const user = await SessionManager.getCurrentUser();
-    const [enrollments, allCourses, allMaterials] = await Promise.all([
-      SupabaseDB.getEnrollments(user.email),
-      SupabaseDB.getCourses(),
-      SupabaseDB.getMaterials()
-    ]);
-
+    const enrollments = await SupabaseDB.getEnrollments(user.email);
     const enrolledIds = enrollments.map(e => e.course_id);
-    const myCourses = allCourses.filter(c => enrolledIds.includes(c.id));
+
+    const [myCourses, myMaterials] = await Promise.all([
+      SupabaseDB.getEnrolledCourses(user.email),
+      SupabaseDB.getMaterials(null, enrolledIds)
+    ]);
 
     content.innerHTML = `
       <h2 class="m-0">Course Materials</h2>
       <div class="grid mt-20">
         ${myCourses.map(c => {
-          const courseMaterials = allMaterials.filter(m => m.course_id === c.id);
+          const courseMaterials = myMaterials.filter(m => m.course_id === c.id);
           return `
             <div class="card">
               <h3 class="m-0">${escapeHtml(c.title)}</h3>
@@ -1026,13 +1050,10 @@ async function renderLiveClasses() {
 
   try {
     const user = await SessionManager.getCurrentUser();
-    const [enrollments, allLiveClasses] = await Promise.all([
-      SupabaseDB.getEnrollments(user.email),
-      SupabaseDB.getLiveClasses()
-    ]);
-
+    const enrollments = await SupabaseDB.getEnrollments(user.email);
     const enrolledCourseIds = enrollments.map(e => e.course_id);
-    const myClasses = allLiveClasses.filter(liveClass => enrolledCourseIds.includes(liveClass.course_id));
+
+    const myClasses = await SupabaseDB.getLiveClasses(null, null, enrolledCourseIds);
 
     content.innerHTML = `
       <div class="card">
@@ -1316,15 +1337,15 @@ window.saveNotificationSettings = saveNotificationSettings;
 
 async function renderQuizzes() {
   const user = await SessionManager.getCurrentUser();
-  const [enrollments, allQuizzes, subs, courses] = await Promise.all([
-    SupabaseDB.getEnrollments(user.email),
-    SupabaseDB.getQuizzes(),
+  const enrollments = await SupabaseDB.getEnrollments(user.email);
+  const enrolledCourseIds = enrollments.map(e => e.course_id);
+
+  const [quizzes, subs, courses] = await Promise.all([
+    SupabaseDB.getQuizzes(null, null, enrolledCourseIds),
     SupabaseDB.getQuizSubmissions(null, user.email),
-    SupabaseDB.getCourses()
+    SupabaseDB.getEnrolledCourses(user.email)
   ]);
   updateHeaderStats().catch(e => console.warn('Header stats error:', e));
-  const enrolledCourseIds = enrollments.map(e => e.course_id);
-  const quizzes = allQuizzes.filter(q => enrolledCourseIds.includes(q.course_id) && q.status === 'published');
 
   const container = document.getElementById('pageContent');
   if (!container) return;
@@ -1722,8 +1743,7 @@ async function submitAssignment(assignmentId, studentEmail) {
 
     if (await SupabaseDB.saveSubmission(submission)) {
       // Update Progress
-      const assigns = await SupabaseDB.getAssignments();
-      const a = assigns.find(x => x.id === assignmentId);
+      const a = await SupabaseDB.getAssignment(assignmentId);
       if (a) await SupabaseDB.updateCourseProgress(a.course_id, studentEmail);
 
       alert('Submitted!');

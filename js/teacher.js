@@ -5,23 +5,21 @@ async function renderDashboard() {
 
   try {
     const user = await SessionManager.getCurrentUser();
-    const [courses, assignments, mySubmissions] = await Promise.all([
-      SupabaseDB.getCourses(user.email),
-      SupabaseDB.getAssignments(user.email),
-      SupabaseDB.getSubmissions(null, null, user.email)
+    const [coursesCount, assignmentsCount, submissionsCount, pendingCount] = await Promise.all([
+      SupabaseDB.getCount('courses', q => q.eq('teacher_email', user.email)),
+      SupabaseDB.getCount('assignments', q => q.eq('teacher_email', user.email)),
+      SupabaseDB.getCount('submissions', q => q.eq('assignments.teacher_email', user.email), '*, assignments!inner(*)'),
+      SupabaseDB.getCount('submissions', q => q.eq('assignments.teacher_email', user.email).eq('status', 'submitted'), '*, assignments!inner(*)')
     ]);
-
-    const totalSubmissions = mySubmissions.length;
-    const pendingGrading = mySubmissions.filter(s => s.status === 'submitted').length;
 
     content.innerHTML = `
     <div class="stats-grid">
-      <div class="stat-card"><h4>My Courses</h4><div class="value">${escapeHtml(courses.length)}</div></div>
-      <div class="stat-card"><h4>Assignments</h4><div class="value">${escapeHtml(assignments.length)}</div></div>
-      <div class="stat-card"><h4>Total Submissions</h4><div class="value">${escapeHtml(totalSubmissions)}</div></div>
-      <div class="stat-card warn"><h4>Pending Grading</h4><div class="value">${escapeHtml(pendingGrading)}</div></div>
+      <div class="stat-card"><h4>My Courses</h4><div class="value">${escapeHtml(coursesCount)}</div></div>
+      <div class="stat-card"><h4>Assignments</h4><div class="value">${escapeHtml(assignmentsCount)}</div></div>
+      <div class="stat-card"><h4>Total Submissions</h4><div class="value">${escapeHtml(submissionsCount)}</div></div>
+      <div class="stat-card warn"><h4>Pending Grading</h4><div class="value">${escapeHtml(pendingCount)}</div></div>
     </div>
-      <section><h3>Teacher Overview</h3><p>Welcome back! You have ${escapeHtml(pendingGrading)} submissions waiting to be graded.</p></section>
+      <section><h3>Teacher Overview</h3><p>Welcome back! You have ${escapeHtml(pendingCount)} submissions waiting to be graded.</p></section>
     `;
   } catch (error) {
     console.error('Dashboard error:', error);
@@ -354,16 +352,10 @@ async function renderStudents() {
 
   try {
     const user = await SessionManager.getCurrentUser();
-    const [allUsers, myCourses] = await Promise.all([
-        SupabaseDB.getUsers(),
-        SupabaseDB.getCourses(user.email)
-    ]);
-
+    const myCourses = await SupabaseDB.getCourses(user.email);
     const myCourseIds = myCourses.map(c => c.id);
-    const enrollments = await SupabaseDB.getEnrollmentsByCourses(myCourseIds);
-    const enrolledStudentEmails = new Set(enrollments.map(e => e.student_email));
 
-    const students = allUsers.filter(u => u.role === 'student' && enrolledStudentEmails.has(u.email));
+    const students = await SupabaseDB.getEnrolledStudents(myCourseIds);
 
     content.innerHTML = `
     <div class="card">
@@ -424,7 +416,7 @@ async function issueCert(studentEmail) {
 
   const courseId = document.getElementById('certCourseId').value;
   const student = await SupabaseDB.getUser(studentEmail);
-  const course = (await SupabaseDB.getCourses()).find(c => c.id === courseId);
+  const course = await SupabaseDB.getCourse(courseId);
   const verificationId = crypto.randomUUID().slice(0, 13).toUpperCase();
   const issueDate = new Date().toISOString();
 
@@ -940,11 +932,10 @@ async function renderBadges() {
   if (!container) return;
 
   try {
-    const [badges, allUsers] = await Promise.all([
+    const [badges, students] = await Promise.all([
       SupabaseDB.getBadges(),
-      SupabaseDB.getUsers()
+      SupabaseDB.getUsersByRole('student')
     ]);
-    const students = allUsers.filter(u => u.role === 'student');
     container.innerHTML = `
     <div class="card flex-between">
       <h2 class="m-0">Badges Management</h2>
@@ -2038,10 +2029,9 @@ async function renderMaterials() {
   const content = document.getElementById('pageContent');
   if (!content) return;
   const user = await SessionManager.getCurrentUser();
-  const [courses, materials] = await Promise.all([
-    SupabaseDB.getCourses(user.email),
-    SupabaseDB.getMaterials()
-  ]);
+  const courses = await SupabaseDB.getCourses(user.email);
+  const courseIds = courses.map(c => c.id);
+  const materials = await SupabaseDB.getMaterials(null, courseIds);
 
   content.innerHTML = `
     <div class="card flex-between">

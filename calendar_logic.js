@@ -9,15 +9,28 @@ async function renderCalendar() {
   const user = await SessionManager.getCurrentUser();
   const isTeacher = user.role === 'teacher';
 
-  const [assignments, enrollments, liveClasses] = await Promise.all([
-    SupabaseDB.getAssignments(isTeacher ? user.email : null),
-    isTeacher ? Promise.resolve([]) : SupabaseDB.getEnrollments(user.email),
-    SupabaseDB.getLiveClasses(null, isTeacher ? user.email : null)
-  ]);
+  let assignments, liveClasses;
+  if (isTeacher) {
+      [assignments, liveClasses] = await Promise.all([
+          SupabaseDB.getAssignments(user.email),
+          SupabaseDB.getLiveClasses(null, user.email)
+      ]);
+  } else {
+      const enrollments = await SupabaseDB.getEnrollments(user.email);
+      const enrolledIds = enrollments.map(e => e.course_id);
+      if (enrolledIds.length > 0) {
+          [assignments, liveClasses] = await Promise.all([
+              SupabaseDB.getAssignments(null, null, enrolledIds),
+              SupabaseDB.getLiveClasses(null, null, enrolledIds)
+          ]);
+      } else {
+          assignments = [];
+          liveClasses = [];
+      }
+  }
 
-  const enrolledIds = isTeacher ? [] : enrollments.map(e => e.course_id);
-  const myAssigns = assignments.filter(a => isTeacher || enrolledIds.includes(a.course_id)).filter(a => a.status === 'published');
-  const myLiveClasses = liveClasses.filter(lc => isTeacher || enrolledIds.includes(lc.course_id));
+  const myAssigns = assignments.filter(a => a.status === 'published');
+  const myLiveClasses = liveClasses;
 
   const now = new Date();
   let currentMonth = now.getMonth();
@@ -45,11 +58,13 @@ async function renderCalendar() {
       html += `<div style="background:#fff; min-height:100px"></div>`;
     }
 
+    const getLocalDateStr = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
     // Days with events
     for (let day = 1; day <= daysInMonth; day++) {
-      const dateStr = new Date(year, month, day).toLocaleDateString();
-      const events = myAssigns.filter(a => new Date(a.due_date).toLocaleDateString() === dateStr);
-      const classes = myLiveClasses.filter(lc => new Date(lc.start_at).toLocaleDateString() === dateStr);
+      const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+      const events = myAssigns.filter(a => a.due_date && getLocalDateStr(new Date(a.due_date)) === dateStr);
+      const classes = myLiveClasses.filter(lc => lc.start_at && getLocalDateStr(new Date(lc.start_at)) === dateStr);
 
       html += `
         <div style="background:#fff; min-height:100px; padding:5px; border:1px solid var(--bg)">

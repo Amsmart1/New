@@ -6,22 +6,39 @@ async function renderDashboard() {
   if (!content) return;
 
   try {
-    const [users, assignments, submissions, maintenance] = await Promise.all([
-      SupabaseDB.getUsers(),
-      SupabaseDB.getAssignments(),
-      SupabaseDB.getSubmissions(),
+    const [
+      totalUsers,
+      students,
+      teachers,
+      locked,
+      flagged,
+      pendingResets,
+      assignments,
+      submissions,
+      pendingGrading,
+      maintenance
+    ] = await Promise.all([
+      SupabaseDB.getCount('users'),
+      SupabaseDB.getCount('users', q => q.eq('role', 'student')),
+      SupabaseDB.getCount('users', q => q.eq('role', 'teacher')),
+      SupabaseDB.getCount('users', q => q.gt('locked_until', new Date().toISOString())),
+      SupabaseDB.getCount('users', q => q.eq('flagged', true)),
+      SupabaseDB.getCount('users', q => q.eq('reset_request->status', 'pending')),
+      SupabaseDB.getCount('assignments'),
+      SupabaseDB.getCount('submissions'),
+      SupabaseDB.getCount('submissions', q => q.eq('status', 'submitted')),
       SupabaseDB.getMaintenance()
     ]);
     const stats = {
-      totalUsers: users.length,
-      students: users.filter(u => u.role === 'student').length,
-      teachers: users.filter(u => u.role === 'teacher').length,
-      locked: users.filter(u => isAccountLocked(u)).length,
-      flagged: users.filter(u => u.flagged).length,
-      pendingResets: users.filter(u => u.reset_request && u.reset_request.status === 'pending').length,
-      assignments: assignments.length,
-      submissions: submissions.length,
-      pendingGrading: submissions.filter(s => s.status === 'submitted').length,
+      totalUsers,
+      students,
+      teachers,
+      locked,
+      flagged,
+      pendingResets,
+      assignments,
+      submissions,
+      pendingGrading,
       maintStatus: isActiveMaintenance(maintenance) ? 'Active' : 'Off'
     };
 
@@ -183,7 +200,7 @@ function displayUsers(users) {
           </div>
           <div style="margin-top:4px">Failed Attempts: ${escapeHtml(user.failed_attempts || 0)} |
           Lockouts: ${escapeHtml(user.lockouts || 0)} |
-          Joined: ${escapeHtml(user.created_at ? new Date(user.created_at).toLocaleDateString() : 'N/A')}</div>
+          Joined: ${escapeHtml(user.created_at ? new Date(user.created_at).toISOString().split('T')[0] : 'N/A')}</div>
         </div>
         <div class="action-row flex" style="flex-wrap:wrap; gap:8px">
           <button class="button" style="width:auto; padding:6px 12px; font-size:12px" onclick="editUser('${escapeAttr(user.email)}')">Edit</button>
@@ -304,7 +321,10 @@ function showCreateUserForm() {
 }
 
 function exportUsersCSV() {
-  const listToExport = filteredUsers.length > 0 ? filteredUsers : allUsers;
+  const listToExport = (document.getElementById('userSearch').value || document.getElementById('roleFilter').value !== 'all' || document.getElementById('statusFilter').value !== 'all')
+    ? filteredUsers
+    : allUsers;
+
   if (listToExport.length === 0) return alert('No users to export');
   const headers = ['Full Name', 'Email', 'Role', 'Status', 'Joined'];
   const rows = listToExport.map(u => [
@@ -312,7 +332,7 @@ function exportUsersCSV() {
     `"${(u.email || '').replace(/"/g, '""')}"`,
     `"${(u.role || '').replace(/"/g, '""')}"`,
     u.active ? 'Active' : 'Inactive',
-    new Date(u.created_at).toLocaleDateString()
+    u.created_at ? new Date(u.created_at).toISOString().split('T')[0] : 'N/A'
   ]);
   const csvContent = [headers, ...rows].map(e => e.join(",")).join("\n");
   const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
@@ -425,8 +445,7 @@ async function renderResets() {
 }
 
 async function updateSidebarBadges() {
-  const users = await SupabaseDB.getUsers();
-  const pendingResets = users.filter(u => u.reset_request && u.reset_request.status === 'pending').length;
+  const pendingResets = await SupabaseDB.getCount('users', q => q.eq('reset_request->status', 'pending'));
   const badge = document.getElementById('resetBadge');
   if (badge) {
     badge.textContent = pendingResets;
@@ -492,11 +511,11 @@ async function renderAnalytics() {
 
     const submissionsByDate = {};
     submissions.forEach(s => {
-      const date = new Date(s.submitted_at || Date.now()).toLocaleDateString();
+      const date = (s.submitted_at || new Date().toISOString()).split('T')[0];
       submissionsByDate[date] = (submissionsByDate[date] || 0) + 1;
     });
 
-    const dates = Object.keys(submissionsByDate).sort((a, b) => new Date(a) - new Date(b));
+    const dates = Object.keys(submissionsByDate).sort();
     const counts = dates.map(d => submissionsByDate[d]);
 
     content.innerHTML = `
