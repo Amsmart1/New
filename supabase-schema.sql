@@ -42,6 +42,7 @@ CREATE TABLE IF NOT EXISTS users (
   metadata JSONB DEFAULT '{}'::jsonb
 );
 
+DROP TRIGGER IF EXISTS update_users_updated_at ON users;
 CREATE TRIGGER update_users_updated_at BEFORE UPDATE ON users FOR EACH ROW EXECUTE PROCEDURE update_updated_at_column();
 
 CREATE TABLE IF NOT EXISTS courses (
@@ -57,6 +58,7 @@ CREATE TABLE IF NOT EXISTS courses (
   metadata JSONB DEFAULT '{}'::jsonb
 );
 
+DROP TRIGGER IF EXISTS update_courses_updated_at ON courses;
 CREATE TRIGGER update_courses_updated_at BEFORE UPDATE ON courses FOR EACH ROW EXECUTE PROCEDURE update_updated_at_column();
 
 CREATE TABLE IF NOT EXISTS lessons (
@@ -70,6 +72,7 @@ CREATE TABLE IF NOT EXISTS lessons (
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
+DROP TRIGGER IF EXISTS update_lessons_updated_at ON lessons;
 CREATE TRIGGER update_lessons_updated_at BEFORE UPDATE ON lessons FOR EACH ROW EXECUTE PROCEDURE update_updated_at_column();
 
 CREATE TABLE IF NOT EXISTS enrollments (
@@ -101,6 +104,7 @@ CREATE TABLE IF NOT EXISTS assignments (
   status VARCHAR(50) DEFAULT 'draft' CHECK (status IN ('draft', 'published', 'archived'))
 );
 
+DROP TRIGGER IF EXISTS update_assignments_updated_at ON assignments;
 CREATE TRIGGER update_assignments_updated_at BEFORE UPDATE ON assignments FOR EACH ROW EXECUTE PROCEDURE update_updated_at_column();
 
 CREATE TABLE IF NOT EXISTS submissions (
@@ -122,6 +126,7 @@ CREATE TABLE IF NOT EXISTS submissions (
   UNIQUE(assignment_id, student_email)
 );
 
+DROP TRIGGER IF EXISTS update_submissions_updated_at ON submissions;
 CREATE TRIGGER update_submissions_updated_at BEFORE UPDATE ON submissions FOR EACH ROW EXECUTE PROCEDURE update_updated_at_column();
 
 CREATE TABLE IF NOT EXISTS live_classes (
@@ -172,6 +177,7 @@ CREATE TABLE IF NOT EXISTS quizzes (
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
+DROP TRIGGER IF EXISTS update_quizzes_updated_at ON quizzes;
 CREATE TRIGGER update_quizzes_updated_at BEFORE UPDATE ON quizzes FOR EACH ROW EXECUTE PROCEDURE update_updated_at_column();
 
 CREATE TABLE IF NOT EXISTS quiz_submissions (
@@ -243,6 +249,7 @@ CREATE TABLE IF NOT EXISTS maintenance (
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
+DROP TRIGGER IF EXISTS update_maintenance_updated_at ON maintenance;
 CREATE TRIGGER update_maintenance_updated_at BEFORE UPDATE ON maintenance FOR EACH ROW EXECUTE PROCEDURE update_updated_at_column();
 
 CREATE TABLE IF NOT EXISTS planner (
@@ -464,6 +471,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+DROP TRIGGER IF EXISTS tr_live_class_event ON live_classes;
 CREATE TRIGGER tr_live_class_event AFTER INSERT OR UPDATE ON live_classes FOR EACH ROW EXECUTE PROCEDURE tr_notify_live_class();
 
 CREATE OR REPLACE FUNCTION tr_notify_assignment() RETURNS TRIGGER AS $$
@@ -475,6 +483,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+DROP TRIGGER IF EXISTS tr_assignment_published ON assignments;
 CREATE TRIGGER tr_assignment_published AFTER INSERT OR UPDATE ON assignments FOR EACH ROW EXECUTE PROCEDURE tr_notify_assignment();
 
 CREATE OR REPLACE FUNCTION tr_notify_quiz() RETURNS TRIGGER AS $$
@@ -486,6 +495,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+DROP TRIGGER IF EXISTS tr_quiz_published ON quizzes;
 CREATE TRIGGER tr_quiz_published AFTER INSERT OR UPDATE ON quizzes FOR EACH ROW EXECUTE PROCEDURE tr_notify_quiz();
 
 CREATE OR REPLACE FUNCTION tr_notify_submission() RETURNS TRIGGER AS $$
@@ -502,6 +512,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+DROP TRIGGER IF EXISTS tr_submission_received ON submissions;
 CREATE TRIGGER tr_submission_received AFTER INSERT OR UPDATE ON submissions FOR EACH ROW EXECUTE PROCEDURE tr_notify_submission();
 
 CREATE OR REPLACE FUNCTION tr_notify_grade() RETURNS TRIGGER AS $$
@@ -513,6 +524,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+DROP TRIGGER IF EXISTS tr_grade_posted ON submissions;
 CREATE TRIGGER tr_grade_posted AFTER INSERT OR UPDATE ON submissions FOR EACH ROW EXECUTE PROCEDURE tr_notify_grade();
 
 -- Functions for syncing teacher names
@@ -523,6 +535,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+DROP TRIGGER IF EXISTS tr_course_teacher_name_sync ON courses;
 CREATE TRIGGER tr_course_teacher_name_sync
 BEFORE INSERT OR UPDATE OF teacher_email ON courses
 FOR EACH ROW EXECUTE PROCEDURE tr_sync_course_teacher_name();
@@ -536,6 +549,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+DROP TRIGGER IF EXISTS tr_users_teacher_name_sync ON users;
 CREATE TRIGGER tr_users_teacher_name_sync
 AFTER UPDATE OF full_name ON users
 FOR EACH ROW EXECUTE PROCEDURE tr_update_courses_teacher_name();
