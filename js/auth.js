@@ -15,6 +15,14 @@ const Auth = {
         this.updateMaintBanners(m);
         setInterval(() => this.updateMaintBanners(), 30000);
 
+        // Check for invite token in URL
+        const urlParams = new URLSearchParams(window.location.search);
+        const inviteToken = urlParams.get('invite');
+        if (inviteToken) {
+            await this.handleInvite(inviteToken);
+            return;
+        }
+
         // Check for forced password change session
         if (user && user.reset_request && user.reset_request.status === 'approved') {
             this.showNewPassword();
@@ -22,6 +30,56 @@ const Auth = {
         }
 
         this.showSection('landing');
+    },
+
+    async handleInvite(token) {
+        try {
+            const invite = await SupabaseDB.getInvite(token);
+            if (!invite) {
+                alert('Invalid invitation link.');
+                window.location.href = 'index.html';
+                return;
+            }
+
+            if (invite.used_at) {
+                alert('This invitation has already been used.');
+                window.location.href = 'index.html';
+                return;
+            }
+
+            if (new Date(invite.expires_at) < new Date()) {
+                alert('This invitation has expired.');
+                window.location.href = 'index.html';
+                return;
+            }
+
+            // Valid invite, show signup form with prefilled data
+            sessionStorage.setItem('activeInvite', JSON.stringify(invite));
+            this.showSignup(invite.role);
+
+            // Prefill email and make it readonly if it was specified in the invite
+            if (invite.email) {
+                const emailInput = document.getElementById('email');
+                if (emailInput) {
+                    emailInput.value = invite.email;
+                    if (invite.role === 'admin' || invite.role === 'teacher') {
+                        emailInput.readOnly = true;
+                    }
+                }
+            }
+
+            // Lock the role selector
+            const roleSelect = document.getElementById('role');
+            if (roleSelect) {
+                roleSelect.value = invite.role;
+                roleSelect.disabled = true;
+            }
+
+        } catch (e) {
+            console.error('Invite handling error:', e);
+            alert('An error occurred while validating your invite.');
+            window.location.href = 'index.html';
+        }
     },
 
     // ---- Maintenance helpers ----
@@ -63,8 +121,20 @@ const Auth = {
         const targetRole = role || this.selectedRole || 'student';
         const titleEl = document.getElementById('signup-title');
         const roleEl = document.getElementById('role');
+        const emailEl = document.getElementById('email');
+
+        // Reset state from possible prior invite usage
+        if (roleEl) {
+            roleEl.value = targetRole;
+            roleEl.disabled = false;
+        }
+        if (emailEl) {
+            emailEl.readOnly = false;
+            // Only clear if not prefilled by an invite
+            if (!sessionStorage.getItem('activeInvite')) emailEl.value = '';
+        }
+
         if (titleEl) titleEl.innerText = `Sign Up as ${targetRole.charAt(0).toUpperCase() + targetRole.slice(1)}`;
-        if (roleEl) roleEl.value = targetRole;
         this.showSection('signup');
     },
 
@@ -84,6 +154,13 @@ const Auth = {
         const overlay = document.getElementById('authOverlay');
         if (overlay) overlay.classList.remove('active');
         document.querySelectorAll('.container').forEach(c => c.style.display = 'none');
+
+        // Reset invite-related states
+        sessionStorage.removeItem('activeInvite');
+        const roleEl = document.getElementById('role');
+        const emailEl = document.getElementById('email');
+        if (roleEl) roleEl.disabled = false;
+        if (emailEl) emailEl.readOnly = false;
     },
 
     // ---- Maintenance Banners ----
@@ -206,7 +283,14 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             // Enforce limit of 3 accounts for admin and teacher roles for landing page signups
-            if (role === 'admin' || role === 'teacher') {
+            // Bypassed if using a valid invitation
+            const activeInviteRaw = sessionStorage.getItem('activeInvite');
+            let activeInvite = null;
+            if (activeInviteRaw) {
+                try { activeInvite = JSON.parse(activeInviteRaw); } catch (e) { console.warn('Corrupt invite session data'); }
+            }
+
+            if ((role === 'admin' || role === 'teacher') && !activeInvite) {
                 try {
                     const roleCount = await SupabaseDB.getCount('users', q => q.eq('role', role));
                     if (roleCount >= 3) {
@@ -263,6 +347,16 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!savedUser) {
                 errorEl.innerText = 'Failed to create account. Please try again.';
                 return;
+            }
+
+            // Mark invite as used if applicable
+            if (activeInvite) {
+                try {
+                    await SupabaseDB.markInviteUsed(activeInvite.token);
+                    sessionStorage.removeItem('activeInvite');
+                } catch (e) {
+                    console.warn('Failed to mark invite as used:', e);
+                }
             }
             
             await SessionManager.setCurrentUser(savedUser);
