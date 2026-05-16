@@ -1,4 +1,4 @@
-const CACHE_NAME = 'smartlms-v5';
+const CACHE_NAME = 'smartlms-v6';
 const ASSETS = [
   './',
   './index.html',
@@ -11,8 +11,18 @@ const ASSETS = [
   './js/student.js',
   './js/auth.js',
   './js/supabase-config.js',
+  './calendar_logic.js',
+  './css/base.css',
+  './css/components.css',
+  './css/landing.css',
+  './css/layout.css',
+  './css/style.css',
+  './css/themes.css',
   './manifest.json',
-  'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2'
+  'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2',
+  'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js',
+  'https://cdn.jsdelivr.net/npm/chart.js',
+  'https://meet.jit.si/external_api.js'
 ];
 
 // Install Event

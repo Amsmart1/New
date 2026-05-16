@@ -112,6 +112,7 @@ CREATE TABLE enrollments (
   enrolled_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   progress INTEGER DEFAULT 0,
   completed BOOLEAN DEFAULT FALSE,
+  completed_lessons JSONB DEFAULT '[]'::jsonb,
   PRIMARY KEY (course_id, student_email)
 );
 

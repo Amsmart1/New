@@ -55,6 +55,17 @@ class SupabaseDB {
         return { ..._stats, successRate };
     }
 
+    // Generic count operation
+    static async getCount(table, filterFn = null, select = '*') {
+        return this._request(async () => {
+            let query = supabaseClient.from(table).select(select, { count: 'exact', head: true });
+            if (filterFn) query = filterFn(query);
+            const { count, error } = await query;
+            if (error) throw error;
+            return count || 0;
+        });
+    }
+
     // User operations
     static async getUsers() {
         return _cache.fetch('users', async () => {
@@ -68,7 +79,31 @@ class SupabaseDB {
         });
     }
 
+    static async getUsersByRole(role) {
+        return this._request(async () => {
+            const { data, error } = await supabaseClient
+                .from('users')
+                .select('*')
+                .eq('role', role);
+            if (error) throw error;
+            return data || [];
+        });
+    }
+
+    static async getEnrolledStudents(courseIds) {
+        if (!courseIds || courseIds.length === 0) return [];
+        return this._request(async () => {
+            const { data, error } = await supabaseClient
+                .from('users')
+                .select('*, enrollments!inner(*)')
+                .in('enrollments.course_id', courseIds);
+            if (error) throw error;
+            return data || [];
+        });
+    }
+
     static async getEnrollmentsByCourses(courseIds) {
+        if (!courseIds || courseIds.length === 0) return [];
         const { data, error } = await supabaseClient
             .from('enrollments')
             .select('*')
@@ -133,7 +168,8 @@ class SupabaseDB {
     }
 
     // Assignment operations
-    static async getAssignments(teacherEmail = null, courseId = null) {
+    static async getAssignments(teacherEmail = null, courseId = null, courseIds = null) {
+        if (courseIds && courseIds.length === 0) return [];
         return this._request(async () => {
             let query = supabaseClient.from('assignments').select('*');
             if (teacherEmail) {
@@ -142,7 +178,24 @@ class SupabaseDB {
             if (courseId) {
                 query = query.eq('course_id', courseId);
             }
+            if (courseIds && courseIds.length > 0) {
+                query = query.in('course_id', courseIds);
+            }
             const { data, error } = await query;
+            if (error) throw error;
+            return data || [];
+        });
+    }
+
+    static async getEnrolledCourses(studentEmail) {
+        return _cache.fetch(`enrolled_courses_${studentEmail}`, async () => {
+            const enrollments = await this.getEnrollments(studentEmail);
+            const courseIds = enrollments.map(e => e.course_id);
+            if (courseIds.length === 0) return [];
+            const { data, error } = await supabaseClient
+                .from('courses')
+                .select('*')
+                .in('id', courseIds);
             if (error) throw error;
             return data || [];
         });
@@ -254,38 +307,66 @@ class SupabaseDB {
         return data?.[0];
     }
 
+    static async markLessonComplete(courseId, studentEmail, lessonId) {
+        const { data: enrollment, error: fetchError } = await supabaseClient
+            .from('enrollments')
+            .select('completed_lessons')
+            .match({ course_id: courseId, student_email: studentEmail })
+            .maybeSingle();
+
+        if (fetchError) throw fetchError;
+
+        let completed = enrollment?.completed_lessons || [];
+        if (!completed.includes(lessonId)) {
+            completed.push(lessonId);
+            const { error: updateError } = await supabaseClient
+                .from('enrollments')
+                .update({ completed_lessons: completed })
+                .match({ course_id: courseId, student_email: studentEmail });
+            if (updateError) throw updateError;
+            _cache.invalidate(`enrollments_${studentEmail}`);
+            await this.updateCourseProgress(courseId, studentEmail);
+        }
+    }
+
     static async updateCourseProgress(courseId, studentEmail) {
         try {
-            const [lessons, assignments, quizzes, submissions, quizSubs] = await Promise.all([
+            const [lessons, courseAssignments, courseQuizzes, submissions, quizSubs] = await Promise.all([
                 this.getLessons(courseId),
-                this.getAssignments(),
-                this.getQuizzes(),
+                this.getAssignments(null, courseId),
+                this.getQuizzes(courseId),
                 this.getSubmissions(null, studentEmail),
                 this.getQuizSubmissions(null, studentEmail)
             ]);
 
-            const courseAssignments = assignments.filter(a => a.course_id === courseId && a.status === 'published');
-            const courseQuizzes = quizzes.filter(q => q.course_id === courseId && q.status === 'published');
+            // Filter for published only as they count towards progress
+            const activeAssignments = courseAssignments.filter(a => a.status === 'published');
+            const activeQuizzes = courseQuizzes.filter(q => q.status === 'published');
 
-            const totalItems = lessons.length + courseAssignments.length + courseQuizzes.length;
+            const totalItems = lessons.length + activeAssignments.length + activeQuizzes.length;
             if (totalItems === 0) return;
 
             let completedItems = 0;
 
-            // Lessons: consider them completed if there's a study session for that course (simplified logic)
-            const studySessions = await this.getStudySessions(studentEmail);
-            const courseSessions = studySessions.filter(s => s.course_id === courseId);
-            if (courseSessions.length > 0) completedItems += lessons.length; // Simplified: all lessons complete if any session exists
+            // Lessons: Use completed_lessons tracker
+            const { data: enrollment } = await supabaseClient
+                .from('enrollments')
+                .select('completed_lessons')
+                .match({ course_id: courseId, student_email: studentEmail })
+                .maybeSingle();
+
+            const completedLessonIds = enrollment?.completed_lessons || [];
+            completedItems += lessons.filter(l => completedLessonIds.includes(l.id)).length;
 
             // Assignments
-            courseAssignments.forEach(a => {
-                if (submissions.some(s => s.assignment_id === a.id && s.status === 'submitted' || s.status === 'graded')) {
+            activeAssignments.forEach(a => {
+                if (submissions.some(s => s.assignment_id === a.id && (s.status === 'submitted' || s.status === 'graded'))) {
                     completedItems++;
                 }
             });
 
             // Quizzes
-            courseQuizzes.forEach(q => {
+            activeQuizzes.forEach(q => {
                 if (quizSubs.some(s => s.quiz_id === q.id && s.status === 'submitted')) {
                     completedItems++;
                 }
@@ -305,12 +386,15 @@ class SupabaseDB {
     }
 
     // Course operations
-    static async getCourses(teacherEmail = null) {
-        const cacheKey = teacherEmail ? `courses_${teacherEmail}` : 'courses_all';
+    static async getCourses(teacherEmail = null, status = null) {
+        const cacheKey = `courses_${teacherEmail || 'all'}_${status || 'all'}`;
         return _cache.fetch(cacheKey, async () => {
             let query = supabaseClient.from('courses').select('*');
             if (teacherEmail) {
                 query = query.eq('teacher_email', teacherEmail);
+            }
+            if (status) {
+                query = query.eq('status', status);
             }
             const { data, error } = await query;
             if (error) throw error;
@@ -367,9 +451,11 @@ class SupabaseDB {
     }
 
     // Discussion operations
-    static async getMaterials(courseId = null) {
+    static async getMaterials(courseId = null, courseIds = null) {
+        if (courseIds && courseIds.length === 0) return [];
         let query = supabaseClient.from('materials').select('*');
         if (courseId) query = query.eq('course_id', courseId);
+        if (courseIds && courseIds.length > 0) query = query.in('course_id', courseIds);
         const { data, error } = await query;
         if (error) throw error;
         return data || [];
@@ -449,12 +535,14 @@ class SupabaseDB {
     }
 
     // Quiz operations
-    static async getQuizzes(courseId = null, teacherEmail = null) {
-        const cacheKey = `quizzes_${courseId || 'all'}_${teacherEmail || 'all'}`;
+    static async getQuizzes(courseId = null, teacherEmail = null, courseIds = null) {
+        if (courseIds && courseIds.length === 0) return [];
+        const cacheKey = `quizzes_${courseId || 'all'}_${teacherEmail || 'all'}_${courseIds ? courseIds.join(',') : 'none'}`;
         return _cache.fetch(cacheKey, async () => {
             let query = supabaseClient.from('quizzes').select('*');
             if (courseId) query = query.eq('course_id', courseId);
             if (teacherEmail) query = query.eq('teacher_email', teacherEmail);
+            if (courseIds && courseIds.length > 0) query = query.in('course_id', courseIds);
             const { data, error } = await query;
             if (error) throw error;
             return data || [];
@@ -655,10 +743,12 @@ class SupabaseDB {
     }
 
     // Live Class operations
-    static async getLiveClasses(courseId = null, teacherEmail = null) {
+    static async getLiveClasses(courseId = null, teacherEmail = null, courseIds = null) {
+        if (courseIds && courseIds.length === 0) return [];
         let query = supabaseClient.from('live_classes').select('*');
         if (courseId) query = query.eq('course_id', courseId);
         if (teacherEmail) query = query.eq('teacher_email', teacherEmail);
+        if (courseIds && courseIds.length > 0) query = query.in('course_id', courseIds);
         const { data, error } = await query.order('start_at', { ascending: true });
         if (error) throw error;
         return data || [];

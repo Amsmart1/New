@@ -195,8 +195,7 @@ document.addEventListener('DOMContentLoaded', () => {
             // Enforce limit of 3 accounts for admin and teacher roles for landing page signups
             if (role === 'admin' || role === 'teacher') {
                 try {
-                    const allUsers = await SupabaseDB.getUsers();
-                    const roleCount = allUsers.filter(u => u.role === role).length;
+                    const roleCount = await SupabaseDB.getCount('users', q => q.eq('role', role));
                     if (roleCount >= 3) {
                         const roleName = role.charAt(0).toUpperCase() + role.slice(1);
                         errorEl.innerText = `The maximum number of ${roleName} accounts has been reached. Please contact an existing admin to create more accounts.`;
