@@ -110,8 +110,15 @@
     };
 
     // ============================================
-    // SVG ICON HELPERS (Replaces Lucide React)
+    // UTILITY HELPERS
     // ============================================
+    const escapeHtml = (str) => {
+        if (str === null || str === undefined) return '';
+        const div = document.createElement('div');
+        div.textContent = str;
+        return div.innerHTML;
+    };
+
     const Icons = {
         Clock: (size = 18) => `
             <svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}"
@@ -250,7 +257,7 @@
                 this.container.innerHTML = `
                     <span class="countdown-ended ${this.className}">
                         ${this.showIcon ? Icons.Clock(12) : ''}
-                        <span class="countdown-label">${this.escapeHtml(this.endLabel)}</span>
+                        <span class="countdown-label">${escapeHtml(this.endLabel)}</span>
                     </span>
                 `;
 
@@ -283,7 +290,7 @@
             this.container.innerHTML = `
                 <div class="countdown-upcoming inline-flex items-center gap-1 ${this.className}">
                     ${this.showIcon ? Icons.Clock(12) : ''}
-                    <span class="small-text">${this.escapeHtml(this.upcomingLabel)} ${timeStr}</span>
+                    <span class="small-text">${escapeHtml(this.upcomingLabel)} ${timeStr}</span>
                 </div>
             `;
         }
@@ -386,13 +393,6 @@
             this.mounted = false;
         }
 
-        // HTML escape utility
-        escapeHtml(str) {
-            if (str === null || str === undefined) return '';
-            const div = document.createElement('div');
-            div.textContent = str;
-            return div.innerHTML;
-        }
     }
 
     // ============================================
