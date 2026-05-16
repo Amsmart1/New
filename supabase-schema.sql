@@ -61,6 +61,9 @@ CREATE TABLE IF NOT EXISTS courses (
 DROP TRIGGER IF EXISTS update_courses_updated_at ON courses;
 CREATE TRIGGER update_courses_updated_at BEFORE UPDATE ON courses FOR EACH ROW EXECUTE PROCEDURE update_updated_at_column();
 
+-- Migration: Ensure created_by exists for existing tables
+ALTER TABLE courses ADD COLUMN IF NOT EXISTS created_by VARCHAR(255);
+
 CREATE TABLE IF NOT EXISTS lessons (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   course_id UUID REFERENCES courses(id) ON DELETE CASCADE,
@@ -129,6 +132,9 @@ CREATE TABLE IF NOT EXISTS submissions (
 
 DROP TRIGGER IF EXISTS update_submissions_updated_at ON submissions;
 CREATE TRIGGER update_submissions_updated_at BEFORE UPDATE ON submissions FOR EACH ROW EXECUTE PROCEDURE update_updated_at_column();
+
+-- Migration: Ensure question_feedback exists for existing tables
+ALTER TABLE submissions ADD COLUMN IF NOT EXISTS question_feedback JSONB DEFAULT '{}'::jsonb;
 
 CREATE TABLE IF NOT EXISTS live_classes (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),

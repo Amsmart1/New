@@ -223,7 +223,6 @@ function displayUsers(users) {
 
 // Ensure all handlers are global
 window.renderDashboard = renderDashboard;
-window.initRealtimeSubscriptions = initRealtimeSubscriptions;
 window.renderUsers = renderUsers;
 window.renderResets = renderResets;
 window.renderAnalytics = renderAnalytics;
@@ -248,7 +247,6 @@ window.showAddScheduleForm = showAddScheduleForm;
 window.removeSchedule = removeSchedule;
 window.filterUsers = filterUsers;
 window.saveAutoSetting = saveAutoSetting;
-window.saveNotificationSettings = saveNotificationSettings;
 window.previewCleanup = previewCleanup;
 window.executeCleanup = executeCleanup;
 window.exportBackup = exportBackup;
@@ -392,15 +390,6 @@ async function removeSchedule(idx) {
 function saveAutoSetting(key, val) {
   localStorage.setItem(key, val);
   UI.showNotification('Setting saved');
-}
-
-async function saveNotificationSettings() {
-  const prefs = {
-    inApp: document.getElementById('prefInApp').checked,
-    push: document.getElementById('prefPush').checked,
-    email: document.getElementById('prefEmail').checked
-  };
-  await NotificationManager.updatePreferences(prefs);
 }
 
 async function renderResets() {
@@ -793,46 +782,8 @@ async function importBackup(event) {
   reader.readAsText(file);
 }
 
-function initRealtimeSubscriptions(email) {
-  if (!window.supabaseClient) return;
-
-  window.supabaseClient
-    .channel('admin-db-changes')
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'quiz_submissions' }, () => {
-      const activeEl = document.activeElement;
-      const isTyping = activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA' || activeEl.tagName === 'SELECT');
-      if (!isTyping && document.querySelector('[data-page="dashboard"].active')) renderDashboard();
-    })
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'notifications', filter: `user_email=eq.${email}` }, () => {
-      NotificationManager.updateUI();
-    })
-    .subscribe();
-}
-
 async function renderSettings() {
-  const content = document.getElementById('pageContent');
-  if (!content) return;
-
-  const prefs = await NotificationManager.getPreferences();
-
-  content.innerHTML = `
-    <h2>Admin Settings</h2>
-    <div class="card">
-      <h3>Notification Preferences</h3>
-      <p class="small">Choose how you want to receive system alerts.</p>
-      <div class="flex-column gap-10 mt-15">
-        <label class="flex-center-y gap-10"><input type="checkbox" id="prefInApp" ${prefs.inApp ? 'checked' : ''} class="w-auto m-0"> In-App Notifications</label>
-        <label class="flex-center-y gap-10"><input type="checkbox" id="prefPush" ${prefs.push ? 'checked' : ''} class="w-auto m-0"> Browser Push Notifications</label>
-        <label class="flex-center-y gap-10"><input type="checkbox" id="prefEmail" ${prefs.email ? 'checked' : ''} class="w-auto m-0"> Email Alerts</label>
-        <button class="button w-auto mt-10 px-30" onclick="saveNotificationSettings()">Save Preferences</button>
-      </div>
-    </div>
-    <div class="card mt-20">
-      <h3>Push Subscription</h3>
-      <p class="small">Enable real-time desktop notifications for system health and reset requests.</p>
-      <button class="button secondary w-auto mt-10" onclick="NotificationManager.subscribeToPush()">Enable Push Notifications</button>
-    </div>
-  `;
+    NotificationManager.renderSettings('Admin Settings', 'Enable real-time desktop notifications for system health and reset requests.');
 }
 
 async function renderSystem() {
@@ -1124,7 +1075,11 @@ document.addEventListener('DOMContentLoaded', async () => {
   const user = await initDashboard('admin');
   if (user) {
     initNav();
-    initRealtimeSubscriptions(user.email);
+    NotificationManager.initRealtimeSubscriptions(user.email, 'admin', () => {
+        const activeEl = document.activeElement;
+        const isTyping = activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA' || activeEl.tagName === 'SELECT');
+        if (!isTyping && document.querySelector('[data-page="dashboard"].active')) renderDashboard();
+    });
     renderDashboard();
     updateSidebarBadges();
     setInterval(updateSidebarBadges, 60000);

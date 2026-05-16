@@ -956,7 +956,6 @@ window.editQuiz = editQuiz;
 window.deleteQuizById = deleteQuizById;
 window.viewQuizResults = viewQuizResults;
 window.renderDashboard = renderDashboard;
-window.initRealtimeSubscriptions = initRealtimeSubscriptions;
 window.renderCourses = renderCourses;
 window.renderAssignments = renderAssignments;
 window.renderMaterials = renderMaterials;
@@ -965,68 +964,14 @@ window.renderStudents = renderStudents;
 window.renderDiscussions = renderDiscussions;
 window.renderQuizzes = renderQuizzes;
 window.renderLiveClasses = renderLiveClasses;
-window.renderSettings = renderSettings;
 window.showCertForm = showCertForm;
 window.issueCert = issueCert;
 window.renderCalendar = renderCalendar;
-window.renderSettings = renderSettings;
-
-function initRealtimeSubscriptions(email) {
-  if (!window.supabaseClient) return;
-
-  window.supabaseClient
-    .channel('teacher-db-changes')
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'quiz_submissions' }, () => {
-      const activeEl = document.activeElement;
-      const isTyping = activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA' || activeEl.tagName === 'SELECT');
-      if (!isTyping) {
-        if (document.querySelector('[data-page="quizzes"].active')) renderQuizzes();
-        if (document.querySelector('[data-page="grading"].active')) renderGrading();
-        if (document.querySelector('[data-page="gradebook"].active')) renderGradeBook();
-      }
-    })
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'notifications', filter: `user_email=eq.${email}` }, () => {
-      NotificationManager.updateUI();
-    })
-    .subscribe();
-}
 
 async function renderSettings() {
-  const content = document.getElementById('pageContent');
-  if (!content) return;
-
-  const prefs = await NotificationManager.getPreferences();
-
-  content.innerHTML = `
-    <h2 class="m-0">Settings</h2>
-    <div class="card mt-20">
-      <h3 class="m-0">Notification Preferences</h3>
-      <p class="small mt-5">Choose how you want to receive updates.</p>
-      <div class="flex-column gap-10 mt-15">
-        <label class="flex-center-y gap-10"><input type="checkbox" id="prefInApp" ${prefs.inApp ? 'checked' : ''} class="w-auto m-0"> In-App Notifications</label>
-        <label class="flex-center-y gap-10"><input type="checkbox" id="prefPush" ${prefs.push ? 'checked' : ''} class="w-auto m-0"> Browser Push Notifications</label>
-        <label class="flex-center-y gap-10"><input type="checkbox" id="prefEmail" ${prefs.email ? 'checked' : ''} class="w-auto m-0"> Email Alerts</label>
-        <button class="button w-auto mt-10 px-30" onclick="saveNotificationSettings()">Save Preferences</button>
-      </div>
-    </div>
-    <div class="card mt-20">
-      <h3 class="m-0">Push Subscription</h3>
-      <p class="small mt-5">Enable real-time desktop notifications even when the app is closed.</p>
-      <button class="button secondary w-auto mt-10 px-30" onclick="NotificationManager.subscribeToPush()">Enable Push Notifications</button>
-    </div>
-  `;
+    NotificationManager.renderSettings('Settings', 'Enable real-time desktop notifications even when the app is closed.');
 }
 
-async function saveNotificationSettings() {
-  const prefs = {
-    inApp: document.getElementById('prefInApp').checked,
-    push: document.getElementById('prefPush').checked,
-    email: document.getElementById('prefEmail').checked
-  };
-  await NotificationManager.updatePreferences(prefs);
-}
-
-window.saveNotificationSettings = saveNotificationSettings;
 window.renderSettings = renderSettings;
 
 async function renderLiveClasses() {
@@ -2119,7 +2064,15 @@ document.addEventListener('DOMContentLoaded', async () => {
   const user = await initDashboard('teacher');
   if (user) {
     initNav();
-    initRealtimeSubscriptions(user.email);
+    NotificationManager.initRealtimeSubscriptions(user.email, 'teacher', () => {
+        const activeEl = document.activeElement;
+        const isTyping = activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA' || activeEl.tagName === 'SELECT');
+        if (!isTyping) {
+          if (document.querySelector('[data-page="quizzes"].active')) renderQuizzes();
+          if (document.querySelector('[data-page="grading"].active')) renderGrading();
+          if (document.querySelector('[data-page="gradebook"].active')) renderGradeBook();
+        }
+    });
     renderDashboard();
     setInterval(updateMaintBanner, 30000);
     updateMaintBanner();

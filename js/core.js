@@ -196,7 +196,7 @@ async function requestNotificationPermission() {
 let deferredPrompt;
 window.addEventListener('beforeinstallprompt', (e) => {
     // Centralize the installprompt banner on the landing page only
-    const isLandingPage = window.location.pathname === '/' || window.location.pathname.endsWith('index.html');
+    const isLandingPage = window.location.pathname === '/' || window.location.pathname.endsWith('index.html') || window.location.pathname.endsWith('/');
     if (!isLandingPage) return;
 
     e.preventDefault();
@@ -392,6 +392,41 @@ const NotificationManager = {
         });
     },
 
+    async renderSettings(title = 'Settings', pushDesc = 'Enable real-time desktop notifications.') {
+        const content = document.getElementById('pageContent');
+        if (!content) return;
+
+        const prefs = await this.getPreferences();
+
+        content.innerHTML = `
+            <h2 class="m-0">${escapeHtml(title)}</h2>
+            <div class="card mt-20">
+                <h3 class="m-0">Notification Preferences</h3>
+                <p class="small mt-5">Choose how you want to receive updates.</p>
+                <div class="flex-column gap-10 mt-15">
+                    <label class="flex-center-y gap-10"><input type="checkbox" id="prefInApp" ${prefs.inApp ? 'checked' : ''} class="w-auto m-0"> In-App Notifications</label>
+                    <label class="flex-center-y gap-10"><input type="checkbox" id="prefPush" ${prefs.push ? 'checked' : ''} class="w-auto m-0"> Browser Push Notifications</label>
+                    <label class="flex-center-y gap-10"><input type="checkbox" id="prefEmail" ${prefs.email ? 'checked' : ''} class="w-auto m-0"> Email Alerts</label>
+                    <button class="button w-auto mt-10 px-30" onclick="NotificationManager.saveSettings()">Save Preferences</button>
+                </div>
+            </div>
+            <div class="card mt-20">
+                <h3 class="m-0">Push Subscription</h3>
+                <p class="small mt-5">${escapeHtml(pushDesc)}</p>
+                <button class="button secondary w-auto mt-10 px-30" onclick="NotificationManager.subscribeToPush()">Enable Push Notifications</button>
+            </div>
+        `;
+    },
+
+    async saveSettings() {
+        const prefs = {
+            inApp: document.getElementById('prefInApp').checked,
+            push: document.getElementById('prefPush').checked,
+            email: document.getElementById('prefEmail').checked
+        };
+        await this.updatePreferences(prefs);
+    },
+
     async sendBrowserNotification(title, body) {
         // Push notifications disabled per request
     },
@@ -425,6 +460,36 @@ const NotificationManager = {
                 }
             }
         });
+    },
+
+    initRealtimeSubscriptions(email, role, onTableChange = null) {
+        if (!window.supabaseClient) return;
+
+        const channel = window.supabaseClient.channel(`${role}-db-changes`);
+
+        // Always subscribe to personal notifications
+        channel.on('postgres_changes', { event: '*', schema: 'public', table: 'notifications', filter: `user_email=eq.${email}` }, () => {
+            SupabaseDB.invalidateCache(`notifications_${email}`);
+            this.updateUI();
+        });
+
+        channel.on('postgres_changes', { event: '*', schema: 'public', table: 'broadcasts' }, () => {
+            SupabaseDB.invalidateCache('broadcasts_active');
+            this.updateUI();
+        });
+
+        // Optional callback for specific dashboard table changes
+        if (onTableChange) {
+            const filter = role === 'student' ? `student_email=eq.${email}` : undefined;
+            channel.on('postgres_changes', {
+                event: '*',
+                schema: 'public',
+                table: 'quiz_submissions',
+                filter: filter
+            }, onTableChange);
+        }
+
+        channel.subscribe();
     }
 };
 

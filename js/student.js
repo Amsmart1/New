@@ -990,7 +990,6 @@ window.startQuiz = startQuiz;
 window.viewQuizResults = viewQuizResults;
 window.autoSubmitQuiz = autoSubmitQuiz;
 window.submitQuiz = submitQuiz;
-window.initRealtimeSubscriptions = initRealtimeSubscriptions;
 window.postDiscussion = postDiscussion;
 window.addPlannerItem = addPlannerItem;
 window.deletePlannerItem = deletePlannerItem;
@@ -1303,56 +1302,9 @@ async function renderHelp() {
   content.innerHTML = '<h2>Help & Support</h2><div class="card"><h3>FAQ</h3><p>Contact support at support@smartlms.com</p></div>';
 }
 
-function initRealtimeSubscriptions(email) {
-  if (!window.supabaseClient) return;
-
-  window.supabaseClient
-    .channel('student-db-changes')
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'quiz_submissions', filter: `student_email=eq.${email}` }, () => {
-      if (!currentQuiz) renderQuizzes();
-    })
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'notifications', filter: `user_email=eq.${email}` }, () => {
-      NotificationManager.updateUI();
-    })
-    .subscribe();
-}
-
 async function renderSettings() {
-  const content = document.getElementById('pageContent');
-  if (!content) return;
-
-  const prefs = await NotificationManager.getPreferences();
-
-  content.innerHTML = `
-    <h2 class="m-0">Settings</h2>
-    <div class="card mt-20">
-      <h3 class="m-0">Notification Preferences</h3>
-      <p class="small mt-5">Choose how you want to receive updates.</p>
-      <div class="flex-column gap-10 mt-15">
-        <label class="flex-center-y gap-10"><input type="checkbox" id="prefInApp" ${prefs.inApp ? 'checked' : ''} class="w-auto m-0"> In-App Notifications</label>
-        <label class="flex-center-y gap-10"><input type="checkbox" id="prefPush" ${prefs.push ? 'checked' : ''} class="w-auto m-0"> Browser Push Notifications</label>
-        <label class="flex-center-y gap-10"><input type="checkbox" id="prefEmail" ${prefs.email ? 'checked' : ''} class="w-auto m-0"> Email Alerts</label>
-        <button class="button w-auto px-30 mt-10" onclick="saveNotificationSettings()">Save Preferences</button>
-      </div>
-    </div>
-    <div class="card mt-20">
-      <h3 class="m-0">Push Subscription</h3>
-      <p class="small mt-5">Enable real-time desktop notifications even when the app is closed.</p>
-      <button class="button secondary w-auto px-30 mt-10" onclick="NotificationManager.subscribeToPush()">Enable Push Notifications</button>
-    </div>
-  `;
+    NotificationManager.renderSettings('Settings', 'Enable real-time desktop notifications even when the app is closed.');
 }
-
-async function saveNotificationSettings() {
-  const prefs = {
-    inApp: document.getElementById('prefInApp').checked,
-    push: document.getElementById('prefPush').checked,
-    email: document.getElementById('prefEmail').checked
-  };
-  await NotificationManager.updatePreferences(prefs);
-}
-
-window.saveNotificationSettings = saveNotificationSettings;
 
 async function renderQuizzes() {
   clearActiveCountdowns();
@@ -1879,7 +1831,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   const user = await initDashboard('student');
   if (user) {
     initNav();
-    initRealtimeSubscriptions(user.email);
+    NotificationManager.initRealtimeSubscriptions(user.email, 'student', () => {
+        if (!currentQuiz) renderQuizzes();
+    });
     renderDashboardOverview();
     setInterval(updateMaintBanner, 30000);
     updateMaintBanner();
