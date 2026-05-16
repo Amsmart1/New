@@ -809,6 +809,34 @@ class SupabaseDB {
         return data?.[0];
     }
 
+    // Invite operations
+    static async saveInvite(invite) {
+        const { data, error } = await supabaseClient
+            .from('invites')
+            .upsert(invite, { onConflict: 'token' })
+            .select();
+        if (error) throw error;
+        return data?.[0];
+    }
+
+    static async getInvite(token) {
+        const { data, error } = await supabaseClient
+            .from('invites')
+            .select('*')
+            .eq('token', token)
+            .maybeSingle();
+        if (error) throw error;
+        return data;
+    }
+
+    static async markInviteUsed(token) {
+        const { error } = await supabaseClient
+            .from('invites')
+            .update({ used_at: new Date().toISOString() })
+            .eq('token', token);
+        if (error) throw error;
+    }
+
     // Storage operations
     static async uploadFile(bucket, path, file) {
         const { data, error } = await supabaseClient.storage

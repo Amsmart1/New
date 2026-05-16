@@ -308,6 +308,17 @@ CREATE TABLE study_sessions (
   ended_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
+CREATE TABLE invites (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  token VARCHAR(255) UNIQUE NOT NULL,
+  email VARCHAR(255),
+  role VARCHAR(50) NOT NULL CHECK (role IN ('student', 'teacher', 'admin')),
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
+  used_at TIMESTAMP WITH TIME ZONE,
+  created_by VARCHAR(255) REFERENCES users(email) ON UPDATE CASCADE ON DELETE SET NULL
+);
+
 CREATE TABLE system_logs (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   level VARCHAR(20) DEFAULT 'info',
@@ -381,6 +392,7 @@ ALTER TABLE maintenance ENABLE ROW LEVEL SECURITY;
 ALTER TABLE planner ENABLE ROW LEVEL SECURITY;
 ALTER TABLE certificates ENABLE ROW LEVEL SECURITY;
 ALTER TABLE study_sessions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE invites ENABLE ROW LEVEL SECURITY;
 ALTER TABLE system_logs ENABLE ROW LEVEL SECURITY;
 
 -- CUSTOM AUTH COMPATIBILITY POLICIES
@@ -403,6 +415,7 @@ CREATE POLICY "Custom Auth: maintenance" ON maintenance FOR ALL USING (true);
 CREATE POLICY "Custom Auth: planner" ON planner FOR ALL USING (true);
 CREATE POLICY "Custom Auth: certificates" ON certificates FOR ALL USING (true);
 CREATE POLICY "Custom Auth: study_sessions" ON study_sessions FOR ALL USING (true);
+CREATE POLICY "Custom Auth: invites" ON invites FOR ALL USING (true);
 CREATE POLICY "Custom Auth: system_logs" ON system_logs FOR ALL USING (true);
 
 -- Storage Initialization
