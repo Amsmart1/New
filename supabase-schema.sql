@@ -565,4 +565,7 @@ GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO anon, authenticated, postgres, se
 GRANT ALL ON ALL FUNCTIONS IN SCHEMA public TO anon, authenticated, postgres, service_role;
 
 -- Insert default maintenance record
-INSERT INTO maintenance (enabled, schedules) VALUES (false, '[]'::jsonb);
+-- Insert default maintenance record idempotently
+INSERT INTO maintenance (enabled, schedules)
+SELECT false, '[]'::jsonb
+WHERE NOT EXISTS (SELECT 1 FROM maintenance);
