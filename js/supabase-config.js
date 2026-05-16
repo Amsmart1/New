@@ -814,12 +814,19 @@ class SupabaseDB {
         return data?.[0];
     }
 
-    static async markNotificationsAsRead(userEmail) {
-        const { error } = await supabaseClient
+    static async markNotificationsAsRead(userEmail, id = null) {
+        const query = supabaseClient
             .from('notifications')
             .update({ is_read: true })
-            .eq('user_email', userEmail)
-            .eq('is_read', false);
+            .eq('user_email', userEmail);
+
+        if (id) {
+            query.eq('id', id);
+        } else {
+            query.eq('is_read', false);
+        }
+
+        const { error } = await query;
         if (error) throw error;
         _cache.invalidate(`notifications_${userEmail}`);
     }
