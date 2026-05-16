@@ -122,14 +122,14 @@ function showCourseForm(course = null) {
       const courseId = isEdit ? course.id : crypto.randomUUID();
 
       const courseData = {
-        ...course,
         id: courseId,
         title: document.getElementById('courseTitle').value,
         description: document.getElementById('courseDescription').value,
         enrollment_id: document.getElementById('courseEnrollmentId').value || null,
         status: document.getElementById('courseStatus').value,
         teacher_email: user.email,
-        created_by: user.full_name
+        created_by: user.full_name,
+        metadata: course?.metadata || {}
       };
 
       await SupabaseDB.saveCourse(courseData);
@@ -698,6 +698,10 @@ async function gradeSubmission(assignmentId, studentEmail) {
                     <label class="small m-0">Points Earned (max ${q.points}):</label>
                     <input type="number" class="q-score-input small w-auto m-0" style="width:80px" data-q-idx="${idx}" data-max="${q.points}" value="${score}" min="0" max="${q.points}">
                 </div>
+                <div class="mt-10">
+                    <label class="small">Teacher Comment for Question ${idx + 1}:</label>
+                    <textarea class="q-feedback-input small w-100 mt-5" data-q-idx="${idx}" rows="2" placeholder="Specific feedback for this answer...">${escapeHtml(submission.question_feedback?.[idx] || '')}</textarea>
+                </div>
               </div>`;
             }).join('')}
           </div>
@@ -755,11 +759,17 @@ async function gradeSubmission(assignmentId, studentEmail) {
           questionScores[input.dataset.qIdx] = parseInt(input.value) || 0;
       });
 
+      const questionFeedback = {};
+      document.querySelectorAll('.q-feedback-input').forEach(input => {
+          questionFeedback[input.dataset.qIdx] = input.value;
+      });
+
       const updatedSubmission = {
         ...submission,
         grade: parseInt(rawInput.value),
         final_grade: parseInt(finalInput.value),
         question_scores: questionScores,
+        question_feedback: questionFeedback,
         late_penalty_applied: latePenalty,
         feedback: document.getElementById('feedback').value,
         status: 'graded',

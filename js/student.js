@@ -515,6 +515,12 @@ async function viewFeedback(assignmentId) {
                 <div class="badge ${score >= (q.points * 0.7) ? 'badge-active' : 'badge-warn'}">${score} / ${q.points} pts</div>
               </div>
               <div class="mt-10">${displayAnswer}</div>
+              ${submission.question_feedback?.[idx] ? `
+                <div class="mt-10 p-10 bg-light border-radius-sm">
+                  <div class="tiny text-muted bold">Teacher Comment:</div>
+                  <div class="small italic">${escapeHtml(submission.question_feedback[idx])}</div>
+                </div>
+              ` : ''}
             </div>`;
           }).join('')}
         </div>

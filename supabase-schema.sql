@@ -115,6 +115,7 @@ CREATE TABLE IF NOT EXISTS submissions (
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   answers JSONB DEFAULT '{}'::jsonb,
   question_scores JSONB DEFAULT '{}'::jsonb,
+  question_feedback JSONB DEFAULT '{}'::jsonb,
   late_penalty_applied INTEGER DEFAULT 0,
   attachments JSONB DEFAULT '[]'::jsonb,
   grade INTEGER,

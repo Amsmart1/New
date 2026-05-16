@@ -195,8 +195,13 @@ async function requestNotificationPermission() {
 // PWA Install Logic
 let deferredPrompt;
 window.addEventListener('beforeinstallprompt', (e) => {
+    // Centralize the installprompt banner on the landing page only
+    const isLandingPage = window.location.pathname === '/' || window.location.pathname.endsWith('index.html');
+    if (!isLandingPage) return;
+
     e.preventDefault();
     deferredPrompt = e;
+
     // Show a custom install button or banner after 10 seconds of active interaction
     // We check if it's the first time in the current session
     if (!sessionStorage.getItem('installPromptShown')) {
