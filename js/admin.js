@@ -23,7 +23,7 @@ async function renderDashboard() {
       SupabaseDB.getCount('users', q => q.eq('role', 'teacher')),
       SupabaseDB.getCount('users', q => q.gt('locked_until', new Date().toISOString())),
       SupabaseDB.getCount('users', q => q.eq('flagged', true)),
-      SupabaseDB.getCount('users', q => q.eq('reset_request->status', 'pending')),
+      SupabaseDB.getCount('users', q => q.eq('reset_request->>status', 'pending')),
       SupabaseDB.getCount('assignments'),
       SupabaseDB.getCount('submissions'),
       SupabaseDB.getCount('submissions', q => q.eq('status', 'submitted')),
@@ -445,7 +445,7 @@ async function renderResets() {
 }
 
 async function updateSidebarBadges() {
-  const pendingResets = await SupabaseDB.getCount('users', q => q.eq('reset_request->status', 'pending'));
+  const pendingResets = await SupabaseDB.getCount('users', q => q.eq('reset_request->>status', 'pending'));
   const badge = document.getElementById('resetBadge');
   if (badge) {
     badge.textContent = pendingResets;
