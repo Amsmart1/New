@@ -121,8 +121,9 @@ async function renderUsers() {
         </select>
         <button class="button secondary" style="width:auto;" onclick="exportUsersCSV()">Export CSV</button>
       </div>
-      <div style="margin-bottom:20px">
+      <div style="margin-bottom:20px; display:flex; gap:10px">
         <button class="button" onclick="showCreateUserForm()" style="width:auto; padding: 10px 30px">+ Add User</button>
+        <button class="button" onclick="showInviteForm()" style="width:auto; padding: 10px 30px">✉️ Invite User</button>
       </div>
       
       <div id="usersList" class="grid"></div>
@@ -238,6 +239,7 @@ window.lockUser = lockUser;
 window.unlockUser = unlockUser;
 window.toggleUserFlag = toggleUserFlag;
 window.showCreateUserForm = showCreateUserForm;
+window.showInviteForm = showInviteForm;
 window.exportUsersCSV = exportUsersCSV;
 window.approveReset = approveReset;
 window.denyReset = denyReset;
@@ -948,6 +950,111 @@ function showUserForm(user = null) {
     } catch (err) {
       alert('Error saving user: ' + err.message);
     }
+  });
+}
+
+function showInviteForm() {
+  const area = document.createElement('div');
+  area.id = 'inviteModal';
+  area.className = 'modal-backdrop';
+  area.style.display = 'flex';
+  area.innerHTML = `
+    <div class="modal" style="max-width:500px">
+      <h3>Generate Invite Link</h3>
+      <p class="small">Invites bypass the public registration limits for Admin and Teacher roles.</p>
+      <form id="inviteForm">
+        <label>Recipient Email (Optional for Students)</label>
+        <input type="email" id="inviteEmail" placeholder="email@example.com">
+        <label>Target Role</label>
+        <select id="inviteRole" required>
+          <option value="student">Student</option>
+          <option value="teacher">Teacher</option>
+          <option value="admin">Admin</option>
+        </select>
+        <label>Expires In</label>
+        <select id="inviteExpiry">
+          <option value="1">24 Hours</option>
+          <option value="7" selected>7 Days</option>
+          <option value="30">30 Days</option>
+        </select>
+        <div id="inviteResult" style="margin-top:15px; display:none">
+          <label>Invitation Link:</label>
+          <div class="flex gap-5">
+            <input type="text" id="inviteLink" readonly style="margin:0">
+            <button type="button" class="button w-auto px-15" onclick="copyInviteLink()">Copy</button>
+          </div>
+          <p class="tiny success-text mt-5">Share this link with the recipient.</p>
+        </div>
+        <div class="flex gap-10 mt-20" id="inviteActions">
+            <button type="submit" class="button w-auto px-30">Generate Link</button>
+            <button type="button" class="button secondary w-auto px-30" onclick="this.closest('#inviteModal').remove()">Cancel</button>
+        </div>
+      </form>
+    </div>
+  `;
+  document.body.appendChild(area);
+
+  window.copyInviteLink = () => {
+    const link = document.getElementById('inviteLink');
+    if (!link) return;
+    link.select();
+    document.execCommand('copy');
+    UI.showNotification('Link copied to clipboard!');
+  };
+
+  const inviteForm = document.getElementById('inviteForm');
+  if (inviteForm) inviteForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    try {
+      const emailEl = document.getElementById('inviteEmail');
+      const roleEl = document.getElementById('inviteRole');
+      const expiryEl = document.getElementById('inviteExpiry');
+
+      if (!roleEl || !expiryEl) return alert('System error: Form fields missing.');
+
+      const email = emailEl ? emailEl.value.trim() : '';
+      const role = roleEl.value;
+      const expiryDays = parseInt(expiryEl.value);
+
+      if ((role === 'admin' || role === 'teacher') && !email) {
+          return alert('Email is required for Admin and Teacher invites.');
+      }
+
+      if (email) {
+        const existing = await SupabaseDB.getUser(email);
+        if (existing) return alert('A user with this email already exists.');
+      }
+
+      const token = crypto.randomUUID();
+      const expiresAt = new Date();
+      expiresAt.setDate(expiresAt.getDate() + expiryDays);
+
+      const user = await SessionManager.getCurrentUser();
+      const invite = {
+          token,
+          email: email || null,
+          role,
+          expires_at: expiresAt.toISOString(),
+          created_by: user.email
+      };
+
+      if (await SupabaseDB.saveInvite(invite)) {
+          const baseUrl = window.location.origin + window.location.pathname.replace('admin.html', 'index.html');
+          const inviteUrl = `${baseUrl}?invite=${token}`;
+
+          const resultEl = document.getElementById('inviteResult');
+          const linkEl = document.getElementById('inviteLink');
+          const actionsEl = document.getElementById('inviteActions');
+
+          if (linkEl) linkEl.value = inviteUrl;
+          if (resultEl) resultEl.style.display = 'block';
+          if (actionsEl) {
+              const submitBtn = actionsEl.querySelector('button[type="submit"]');
+              if (submitBtn) submitBtn.style.display = 'none';
+          }
+          UI.showNotification('Invite generated!');
+      }
+    } catch (err) { alert('Failed to generate invite: ' + err.message); }
   });
 }
 

@@ -3,44 +3,10 @@
 -- fixing RLS for the custom auth system, and initializing storage buckets.
 
 -- 1. Clean start (Safe Idempotency)
--- 1. Clean start (Absolute Idempotency for Fresh public Schema)
+-- 1. Idempotent Schema Initialization
+-- This script ensures all necessary tables, functions, and policies exist
+-- without destroying existing user data.
 SET client_min_messages TO WARNING;
-
--- Use a DO block to safely cleanup existing objects if they exist
-DO $$
-DECLARE
-    r RECORD;
-BEGIN
-    -- Triggers
-    FOR r IN (SELECT trigger_name, event_object_table FROM information_schema.triggers WHERE trigger_schema = 'public') LOOP
-        EXECUTE 'DROP TRIGGER IF EXISTS ' || quote_ident(r.trigger_name) || ' ON ' || quote_ident(r.event_object_table) || ' CASCADE';
-    END LOOP;
-    -- Tables
-    FOR r IN (SELECT tablename FROM pg_tables WHERE schemaname = 'public') LOOP
-        EXECUTE 'DROP TABLE IF EXISTS ' || quote_ident(r.tablename) || ' CASCADE';
-    END LOOP;
-    -- Functions
-    FOR r IN (SELECT proname, oidvectortypes(proargtypes) AS args FROM pg_proc p JOIN pg_namespace n ON p.pronamespace = n.oid WHERE n.nspname = 'public') LOOP
-        EXECUTE 'DROP FUNCTION IF EXISTS ' || quote_ident(r.proname) || '(' || r.args || ') CASCADE';
-    END LOOP;
-    -- Views
-    FOR r IN (SELECT viewname FROM pg_views WHERE schemaname = 'public') LOOP
-        EXECUTE 'DROP VIEW IF EXISTS ' || quote_ident(r.viewname) || ' CASCADE';
-    END LOOP;
-END $$;
-
--- Drop storage policies explicitly as they are in the 'storage' schema
-DO $$
-BEGIN
-    DROP POLICY IF EXISTS "Public view materials" ON storage.objects;
-    DROP POLICY IF EXISTS "Teachers manage materials" ON storage.objects;
-    DROP POLICY IF EXISTS "Students manage own submissions" ON storage.objects;
-    DROP POLICY IF EXISTS "Teachers view submissions" ON storage.objects;
-    DROP POLICY IF EXISTS "Users view own certificates" ON storage.objects;
-    DROP POLICY IF EXISTS "Teachers manage certificates" ON storage.objects;
-    DROP POLICY IF EXISTS "Admins full storage access" ON storage.objects;
-EXCEPTION WHEN OTHERS THEN NULL;
-END $$;
 
 SET client_min_messages TO NOTICE;
 
@@ -57,7 +23,7 @@ END;
 $$ language 'plpgsql';
 
 -- Tables
-CREATE TABLE users (
+CREATE TABLE IF NOT EXISTS users (
   email VARCHAR(255) PRIMARY KEY,
   full_name VARCHAR(255) NOT NULL,
   phone VARCHAR(50),
@@ -78,7 +44,7 @@ CREATE TABLE users (
 
 CREATE TRIGGER update_users_updated_at BEFORE UPDATE ON users FOR EACH ROW EXECUTE PROCEDURE update_updated_at_column();
 
-CREATE TABLE courses (
+CREATE TABLE IF NOT EXISTS courses (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   title VARCHAR(255) NOT NULL,
   description TEXT,
@@ -93,7 +59,7 @@ CREATE TABLE courses (
 
 CREATE TRIGGER update_courses_updated_at BEFORE UPDATE ON courses FOR EACH ROW EXECUTE PROCEDURE update_updated_at_column();
 
-CREATE TABLE lessons (
+CREATE TABLE IF NOT EXISTS lessons (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   course_id UUID REFERENCES courses(id) ON DELETE CASCADE,
   title VARCHAR(255) NOT NULL,
@@ -106,7 +72,7 @@ CREATE TABLE lessons (
 
 CREATE TRIGGER update_lessons_updated_at BEFORE UPDATE ON lessons FOR EACH ROW EXECUTE PROCEDURE update_updated_at_column();
 
-CREATE TABLE enrollments (
+CREATE TABLE IF NOT EXISTS enrollments (
   course_id UUID REFERENCES courses(id) ON DELETE CASCADE,
   student_email VARCHAR(255) REFERENCES users(email) ON UPDATE CASCADE ON DELETE CASCADE,
   enrolled_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
@@ -116,7 +82,7 @@ CREATE TABLE enrollments (
   PRIMARY KEY (course_id, student_email)
 );
 
-CREATE TABLE assignments (
+CREATE TABLE IF NOT EXISTS assignments (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   course_id UUID REFERENCES courses(id) ON DELETE CASCADE,
   title VARCHAR(255) NOT NULL,
@@ -137,7 +103,7 @@ CREATE TABLE assignments (
 
 CREATE TRIGGER update_assignments_updated_at BEFORE UPDATE ON assignments FOR EACH ROW EXECUTE PROCEDURE update_updated_at_column();
 
-CREATE TABLE submissions (
+CREATE TABLE IF NOT EXISTS submissions (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   assignment_id UUID REFERENCES assignments(id) ON DELETE CASCADE,
   student_email VARCHAR(255) REFERENCES users(email) ON UPDATE CASCADE ON DELETE CASCADE,
@@ -158,7 +124,7 @@ CREATE TABLE submissions (
 
 CREATE TRIGGER update_submissions_updated_at BEFORE UPDATE ON submissions FOR EACH ROW EXECUTE PROCEDURE update_updated_at_column();
 
-CREATE TABLE live_classes (
+CREATE TABLE IF NOT EXISTS live_classes (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   course_id UUID REFERENCES courses(id) ON DELETE CASCADE,
   teacher_email VARCHAR(255) REFERENCES users(email) ON UPDATE CASCADE ON DELETE SET NULL,
@@ -176,7 +142,7 @@ CREATE TABLE live_classes (
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
-CREATE TABLE attendance (
+CREATE TABLE IF NOT EXISTS attendance (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   live_class_id UUID REFERENCES live_classes(id) ON DELETE CASCADE,
   student_email VARCHAR(255) REFERENCES users(email) ON UPDATE CASCADE ON DELETE CASCADE,
@@ -188,7 +154,7 @@ CREATE TABLE attendance (
   UNIQUE(live_class_id, student_email)
 );
 
-CREATE TABLE quizzes (
+CREATE TABLE IF NOT EXISTS quizzes (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   course_id UUID REFERENCES courses(id) ON DELETE CASCADE,
   teacher_email VARCHAR(255) REFERENCES users(email) ON UPDATE CASCADE ON DELETE SET NULL,
@@ -208,7 +174,7 @@ CREATE TABLE quizzes (
 
 CREATE TRIGGER update_quizzes_updated_at BEFORE UPDATE ON quizzes FOR EACH ROW EXECUTE PROCEDURE update_updated_at_column();
 
-CREATE TABLE quiz_submissions (
+CREATE TABLE IF NOT EXISTS quiz_submissions (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   quiz_id UUID REFERENCES quizzes(id) ON DELETE CASCADE,
   student_email VARCHAR(255) REFERENCES users(email) ON UPDATE CASCADE ON DELETE CASCADE,
@@ -222,7 +188,7 @@ CREATE TABLE quiz_submissions (
   submitted_at TIMESTAMP WITH TIME ZONE
 );
 
-CREATE TABLE materials (
+CREATE TABLE IF NOT EXISTS materials (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   course_id UUID REFERENCES courses(id) ON DELETE CASCADE,
   teacher_email VARCHAR(255) REFERENCES users(email) ON UPDATE CASCADE ON DELETE SET NULL,
@@ -233,7 +199,7 @@ CREATE TABLE materials (
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
-CREATE TABLE discussions (
+CREATE TABLE IF NOT EXISTS discussions (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   course_id UUID REFERENCES courses(id) ON DELETE CASCADE,
   user_email VARCHAR(255) REFERENCES users(email) ON UPDATE CASCADE ON DELETE CASCADE,
@@ -244,7 +210,7 @@ CREATE TABLE discussions (
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
-CREATE TABLE notifications (
+CREATE TABLE IF NOT EXISTS notifications (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   user_email VARCHAR(255) REFERENCES users(email) ON UPDATE CASCADE ON DELETE CASCADE,
   title VARCHAR(255) NOT NULL,
@@ -255,7 +221,7 @@ CREATE TABLE notifications (
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
-CREATE TABLE broadcasts (
+CREATE TABLE IF NOT EXISTS broadcasts (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   course_id UUID REFERENCES courses(id) ON DELETE CASCADE,
   target_role VARCHAR(50), -- 'student', 'teacher', or NULL for all
@@ -267,7 +233,7 @@ CREATE TABLE broadcasts (
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
-CREATE TABLE maintenance (
+CREATE TABLE IF NOT EXISTS maintenance (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   enabled BOOLEAN DEFAULT FALSE,
   manual_until TIMESTAMP WITH TIME ZONE,
@@ -279,7 +245,7 @@ CREATE TABLE maintenance (
 
 CREATE TRIGGER update_maintenance_updated_at BEFORE UPDATE ON maintenance FOR EACH ROW EXECUTE PROCEDURE update_updated_at_column();
 
-CREATE TABLE planner (
+CREATE TABLE IF NOT EXISTS planner (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   user_email VARCHAR(255) REFERENCES users(email) ON UPDATE CASCADE ON DELETE CASCADE,
   title VARCHAR(255) NOT NULL,
@@ -290,7 +256,7 @@ CREATE TABLE planner (
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
-CREATE TABLE certificates (
+CREATE TABLE IF NOT EXISTS certificates (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   course_id UUID REFERENCES courses(id) ON DELETE CASCADE,
   student_email VARCHAR(255) REFERENCES users(email) ON UPDATE CASCADE ON DELETE CASCADE,
@@ -299,7 +265,7 @@ CREATE TABLE certificates (
   metadata JSONB DEFAULT '{}'::jsonb
 );
 
-CREATE TABLE study_sessions (
+CREATE TABLE IF NOT EXISTS study_sessions (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   user_email VARCHAR(255) REFERENCES users(email) ON UPDATE CASCADE ON DELETE CASCADE,
   course_id UUID REFERENCES courses(id) ON DELETE CASCADE,
@@ -308,7 +274,18 @@ CREATE TABLE study_sessions (
   ended_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
-CREATE TABLE system_logs (
+CREATE TABLE IF NOT EXISTS invites (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  token VARCHAR(255) UNIQUE NOT NULL,
+  email VARCHAR(255),
+  role VARCHAR(50) NOT NULL CHECK (role IN ('student', 'teacher', 'admin')),
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
+  used_at TIMESTAMP WITH TIME ZONE,
+  created_by VARCHAR(255) REFERENCES users(email) ON UPDATE CASCADE ON DELETE SET NULL
+);
+
+CREATE TABLE IF NOT EXISTS system_logs (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   level VARCHAR(20) DEFAULT 'info',
   category VARCHAR(50),
@@ -318,23 +295,23 @@ CREATE TABLE system_logs (
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
--- Performance Indexes
-CREATE INDEX idx_users_role ON users(role);
-CREATE INDEX idx_users_active ON users(active);
-CREATE INDEX idx_courses_teacher ON courses(teacher_email);
-CREATE INDEX idx_lessons_course ON lessons(course_id);
-CREATE INDEX idx_enrollments_student ON enrollments(student_email);
-CREATE INDEX idx_assignments_course ON assignments(course_id);
-CREATE INDEX idx_submissions_student ON submissions(student_email);
-CREATE INDEX idx_notifications_user ON notifications(user_email, is_read);
-CREATE INDEX idx_study_sessions_user ON study_sessions(user_email);
-CREATE INDEX idx_attendance_class ON attendance(live_class_id);
-CREATE INDEX idx_discussions_parent ON discussions(parent_id);
-CREATE INDEX idx_quiz_submissions_quiz ON quiz_submissions(quiz_id);
-CREATE INDEX idx_quiz_submissions_student ON quiz_submissions(student_email);
-CREATE INDEX idx_submissions_assignment ON submissions(assignment_id);
-CREATE INDEX idx_materials_course ON materials(course_id);
-CREATE INDEX idx_planner_user_date ON planner(user_email, due_date);
+-- Performance Indexes (Idempotent)
+CREATE INDEX IF NOT EXISTS idx_users_role ON users(role);
+CREATE INDEX IF NOT EXISTS idx_users_active ON users(active);
+CREATE INDEX IF NOT EXISTS idx_courses_teacher ON courses(teacher_email);
+CREATE INDEX IF NOT EXISTS idx_lessons_course ON lessons(course_id);
+CREATE INDEX IF NOT EXISTS idx_enrollments_student ON enrollments(student_email);
+CREATE INDEX IF NOT EXISTS idx_assignments_course ON assignments(course_id);
+CREATE INDEX IF NOT EXISTS idx_submissions_student ON submissions(student_email);
+CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_email, is_read);
+CREATE INDEX IF NOT EXISTS idx_study_sessions_user ON study_sessions(user_email);
+CREATE INDEX IF NOT EXISTS idx_attendance_class ON attendance(live_class_id);
+CREATE INDEX IF NOT EXISTS idx_discussions_parent ON discussions(parent_id);
+CREATE INDEX IF NOT EXISTS idx_quiz_submissions_quiz ON quiz_submissions(quiz_id);
+CREATE INDEX IF NOT EXISTS idx_quiz_submissions_student ON quiz_submissions(student_email);
+CREATE INDEX IF NOT EXISTS idx_submissions_assignment ON submissions(assignment_id);
+CREATE INDEX IF NOT EXISTS idx_materials_course ON materials(course_id);
+CREATE INDEX IF NOT EXISTS idx_planner_user_date ON planner(user_email, due_date);
 
 -- Row Level Security (RLS) Functions
 -- These helpers are designed for standard Supabase Auth (JWT).
@@ -364,45 +341,69 @@ $$ LANGUAGE sql SECURITY DEFINER;
 -- to Supabase Auth (auth.uid() or auth.jwt()) for true row-level isolation.
 
 -- SECURE DEFAULT: Enable RLS on all tables
-ALTER TABLE users ENABLE ROW LEVEL SECURITY;
-ALTER TABLE courses ENABLE ROW LEVEL SECURITY;
-ALTER TABLE lessons ENABLE ROW LEVEL SECURITY;
-ALTER TABLE enrollments ENABLE ROW LEVEL SECURITY;
-ALTER TABLE assignments ENABLE ROW LEVEL SECURITY;
-ALTER TABLE submissions ENABLE ROW LEVEL SECURITY;
-ALTER TABLE live_classes ENABLE ROW LEVEL SECURITY;
-ALTER TABLE attendance ENABLE ROW LEVEL SECURITY;
-ALTER TABLE quizzes ENABLE ROW LEVEL SECURITY;
-ALTER TABLE quiz_submissions ENABLE ROW LEVEL SECURITY;
-ALTER TABLE materials ENABLE ROW LEVEL SECURITY;
-ALTER TABLE discussions ENABLE ROW LEVEL SECURITY;
-ALTER TABLE notifications ENABLE ROW LEVEL SECURITY;
-ALTER TABLE maintenance ENABLE ROW LEVEL SECURITY;
-ALTER TABLE planner ENABLE ROW LEVEL SECURITY;
-ALTER TABLE certificates ENABLE ROW LEVEL SECURITY;
-ALTER TABLE study_sessions ENABLE ROW LEVEL SECURITY;
-ALTER TABLE system_logs ENABLE ROW LEVEL SECURITY;
+DO $$ BEGIN
+  ALTER TABLE users ENABLE ROW LEVEL SECURITY;
+EXCEPTION WHEN OTHERS THEN NULL; END $$;
+DO $$ BEGIN ALTER TABLE courses ENABLE ROW LEVEL SECURITY; EXCEPTION WHEN OTHERS THEN NULL; END $$;
+DO $$ BEGIN ALTER TABLE lessons ENABLE ROW LEVEL SECURITY; EXCEPTION WHEN OTHERS THEN NULL; END $$;
+DO $$ BEGIN ALTER TABLE enrollments ENABLE ROW LEVEL SECURITY; EXCEPTION WHEN OTHERS THEN NULL; END $$;
+DO $$ BEGIN ALTER TABLE assignments ENABLE ROW LEVEL SECURITY; EXCEPTION WHEN OTHERS THEN NULL; END $$;
+DO $$ BEGIN ALTER TABLE submissions ENABLE ROW LEVEL SECURITY; EXCEPTION WHEN OTHERS THEN NULL; END $$;
+DO $$ BEGIN ALTER TABLE live_classes ENABLE ROW LEVEL SECURITY; EXCEPTION WHEN OTHERS THEN NULL; END $$;
+DO $$ BEGIN ALTER TABLE attendance ENABLE ROW LEVEL SECURITY; EXCEPTION WHEN OTHERS THEN NULL; END $$;
+DO $$ BEGIN ALTER TABLE quizzes ENABLE ROW LEVEL SECURITY; EXCEPTION WHEN OTHERS THEN NULL; END $$;
+DO $$ BEGIN ALTER TABLE quiz_submissions ENABLE ROW LEVEL SECURITY; EXCEPTION WHEN OTHERS THEN NULL; END $$;
+DO $$ BEGIN ALTER TABLE materials ENABLE ROW LEVEL SECURITY; EXCEPTION WHEN OTHERS THEN NULL; END $$;
+DO $$ BEGIN ALTER TABLE discussions ENABLE ROW LEVEL SECURITY; EXCEPTION WHEN OTHERS THEN NULL; END $$;
+DO $$ BEGIN ALTER TABLE notifications ENABLE ROW LEVEL SECURITY; EXCEPTION WHEN OTHERS THEN NULL; END $$;
+DO $$ BEGIN ALTER TABLE maintenance ENABLE ROW LEVEL SECURITY; EXCEPTION WHEN OTHERS THEN NULL; END $$;
+DO $$ BEGIN ALTER TABLE planner ENABLE ROW LEVEL SECURITY; EXCEPTION WHEN OTHERS THEN NULL; END $$;
+DO $$ BEGIN ALTER TABLE certificates ENABLE ROW LEVEL SECURITY; EXCEPTION WHEN OTHERS THEN NULL; END $$;
+DO $$ BEGIN ALTER TABLE study_sessions ENABLE ROW LEVEL SECURITY; EXCEPTION WHEN OTHERS THEN NULL; END $$;
+DO $$ BEGIN ALTER TABLE invites ENABLE ROW LEVEL SECURITY; EXCEPTION WHEN OTHERS THEN NULL; END $$;
+DO $$ BEGIN ALTER TABLE system_logs ENABLE ROW LEVEL SECURITY; EXCEPTION WHEN OTHERS THEN NULL; END $$;
 
 -- CUSTOM AUTH COMPATIBILITY POLICIES
 -- These policies allow the frontend Custom Auth system to function.
+DROP POLICY IF EXISTS "Custom Auth: users" ON users;
 CREATE POLICY "Custom Auth: users" ON users FOR ALL USING (true);
+DROP POLICY IF EXISTS "Custom Auth: courses" ON courses;
 CREATE POLICY "Custom Auth: courses" ON courses FOR ALL USING (true);
+DROP POLICY IF EXISTS "Custom Auth: lessons" ON lessons;
 CREATE POLICY "Custom Auth: lessons" ON lessons FOR ALL USING (true);
+DROP POLICY IF EXISTS "Custom Auth: enrollments" ON enrollments;
 CREATE POLICY "Custom Auth: enrollments" ON enrollments FOR ALL USING (true);
+DROP POLICY IF EXISTS "Custom Auth: assignments" ON assignments;
 CREATE POLICY "Custom Auth: assignments" ON assignments FOR ALL USING (true);
+DROP POLICY IF EXISTS "Custom Auth: submissions" ON submissions;
 CREATE POLICY "Custom Auth: submissions" ON submissions FOR ALL USING (true);
+DROP POLICY IF EXISTS "Custom Auth: live_classes" ON live_classes;
 CREATE POLICY "Custom Auth: live_classes" ON live_classes FOR ALL USING (true);
+DROP POLICY IF EXISTS "Custom Auth: attendance" ON attendance;
 CREATE POLICY "Custom Auth: attendance" ON attendance FOR ALL USING (true);
+DROP POLICY IF EXISTS "Custom Auth: quizzes" ON quizzes;
 CREATE POLICY "Custom Auth: quizzes" ON quizzes FOR ALL USING (true);
+DROP POLICY IF EXISTS "Custom Auth: quiz_submissions" ON quiz_submissions;
 CREATE POLICY "Custom Auth: quiz_submissions" ON quiz_submissions FOR ALL USING (true);
+DROP POLICY IF EXISTS "Custom Auth: materials" ON materials;
 CREATE POLICY "Custom Auth: materials" ON materials FOR ALL USING (true);
+DROP POLICY IF EXISTS "Custom Auth: discussions" ON discussions;
 CREATE POLICY "Custom Auth: discussions" ON discussions FOR ALL USING (true);
+DROP POLICY IF EXISTS "Custom Auth: notifications" ON notifications;
 CREATE POLICY "Custom Auth: notifications" ON notifications FOR ALL USING (true);
+DROP POLICY IF EXISTS "Custom Auth: broadcasts" ON broadcasts;
 CREATE POLICY "Custom Auth: broadcasts" ON broadcasts FOR ALL USING (true);
+DROP POLICY IF EXISTS "Custom Auth: maintenance" ON maintenance;
 CREATE POLICY "Custom Auth: maintenance" ON maintenance FOR ALL USING (true);
+DROP POLICY IF EXISTS "Custom Auth: planner" ON planner;
 CREATE POLICY "Custom Auth: planner" ON planner FOR ALL USING (true);
+DROP POLICY IF EXISTS "Custom Auth: certificates" ON certificates;
 CREATE POLICY "Custom Auth: certificates" ON certificates FOR ALL USING (true);
+DROP POLICY IF EXISTS "Custom Auth: study_sessions" ON study_sessions;
 CREATE POLICY "Custom Auth: study_sessions" ON study_sessions FOR ALL USING (true);
+DROP POLICY IF EXISTS "Custom Auth: invites" ON invites;
+CREATE POLICY "Custom Auth: invites" ON invites FOR ALL USING (true);
+DROP POLICY IF EXISTS "Custom Auth: system_logs" ON system_logs;
 CREATE POLICY "Custom Auth: system_logs" ON system_logs FOR ALL USING (true);
 
 -- Storage Initialization
@@ -564,4 +565,7 @@ GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO anon, authenticated, postgres, se
 GRANT ALL ON ALL FUNCTIONS IN SCHEMA public TO anon, authenticated, postgres, service_role;
 
 -- Insert default maintenance record
-INSERT INTO maintenance (enabled, schedules) VALUES (false, '[]'::jsonb);
+-- Insert default maintenance record idempotently
+INSERT INTO maintenance (enabled, schedules)
+SELECT false, '[]'::jsonb
+WHERE NOT EXISTS (SELECT 1 FROM maintenance);
