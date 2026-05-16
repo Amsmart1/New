@@ -102,6 +102,7 @@ function displayCatalog(courses) {
         <div style="width:100%; height:160px; background:linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius:6px; display:flex; align-items:center; justify-content:center; color:white; font-size:40px">📚</div>
         <div style="flex:1">
           <h3 class="m-0 mt-10" style="font-size:18px">${escapeHtml(c.title)}</h3>
+          <div class="small-text color-dim mt-5">By: ${escapeHtml(c.created_by || 'Unknown Teacher')}</div>
           <p class="small mt-10 mb-20" style="line-height:1.4">${escapeHtml(c.description || '').substring(0, 80)}${c.description?.length > 80 ? '...' : ''}</p>
           <div class="flex-between">
             ${enrolled ?
@@ -146,6 +147,7 @@ async function renderMyCourses() {
           <div class="card flex-column gap-10">
             <div style="width:100%; height:120px; background:linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius:6px; display:flex; align-items:center; justify-content:center; color:white; font-size:40px">📖</div>
             <h3 class="m-0">${escapeHtml(c.title)}</h3>
+            <div class="small-text color-dim">By: ${escapeHtml(c.created_by || 'Unknown Teacher')}</div>
             <div class="progress-container" style="background:#eee; height:8px; border-radius:4px; overflow:hidden">
               <div class="progress-bar" style="background:var(--ok); height:100%; width:${progress}%"></div>
             </div>
@@ -164,7 +166,15 @@ async function renderMyCourses() {
 async function enroll(courseId) {
   try {
     const user = await SessionManager.getCurrentUser();
-    await SupabaseDB.saveEnrollment({ course_id: courseId, student_email: user.email });
+    const course = await SupabaseDB.getCourse(courseId);
+
+    let enrollmentId = null;
+    if (course.enrollment_id) {
+        enrollmentId = prompt('This course requires an Enrollment ID. Please enter it:');
+        if (enrollmentId === null) return; // User cancelled prompt
+    }
+
+    await SupabaseDB.enrollInCourse(courseId, user.email, enrollmentId);
     alert('Successfully enrolled!');
     renderCourses();
   } catch (e) {

@@ -209,9 +209,16 @@ window.addEventListener('beforeinstallprompt', (e) => {
                 if (lastToast) {
                     lastToast.style.cursor = 'pointer';
                     lastToast.onclick = async () => {
-                        deferredPrompt.prompt();
-                        const { outcome } = await deferredPrompt.userChoice;
-                        deferredPrompt = null;
+                        if (deferredPrompt) {
+                            try {
+                                await deferredPrompt.prompt();
+                                await deferredPrompt.userChoice;
+                            } catch (err) {
+                                console.warn('Install prompt error:', err);
+                            } finally {
+                                deferredPrompt = null;
+                            }
+                        }
                         lastToast.remove();
                     };
                 }
@@ -401,7 +408,7 @@ const NotificationManager = {
 
         // Global event delegation for the notification bell
         document.addEventListener('click', (e) => {
-            const bell = e.target.closest('#notifBell');
+            const bell = e.target.closest('#notifBell') || e.target.closest('#unreadCount');
             const list = document.getElementById('notifList');
 
             if (bell) {
