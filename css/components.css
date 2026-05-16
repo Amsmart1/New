@@ -150,6 +150,43 @@ input:focus, textarea:focus, select:focus {
     box-shadow: 0 0 0 3px rgba(102, 126, 234, .1);
 }
 
+.password-wrapper {
+    position: relative;
+    width: 100%;
+}
+
+.password-toggle {
+    position: absolute;
+    right: 12px;
+    top: 50%;
+    transform: translateY(-100%); /* Adjusted because of margin-bottom on input */
+    cursor: pointer;
+    font-size: 16px;
+    user-select: none;
+    color: var(--muted);
+    transition: color 0.2s;
+}
+
+.password-toggle:hover {
+    color: var(--purple);
+}
+
+.strength-meter {
+    height: 4px;
+    width: 100%;
+    background: #edf2f7;
+    border-radius: 2px;
+    margin-top: -5px;
+    margin-bottom: 10px;
+    overflow: hidden;
+}
+
+.strength-meter-fill {
+    height: 100%;
+    width: 0;
+    transition: width 0.3s ease, background-color 0.3s ease;
+}
+
 label {
     display: block;
     margin-bottom: 5px;

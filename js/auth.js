@@ -138,6 +138,42 @@ const Auth = {
         if (role === 'student') window.location.href = 'student.html';
         else if (role === 'teacher') window.location.href = 'teacher.html';
         else if (role === 'admin') window.location.href = 'admin.html';
+    },
+
+    togglePasswordVisibility(inputId) {
+        const input = document.getElementById(inputId);
+        const toggle = input?.parentElement?.querySelector('.password-toggle');
+        if (input) {
+            const isPassword = input.type === 'password';
+            input.type = isPassword ? 'text' : 'password';
+            if (toggle) toggle.textContent = isPassword ? '🔒' : '👁️';
+        }
+    },
+
+    updatePasswordStrength(password) {
+        const meter = document.getElementById('passwordStrength');
+        const container = document.getElementById('passwordStrengthContainer');
+        if (!meter || !container) return;
+
+        if (!password) {
+            meter.style.width = '0';
+            container.style.display = 'none';
+            return;
+        }
+
+        container.style.display = 'block';
+        let strength = 0;
+        if (password.length >= 8) strength += 25;
+        if (/[A-Z]/.test(password)) strength += 25;
+        if (/[0-9]/.test(password)) strength += 25;
+        if (/[^A-Za-z0-9]/.test(password)) strength += 25;
+
+        meter.style.width = strength + '%';
+
+        if (strength <= 25) meter.style.backgroundColor = 'var(--danger)';
+        else if (strength <= 50) meter.style.backgroundColor = 'var(--warn)';
+        else if (strength <= 75) meter.style.backgroundColor = '#4299e1'; // Blue
+        else meter.style.backgroundColor = 'var(--ok)';
     }
 };
 
@@ -148,10 +184,18 @@ window.showLogin = () => Auth.showLogin();
 window.showReset = () => Auth.showReset();
 window.showSection = (id) => Auth.showSection(id);
 window.closeAuth = () => Auth.closeAuth();
+window.togglePasswordVisibility = (id) => Auth.togglePasswordVisibility(id);
 
 // Event Listeners
 document.addEventListener('DOMContentLoaded', () => {
     Auth.init();
+
+    const signupPassword = document.getElementById('password');
+    if (signupPassword) {
+        signupPassword.addEventListener('input', (e) => {
+            Auth.updatePasswordStrength(e.target.value);
+        });
+    }
 
     // ---- Signup ----
     const signupForm = document.getElementById('signupForm');
