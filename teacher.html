@@ -34,7 +34,6 @@
       <button data-page="students">👥 <span>Students</span></button>
       <button data-page="discussions">💬 <span>Discussions</span></button>
       <button data-page="calendar">📅 <span>Calendar</span></button>
-      <button data-page="badges">🏆 <span>Badges</span></button>
       <button data-page="quizzes">❓ <span>Quizzes</span></button>
       <button data-page="live">📹 <span>Live Classes</span></button>
       <button data-page="settings">⚙️ <span>Settings</span></button>
@@ -45,6 +44,11 @@
       <div class="flex" style="align-items:center; gap:10px">
         <button id="sidebarToggle" class="button" style="width:auto; background:transparent; border:none; color:inherit; font-size:24px; padding:5px 10px; cursor:pointer;">☰</button>
         <h1 style="margin:0; font-size: 1.2rem;">Teacher Dashboard</h1>
+      </div>
+      <div class="notif-bell-container" style="position:relative; margin-left: auto; margin-right: 20px;">
+        <div id="notifBell" style="cursor:pointer;font-size:20px">🔔</div>
+        <div id="unreadCount" class="unread-count" style="display:none">0</div>
+        <div id="notifList" class="notif-list"></div>
       </div>
       <button id="logoutBtn" class="button secondary" style="width:auto; background:#e2e8f0; color:#333; padding:5px 12px">Logout</button>
     </header>

@@ -172,6 +172,9 @@ nav button:hover {
     .dashboard-header {
         padding: 0 10px !important;
     }
+    .notif-bell-container {
+        margin-right: 10px !important;
+    }
 }
 
 /* Phone Specifics */

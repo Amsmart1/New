@@ -2,22 +2,17 @@ async function updateHeaderStats() {
   try {
   const me = await SessionManager.getCurrentUser();
   if (!me) return;
-  const [user, enrollmentsCount, dueSoonCount, badgesCount] = await Promise.all([
+  const [user, enrollmentsCount, dueSoonCount] = await Promise.all([
     SupabaseDB.getUser(me.email),
     SupabaseDB.getCount('enrollments', q => q.eq('student_email', me.email)),
-    _getDueSoonCount(me.email),
-    SupabaseDB.getCount('user_badges', q => q.eq('user_email', me.email))
+    _getDueSoonCount(me.email)
   ]);
   
   const statCourses = document.getElementById('statCourses');
   const statDue = document.getElementById('statDue');
-  const statLevel = document.getElementById('statLevel');
-  const statBadges = document.getElementById('statBadges');
   const profileName = document.getElementById('profileName');
   if (statCourses) statCourses.textContent = enrollmentsCount;
   if (statDue) statDue.textContent = dueSoonCount;
-  if (statLevel) statLevel.textContent = user.level || 1;
-  if (statBadges) statBadges.textContent = badgesCount;
   if (profileName) profileName.textContent = user.full_name || 'Student';
   } catch (e) {
       console.warn('Failed to update header stats:', e);
@@ -493,26 +488,6 @@ async function viewFeedback(assignmentId) {
   `;
 }
 
-async function renderAchievements() {
-  const user = await SessionManager.getCurrentUser();
-  const badges = await SupabaseDB.getUserBadges(user.email);
-  const container = document.getElementById('pageContent');
-  if (!container) return;
-  container.innerHTML = `
-    <h2 class="m-0">My Achievements</h2>
-    <div class="grid mt-20">
-      ${badges.map(b => `
-        <div class="card flex-center flex-column">
-          <div style="font-size:40px">${escapeHtml(b.badges.icon_url || '🏆')}</div>
-          <h3 class="m-0 mt-10">${escapeHtml(b.badges.title)}</h3>
-          <p class="small mt-5">${escapeHtml(b.badges.description)}</p>
-          <div class="small mt-10 text-muted">Awarded on: ${new Date(b.awarded_at).toLocaleDateString()}</div>
-        </div>
-      `).join('') || '<div class="empty">No badges earned yet. Keep learning!</div>'}
-    </div>
-  `;
-}
-
 async function renderDashboardOverview() {
   NotificationManager.initPolling();
   const user = await SessionManager.getCurrentUser();
@@ -544,7 +519,6 @@ async function renderDashboardOverview() {
     <div class="stats-grid">
       <div class="stat-card"><h4>Enrolled Courses</h4><div class="value">${escapeHtml(enrollments.length)}</div></div>
       <div class="stat-card"><h4>Completed Assignments</h4><div class="value">${escapeHtml(gradedCount)}</div></div>
-      <div class="stat-card"><h4>Current XP</h4><div class="value">${escapeHtml(user.xp || 0)}</div></div>
     </div>
 
     <div class="grid-2">
@@ -590,13 +564,6 @@ async function renderProgress() {
   container.innerHTML = `
     <h2 class="m-0">My Progress & Study Tracking</h2>
     <div class="grid-2 mt-20 mb-20">
-      <div class="card">
-        <h3 class="m-0">Level ${user.level || 1}</h3>
-        <div class="mt-10 mb-10" style="background:#eee; height:16px; border-radius:8px; overflow:hidden">
-          <div style="background:var(--ok); height:100%; width:${(user.xp % 100)}%"></div>
-        </div>
-        <p class="small">${user.xp % 100} / 100 XP to level ${(user.level || 1) + 1}</p>
-      </div>
       <div class="card">
         <h3 class="m-0">Total Study Time</h3>
         <div class="bold mt-10" style="font-size:32px; color:var(--purple);">${h}h ${m}m</div>
@@ -951,7 +918,6 @@ window.renderCourses = renderCourses;
 window.renderMyCourses = renderMyCourses;
 window.renderAssignments = renderAssignments;
 window.renderQuizzes = renderQuizzes;
-window.renderAchievements = renderAchievements;
 window.renderDashboardOverview = renderDashboardOverview;
 window.renderProgress = renderProgress;
 window.renderGrades = renderGrades;
@@ -1783,7 +1749,6 @@ function initNav() {
         else if(page === 'my-courses') renderMyCourses();
         else if(page === 'assignments') renderAssignments();
         else if(page === 'quizzes') renderQuizzes();
-        else if(page === 'achievements') renderAchievements();
         else if(page === 'dashboard') renderDashboardOverview();
         else if(page === 'progress') renderProgress();
         else if(page === 'grades') renderGrades();

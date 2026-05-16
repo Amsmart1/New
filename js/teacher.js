@@ -362,18 +362,17 @@ async function renderStudents() {
       <h2 class="m-0">My Enrolled Students</h2>
       <div class="p-0 mt-15" style="overflow-x:auto">
           <table>
-            <thead><tr><th>Name</th><th>Email</th><th>Level</th><th>Action</th></tr></thead>
+            <thead><tr><th>Name</th><th>Email</th><th>Action</th></tr></thead>
             <tbody>
               ${students.map(s => `
                 <tr>
                   <td>${escapeHtml(s.full_name)}</td>
                   <td>${escapeHtml(s.email)}</td>
-                  <td>Level ${escapeHtml(s.level || 1)}</td>
                   <td>
                     <button class="button small w-auto" onclick="showCertForm('${escapeAttr(s.email)}')">Issue Certificate</button>
                   </td>
                 </tr>
-              `).join('') || '<tr><td colspan="4" class="empty">No students enrolled.</td></tr>'}
+              `).join('') || '<tr><td colspan="3" class="empty">No students enrolled.</td></tr>'}
             </tbody>
           </table>
       </div>
@@ -904,8 +903,6 @@ window.deleteAssignmentById = deleteAssignmentById;
 window.gradeSubmission = gradeSubmission;
 window.viewCourseDiscussions = viewCourseDiscussions;
 window.postTeacherDiscussion = postTeacherDiscussion;
-window.showBadgeForm = showBadgeForm;
-window.awardBadge = awardBadge;
 window.showQuizForm = showQuizForm;
 window.editQuiz = editQuiz;
 window.deleteQuizById = deleteQuizById;
@@ -918,7 +915,6 @@ window.renderMaterials = renderMaterials;
 window.renderGrading = renderGrading;
 window.renderStudents = renderStudents;
 window.renderDiscussions = renderDiscussions;
-window.renderBadges = renderBadges;
 window.renderQuizzes = renderQuizzes;
 window.renderLiveClasses = renderLiveClasses;
 window.renderSettings = renderSettings;
@@ -926,81 +922,6 @@ window.showCertForm = showCertForm;
 window.issueCert = issueCert;
 window.renderCalendar = renderCalendar;
 window.renderSettings = renderSettings;
-
-async function renderBadges() {
-  const container = document.getElementById('pageContent');
-  if (!container) return;
-
-  try {
-    const [badges, students] = await Promise.all([
-      SupabaseDB.getBadges(),
-      SupabaseDB.getUsersByRole('student')
-    ]);
-    container.innerHTML = `
-    <div class="card flex-between">
-      <h2 class="m-0">Badges Management</h2>
-      <button class="button w-auto" onclick="showBadgeForm()">+ Create Badge</button>
-    </div>
-    <div class="grid">
-      ${badges.map(b => `
-        <div class="card">
-          <div style="font-size:30px">${b.icon_url || '🏆'}</div>
-          <h3 class="m-0 mt-10">${escapeHtml(b.title)}</h3>
-          <p class="small">${escapeHtml(b.description)}</p>
-          <div class="flex gap-10 mt-15">
-            <select id="award-to-${b.id}" class="w-auto m-0">${students.map(s => `<option value="${s.email}">${escapeHtml(s.full_name)}</option>`).join('')}</select>
-            <button class="button small w-auto" onclick="awardBadge('${b.id}')">Award</button>
-          </div>
-        </div>
-      `).join('') || '<div class="empty">No badges created yet.</div>'}
-      </div>
-    `;
-  } catch (error) {
-    console.error('Badges error:', error);
-    container.innerHTML = `<div class="stat-card danger">
-      <h3>Error Loading Badges</h3>
-      <div class="small danger-text">${escapeHtml(error.message)}</div>
-      <button class="button w-auto mt-10" onclick="renderBadges()">Retry</button>
-    </div>`;
-  }
-}
-
-function showBadgeForm() {
-  const container = document.getElementById('pageContent');
-  if (!container) return;
-  container.innerHTML = `
-    <div class="card">
-      <h2>Create Badge</h2>
-      <form id="badgeForm">
-        <input type="text" id="badgeTitle" placeholder="Badge Title" required>
-        <textarea id="badgeDesc" placeholder="Description"></textarea>
-        <input type="text" id="badgeIcon" placeholder="Icon (emoji or URL)">
-        <button type="submit" class="button">Save Badge</button>
-        <button type="button" class="button secondary" onclick="renderBadges()">Cancel</button>
-      </form>
-    </div>
-  `;
-  document.getElementById('badgeForm').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    await SupabaseDB.saveBadge({
-        id: crypto.randomUUID(),
-        title: document.getElementById('badgeTitle').value,
-        description: document.getElementById('badgeDesc').value,
-        icon_url: document.getElementById('badgeIcon').value
-    });
-    renderBadges();
-  });
-}
-
-async function awardBadge(badgeId) {
-  const email = document.getElementById(`award-to-${badgeId}`).value;
-  try {
-    await SupabaseDB.awardBadge(email, badgeId);
-    alert('Badge awarded!');
-  } catch (e) {
-    alert('Error awarding badge: ' + e.message);
-  }
-}
 
 function initRealtimeSubscriptions(email) {
   if (!window.supabaseClient) return;
@@ -2014,7 +1935,6 @@ function initNav() {
         else if(page === 'gradebook') renderGradeBook();
         else if(page === 'students') renderStudents();
         else if(page === 'discussions') renderDiscussions();
-        else if(page === 'badges') renderBadges();
         else if(page === 'quizzes') renderQuizzes();
         else if(page === 'live') renderLiveClasses();
         else if(page === 'calendar') renderCalendar();

@@ -113,8 +113,7 @@ self.addEventListener('push', (event) => {
   const data = event.data.json();
   const options = {
     body: data.body,
-    icon: 'https://cdn-icons-png.flaticon.com/512/3135/3135665.png',
-    badge: 'https://cdn-icons-png.flaticon.com/512/3135/3135665.png'
+    icon: 'https://cdn-icons-png.flaticon.com/512/3135/3135665.png'
   };
   event.waitUntil(
     self.registration.showNotification(data.title, options)

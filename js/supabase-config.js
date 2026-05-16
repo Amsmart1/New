@@ -498,42 +498,6 @@ class SupabaseDB {
         return data?.[0];
     }
 
-    // Badge operations
-    static async getBadges() {
-        const { data, error } = await supabaseClient
-            .from('badges')
-            .select('*');
-        if (error) throw error;
-        return data || [];
-    }
-
-    static async saveBadge(badge) {
-        const { data, error } = await supabaseClient
-            .from('badges')
-            .upsert(badge, { onConflict: 'id' })
-            .select();
-        if (error) throw error;
-        return data?.[0];
-    }
-
-    static async awardBadge(email, badgeId) {
-        const { data, error } = await supabaseClient
-            .from('user_badges')
-            .upsert({ user_email: email, badge_id: badgeId }, { onConflict: 'user_email,badge_id' })
-            .select();
-        if (error) throw error;
-        return data?.[0];
-    }
-
-    static async getUserBadges(email) {
-        const { data, error } = await supabaseClient
-            .from('user_badges')
-            .select('*, badges(*)')
-            .eq('user_email', email);
-        if (error) throw error;
-        return data || [];
-    }
-
     // Quiz operations
     static async getQuizzes(courseId = null, teacherEmail = null, courseIds = null) {
         if (courseIds && courseIds.length === 0) return [];
