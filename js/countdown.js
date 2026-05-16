@@ -181,6 +181,7 @@
         constructor(options = {}) {
             this.targetDate = options.targetDate;
             this.onEnd = options.onEnd || null;
+            this.onTick = options.onTick || null;
             this.className = Utils.sanitizeClassName(
                 options.className
             );
@@ -334,6 +335,14 @@
             if (this.updateHandler) {
                 this.updateHandler.remainingTime =
                     time.total;
+            }
+
+            if (typeof this.onTick === 'function') {
+                try {
+                    this.onTick(time);
+                } catch (error) {
+                    console.error('Countdown onTick error:', error);
+                }
             }
 
             if (time.total <= 0) {

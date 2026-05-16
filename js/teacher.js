@@ -1179,24 +1179,34 @@ let jitsiAPI = null;
 let liveClassTimer = null;
 
 function startLiveClassTimer(id, endAt) {
-    if (liveClassTimer) clearInterval(liveClassTimer);
+    if (liveClassTimer instanceof Countdown) liveClassTimer.destroy();
+    else if (liveClassTimer) clearInterval(liveClassTimer);
+
     window._warnedEnd = false;
     const endTime = new Date(endAt).getTime();
 
-    liveClassTimer = setInterval(() => {
-        const now = Date.now();
-        if (now >= endTime) {
-            clearInterval(liveClassTimer);
+    liveClassTimer = new Countdown({
+        targetDate: endTime,
+        onEnd: () => {
             if (confirm('Scheduled class time has reached. Do you want to extend by 15 minutes? Press Cancel to end class.')) {
                 extendLiveClass(id, 15);
             } else {
                 stopLiveClass(id);
             }
-        } else if (endTime - now <= 5 * 60 * 1000 && !window._warnedEnd) {
-            window._warnedEnd = true;
-            UI.showNotification('Class ends in 5 minutes', 'warn');
+        },
+        onTick: (time) => {
+            if (time.total <= 5 * 60 * 1000 && !window._warnedEnd && time.total > 0) {
+                window._warnedEnd = true;
+                UI.showNotification('Class ends in 5 minutes', 'warn');
+            }
         }
-    }, 30000);
+    });
+
+    // Avoid default unit rendering
+    liveClassTimer.renderInitialDOM = () => {};
+
+    // Mount it to a dummy element or just start it (mount starts it)
+    liveClassTimer.mount(document.createElement('div'));
 }
 
 async function handleStartLiveClass(id, roomName, meetingUrl) {
@@ -1321,7 +1331,8 @@ async function startTeacherLiveClass(id, roomName) {
     container.classList.add('hidden');
     if (modControls) modControls.classList.add('hidden');
     if (stopBtn) stopBtn.classList.add('hidden');
-    if (liveClassTimer) clearInterval(liveClassTimer);
+    if (liveClassTimer instanceof Countdown) liveClassTimer.destroy();
+    else if (liveClassTimer) clearInterval(liveClassTimer);
 
     // Only set status back to scheduled if the teacher didn't stop the class manually
     try {

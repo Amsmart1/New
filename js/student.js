@@ -1485,17 +1485,33 @@ async function startQuiz(quizId) {
 
   // Start Timer
   if (quiz.time_limit > 0) {
-    let secondsLeft = quiz.time_limit * 60;
-    updateTimerDisplay(secondsLeft);
-    quizTimer = setInterval(() => {
-      secondsLeft--;
-      updateTimerDisplay(secondsLeft);
-      if (secondsLeft <= 0) {
-        clearInterval(quizTimer);
-        alert('Time is up! Submitting your quiz automatically.');
-        submitQuiz();
-      }
-    }, 1000);
+    const endTime = new Date(currentSubmission.started_at).getTime() + (quiz.time_limit * 60 * 1000);
+
+    if (quizTimer instanceof Countdown) {
+        quizTimer.destroy();
+    }
+
+    quizTimer = new Countdown({
+        targetDate: endTime,
+        selector: '#quizTimerDisplay',
+        onEnd: () => {
+            alert('Time is up! Submitting your quiz automatically.');
+            submitQuiz();
+        },
+        onTick: (time) => {
+            const m = Math.floor(time.total / 60000);
+            const s = Math.floor((time.total % 60000) / 1000);
+            const display = document.getElementById('quizTimerDisplay');
+            if (display) {
+                display.textContent = `Time Remaining: ${m}:${s.toString().padStart(2, '0')}`;
+            }
+        }
+    });
+
+    // Avoid default unit rendering
+    quizTimer.renderInitialDOM = () => {};
+    quizTimer.update();
+
   } else {
     const timerDisplay = document.getElementById('quizTimerDisplay');
     if (timerDisplay) timerDisplay.textContent = 'No Time Limit';
@@ -1504,12 +1520,6 @@ async function startQuiz(quizId) {
   quizArea.scrollIntoView({ behavior: 'smooth' });
 }
 
-function updateTimerDisplay(s) {
-  const m = Math.floor(s / 60);
-  const rs = s % 60;
-  const timerDisplay = document.getElementById('quizTimerDisplay');
-  if (timerDisplay) timerDisplay.textContent = `Time Remaining: ${m}:${rs.toString().padStart(2, '0')}`;
-}
 
 let quizDebounceTimer = null;
 async function autoSubmitQuiz() {
@@ -1539,7 +1549,8 @@ function getQuizAnswers() {
 async function submitQuiz() {
   const btn = document.getElementById('submitQuizBtn');
   if (btn) btn.disabled = true;
-  if (quizTimer) clearInterval(quizTimer);
+  if (quizTimer instanceof Countdown) quizTimer.destroy();
+  else if (quizTimer) clearInterval(quizTimer);
   if (quizDebounceTimer) clearTimeout(quizDebounceTimer);
   const user = await SessionManager.getCurrentUser();
   const answers = getQuizAnswers();
