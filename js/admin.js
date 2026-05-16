@@ -883,9 +883,9 @@ function showUserForm(user = null) {
         <label>Phone Number</label>
         <input type="tel" id="phone" placeholder="Phone Number" value="${isEdit ? escapeHtml(user.phone || '') : ''}">
         <label>Password</label>
-        <div class="relative">
+        <div class="password-wrapper">
           <input type="password" id="password" placeholder="${isEdit ? 'New Password (leave blank to keep current)' : 'Password'}" ${isEdit ? '' : 'required'}>
-          <span class="absolute" style="right:10px; top:10px; cursor:pointer" onclick="const p=document.getElementById('password'); p.type=p.type==='password'?'text':'password'">👁️</span>
+          <span class="password-toggle" onclick="const p=document.getElementById('password'); const isPass=p.type==='password'; p.type=isPass?'text':'password'; this.textContent=isPass?'🔒':'👁️'">👁️</span>
         </div>
         <label>Role</label>
         <select id="role">

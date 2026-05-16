@@ -60,11 +60,6 @@
           <h3>Interactive Discussions</h3>
           <p>Engage with peers and teachers in real-time through course-specific discussion boards.</p>
         </div>
-        <div class="feat-card">
-          <div class="icon">🏆</div>
-          <h3>Gamified Experience</h3>
-          <p>Earn XP, level up, and collect badges as you complete courses and assignments.</p>
-        </div>
       </div>
     </section>
 
@@ -122,8 +117,17 @@
         <input type="text" id="fullName" placeholder="Full Name" required>
         <input type="email" id="email" placeholder="Email" required>
         <input type="tel" id="phone" placeholder="Phone (optional)">
-        <input type="password" id="password" placeholder="Password" required>
-        <input type="password" id="confirmPassword" placeholder="Confirm Password" required>
+        <div class="password-wrapper">
+          <input type="password" id="password" placeholder="Password" required>
+          <span class="password-toggle" onclick="togglePasswordVisibility('password')">👁️</span>
+        </div>
+        <div id="passwordStrengthContainer" class="strength-meter">
+          <div id="passwordStrength" class="strength-meter-fill"></div>
+        </div>
+        <div class="password-wrapper">
+          <input type="password" id="confirmPassword" placeholder="Confirm Password" required>
+          <span class="password-toggle" onclick="togglePasswordVisibility('confirmPassword')">👁️</span>
+        </div>
         <input type="hidden" id="role" value="student">
         <button type="submit" class="button">Create Account</button>
         <p class="note">Already have an account? <a href="#" onclick="showLogin()">Sign in</a></p>
@@ -139,7 +143,10 @@
       <form id="loginForm" novalidate>
         <input type="email" id="loginEmail" placeholder="Email" required>
         <p class="error" id="loginEmailError"></p>
-        <input type="password" id="loginPassword" placeholder="Password" required>
+        <div class="password-wrapper">
+          <input type="password" id="loginPassword" placeholder="Password" required>
+          <span class="password-toggle" onclick="togglePasswordVisibility('loginPassword')">👁️</span>
+        </div>
         <p class="error" id="loginPasswordError"></p>
         <button type="submit" class="button">Login</button>
       </form>
@@ -165,8 +172,14 @@
       <button class="close-btn" onclick="closeAuth()">×</button>
       <h2>Set New Password</h2>
       <form id="newPasswordForm" novalidate>
-        <input type="password" id="newPass" placeholder="New Password" required>
-        <input type="password" id="confirmNewPass" placeholder="Confirm New Password" required>
+        <div class="password-wrapper">
+          <input type="password" id="newPass" placeholder="New Password" required>
+          <span class="password-toggle" onclick="togglePasswordVisibility('newPass')">👁️</span>
+        </div>
+        <div class="password-wrapper">
+          <input type="password" id="confirmNewPass" placeholder="Confirm New Password" required>
+          <span class="password-toggle" onclick="togglePasswordVisibility('confirmNewPass')">👁️</span>
+        </div>
         <button type="submit" class="button">Update Password</button>
       </form>
       <p class="error" id="newPasswordError"></p>

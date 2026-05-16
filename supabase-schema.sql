@@ -73,8 +73,6 @@ CREATE TABLE users (
   reset_request JSONB,
   active BOOLEAN DEFAULT TRUE,
   notification_preferences JSONB DEFAULT '{"email": true, "push": true, "inApp": true}'::jsonb,
-  xp INTEGER DEFAULT 0,
-  level INTEGER DEFAULT 1,
   metadata JSONB DEFAULT '{}'::jsonb
 );
 
@@ -296,22 +294,6 @@ CREATE TABLE certificates (
   metadata JSONB DEFAULT '{}'::jsonb
 );
 
-CREATE TABLE badges (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  title VARCHAR(255) NOT NULL,
-  description TEXT,
-  icon_url TEXT,
-  xp_required INTEGER DEFAULT 0,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
-
-CREATE TABLE user_badges (
-  user_email VARCHAR(255) REFERENCES users(email) ON UPDATE CASCADE ON DELETE CASCADE,
-  badge_id UUID REFERENCES badges(id) ON DELETE CASCADE,
-  awarded_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-  PRIMARY KEY (user_email, badge_id)
-);
-
 CREATE TABLE study_sessions (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   user_email VARCHAR(255) REFERENCES users(email) ON UPDATE CASCADE ON DELETE CASCADE,
@@ -393,8 +375,6 @@ ALTER TABLE notifications ENABLE ROW LEVEL SECURITY;
 ALTER TABLE maintenance ENABLE ROW LEVEL SECURITY;
 ALTER TABLE planner ENABLE ROW LEVEL SECURITY;
 ALTER TABLE certificates ENABLE ROW LEVEL SECURITY;
-ALTER TABLE badges ENABLE ROW LEVEL SECURITY;
-ALTER TABLE user_badges ENABLE ROW LEVEL SECURITY;
 ALTER TABLE study_sessions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE system_logs ENABLE ROW LEVEL SECURITY;
 
@@ -417,8 +397,6 @@ CREATE POLICY "Custom Auth: broadcasts" ON broadcasts FOR ALL USING (true);
 CREATE POLICY "Custom Auth: maintenance" ON maintenance FOR ALL USING (true);
 CREATE POLICY "Custom Auth: planner" ON planner FOR ALL USING (true);
 CREATE POLICY "Custom Auth: certificates" ON certificates FOR ALL USING (true);
-CREATE POLICY "Custom Auth: badges" ON badges FOR ALL USING (true);
-CREATE POLICY "Custom Auth: user_badges" ON user_badges FOR ALL USING (true);
 CREATE POLICY "Custom Auth: study_sessions" ON study_sessions FOR ALL USING (true);
 CREATE POLICY "Custom Auth: system_logs" ON system_logs FOR ALL USING (true);
 

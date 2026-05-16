@@ -328,29 +328,30 @@ const NotificationManager = {
         const notifications = await this.fetchNotifications();
         const unreadCount = notifications.filter(n => !n.is_read).length;
         
-        const bell = document.getElementById('unreadCount');
-        if (bell) {
-            bell.textContent = unreadCount;
-            bell.style.display = unreadCount > 0 ? 'flex' : 'none';
+        const unreadBadge = document.getElementById('unreadCount');
+        if (unreadBadge) {
+            unreadBadge.textContent = unreadCount;
+            unreadBadge.style.display = unreadCount > 0 ? 'flex' : 'none';
         }
 
         const list = document.getElementById('notifList');
         if (list) {
             try {
+            const itemsHtml = notifications.map(n => `
+                <div class="notif-item" style="padding:10px; border-bottom:1px solid #f9f9f9; background:${n.is_read ? '#fff' : '#f0f4ff'}; cursor:pointer"
+                        onclick="${n.is_broadcast ? `NotificationManager.markBroadcastRead('${n.id}');` : ''} ${n.link ? `window.location.href='${escapeAttr(n.link)}'` : ''}">
+                    <div style="font-weight:600; font-size:13px">${n.is_broadcast ? '📢 ' : ''}${escapeHtml(n.title)}</div>
+                    <div style="font-size:12px; color:#444">${escapeHtml(n.message)}</div>
+                    <div style="font-size:10px; color:#999; margin-top:4px">${new Date(n.created_at).toLocaleString()}</div>
+                </div>
+            `).join('');
+
             list.innerHTML = `
                 <div style="padding:10px; border-bottom:1px solid #eee; display:flex; justify-content:space-between; align-items:center">
                     <strong>Notifications</strong>
-                    <button class="button secondary" style="padding:2px 6px; font-size:10px" onclick="NotificationManager.markAllAsRead()">Mark all as read</button>
+                    <button class="button secondary" style="padding:2px 6px; font-size:10px; width:auto; margin:0" onclick="NotificationManager.markAllAsRead(); event.stopPropagation();">Mark all as read</button>
                 </div>
-                ${notifications.length === 0 ? '<div style="padding:20px; text-align:center; color:#666">No notifications</div>' : ''}
-                ${notifications.map(n => `
-                    <div style="padding:10px; border-bottom:1px solid #f9f9f9; background:${n.is_read ? '#fff' : '#f0f4ff'}; cursor:pointer"
-                         onclick="${n.is_broadcast ? `NotificationManager.markBroadcastRead('${n.id}');` : ''} ${n.link ? `window.location.href='${escapeAttr(n.link)}'` : ''}">
-                        <div style="font-weight:600; font-size:13px">${n.is_broadcast ? '📢 ' : ''}${escapeHtml(n.title)}</div>
-                        <div style="font-size:12px; color:#444">${escapeHtml(n.message)}</div>
-                        <div style="font-size:10px; color:#999; margin-top:4px">${new Date(n.created_at).toLocaleString()}</div>
-                    </div>
-                `).join('')}
+                ${notifications.length === 0 ? '<div style="padding:20px; text-align:center; color:#666">No notifications</div>' : itemsHtml}
             `;
             } catch (e) {
                 console.warn('Error updating notif list:', e);
@@ -398,16 +399,20 @@ const NotificationManager = {
             requestNotificationPermission();
         }
 
-        const bell = document.getElementById('notifBell');
-        const list = document.getElementById('notifList');
-        if (bell && list) {
-            bell.addEventListener('click', (e) => {
+        // Global event delegation for the notification bell
+        document.addEventListener('click', (e) => {
+            const bell = e.target.closest('#notifBell');
+            const list = document.getElementById('notifList');
+
+            if (bell) {
                 e.stopPropagation();
-                list.classList.toggle('active');
-            });
-            document.addEventListener('click', () => list.classList.remove('active'));
-            list.addEventListener('click', (e) => e.stopPropagation());
-        }
+                if (list) list.classList.toggle('active');
+            } else if (list && list.classList.contains('active')) {
+                if (!list.contains(e.target)) {
+                    list.classList.remove('active');
+                }
+            }
+        });
     }
 };
 
