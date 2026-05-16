@@ -1,6 +1,5 @@
  //
  * Countdown Component - Vanilla JavaScript
- * Converts React Countdown component to vanilla JS
  * Supports multiple countdown instances with shared timer
  */
 
