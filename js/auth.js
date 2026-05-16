@@ -121,8 +121,20 @@ const Auth = {
         const targetRole = role || this.selectedRole || 'student';
         const titleEl = document.getElementById('signup-title');
         const roleEl = document.getElementById('role');
+        const emailEl = document.getElementById('email');
+
+        // Reset state from possible prior invite usage
+        if (roleEl) {
+            roleEl.value = targetRole;
+            roleEl.disabled = false;
+        }
+        if (emailEl) {
+            emailEl.readOnly = false;
+            // Only clear if not prefilled by an invite
+            if (!sessionStorage.getItem('activeInvite')) emailEl.value = '';
+        }
+
         if (titleEl) titleEl.innerText = `Sign Up as ${targetRole.charAt(0).toUpperCase() + targetRole.slice(1)}`;
-        if (roleEl) roleEl.value = targetRole;
         this.showSection('signup');
     },
 
@@ -142,6 +154,13 @@ const Auth = {
         const overlay = document.getElementById('authOverlay');
         if (overlay) overlay.classList.remove('active');
         document.querySelectorAll('.container').forEach(c => c.style.display = 'none');
+
+        // Reset invite-related states
+        sessionStorage.removeItem('activeInvite');
+        const roleEl = document.getElementById('role');
+        const emailEl = document.getElementById('email');
+        if (roleEl) roleEl.disabled = false;
+        if (emailEl) emailEl.readOnly = false;
     },
 
     // ---- Maintenance Banners ----
@@ -266,7 +285,10 @@ document.addEventListener('DOMContentLoaded', () => {
             // Enforce limit of 3 accounts for admin and teacher roles for landing page signups
             // Bypassed if using a valid invitation
             const activeInviteRaw = sessionStorage.getItem('activeInvite');
-            const activeInvite = activeInviteRaw ? JSON.parse(activeInviteRaw) : null;
+            let activeInvite = null;
+            if (activeInviteRaw) {
+                try { activeInvite = JSON.parse(activeInviteRaw); } catch (e) { console.warn('Corrupt invite session data'); }
+            }
 
             if ((role === 'admin' || role === 'teacher') && !activeInvite) {
                 try {

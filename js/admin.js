@@ -996,17 +996,25 @@ function showInviteForm() {
 
   window.copyInviteLink = () => {
     const link = document.getElementById('inviteLink');
+    if (!link) return;
     link.select();
     document.execCommand('copy');
     UI.showNotification('Link copied to clipboard!');
   };
 
-  document.getElementById('inviteForm').addEventListener('submit', async (e) => {
+  const inviteForm = document.getElementById('inviteForm');
+  if (inviteForm) inviteForm.addEventListener('submit', async (e) => {
     e.preventDefault();
     try {
-      const email = document.getElementById('inviteEmail').value.trim();
-      const role = document.getElementById('inviteRole').value;
-      const expiryDays = parseInt(document.getElementById('inviteExpiry').value);
+      const emailEl = document.getElementById('inviteEmail');
+      const roleEl = document.getElementById('inviteRole');
+      const expiryEl = document.getElementById('inviteExpiry');
+
+      if (!roleEl || !expiryEl) return alert('System error: Form fields missing.');
+
+      const email = emailEl ? emailEl.value.trim() : '';
+      const role = roleEl.value;
+      const expiryDays = parseInt(expiryEl.value);
 
       if ((role === 'admin' || role === 'teacher') && !email) {
           return alert('Email is required for Admin and Teacher invites.');
@@ -1034,9 +1042,16 @@ function showInviteForm() {
           const baseUrl = window.location.origin + window.location.pathname.replace('admin.html', 'index.html');
           const inviteUrl = `${baseUrl}?invite=${token}`;
 
-          document.getElementById('inviteLink').value = inviteUrl;
-          document.getElementById('inviteResult').style.display = 'block';
-          document.getElementById('inviteActions').querySelector('button[type="submit"]').style.display = 'none';
+          const resultEl = document.getElementById('inviteResult');
+          const linkEl = document.getElementById('inviteLink');
+          const actionsEl = document.getElementById('inviteActions');
+
+          if (linkEl) linkEl.value = inviteUrl;
+          if (resultEl) resultEl.style.display = 'block';
+          if (actionsEl) {
+              const submitBtn = actionsEl.querySelector('button[type="submit"]');
+              if (submitBtn) submitBtn.style.display = 'none';
+          }
           UI.showNotification('Invite generated!');
       }
     } catch (err) { alert('Failed to generate invite: ' + err.message); }
