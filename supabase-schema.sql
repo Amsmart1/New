@@ -61,6 +61,16 @@ CREATE TABLE IF NOT EXISTS courses (
 DROP TRIGGER IF EXISTS update_courses_updated_at ON courses;
 CREATE TRIGGER update_courses_updated_at BEFORE UPDATE ON courses FOR EACH ROW EXECUTE PROCEDURE update_updated_at_column();
 
+-- Migration: Ensure created_by exists for existing tables
+-- Migration: Ensure new columns exist for existing courses table
+ALTER TABLE courses ADD COLUMN IF NOT EXISTS created_by VARCHAR(255);
+ALTER TABLE courses ADD COLUMN IF NOT EXISTS enrollment_id VARCHAR(255);
+ALTER TABLE courses ADD COLUMN IF NOT EXISTS metadata JSONB DEFAULT '{}'::jsonb;
+
+-- Migration: Ensure new columns exist for existing users table
+ALTER TABLE users ADD COLUMN IF NOT EXISTS notification_preferences JSONB DEFAULT '{"email": true, "push": true, "inApp": true}'::jsonb;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS metadata JSONB DEFAULT '{}'::jsonb;
+
 CREATE TABLE IF NOT EXISTS lessons (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   course_id UUID REFERENCES courses(id) ON DELETE CASCADE,
@@ -115,6 +125,7 @@ CREATE TABLE IF NOT EXISTS submissions (
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   answers JSONB DEFAULT '{}'::jsonb,
   question_scores JSONB DEFAULT '{}'::jsonb,
+  question_feedback JSONB DEFAULT '{}'::jsonb,
   late_penalty_applied INTEGER DEFAULT 0,
   attachments JSONB DEFAULT '[]'::jsonb,
   grade INTEGER,
@@ -128,6 +139,12 @@ CREATE TABLE IF NOT EXISTS submissions (
 
 DROP TRIGGER IF EXISTS update_submissions_updated_at ON submissions;
 CREATE TRIGGER update_submissions_updated_at BEFORE UPDATE ON submissions FOR EACH ROW EXECUTE PROCEDURE update_updated_at_column();
+
+-- Migration: Ensure new columns exist for existing submissions table
+ALTER TABLE submissions ADD COLUMN IF NOT EXISTS question_feedback JSONB DEFAULT '{}'::jsonb;
+ALTER TABLE submissions ADD COLUMN IF NOT EXISTS question_scores JSONB DEFAULT '{}'::jsonb;
+ALTER TABLE submissions ADD COLUMN IF NOT EXISTS late_penalty_applied INTEGER DEFAULT 0;
+ALTER TABLE submissions ADD COLUMN IF NOT EXISTS id UUID DEFAULT uuid_generate_v4();
 
 CREATE TABLE IF NOT EXISTS live_classes (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),

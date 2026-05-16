@@ -113,9 +113,29 @@ class SupabaseDB {
     }
 
     static async saveUser(user) {
+        // Sanitize payload
+        const payload = {
+            email: user.email,
+            full_name: user.full_name,
+            phone: user.phone,
+            password: user.password,
+            role: user.role,
+            last_login: user.last_login,
+            failed_attempts: user.failed_attempts,
+            locked_until: user.locked_until,
+            lockouts: user.lockouts,
+            flagged: user.flagged,
+            reset_request: user.reset_request,
+            active: user.active,
+            notification_preferences: user.notification_preferences,
+            metadata: user.metadata,
+            updated_at: new Date().toISOString()
+        };
+        if (user.created_at) payload.created_at = user.created_at;
+
         const { data, error } = await supabaseClient
             .from('users')
-            .upsert(user, { onConflict: 'email' })
+            .upsert(payload, { onConflict: 'email' })
             .select();
         if (error) throw error;
         _cache.invalidate('users');
@@ -225,9 +245,29 @@ class SupabaseDB {
     }
 
     static async saveAssignment(assignment) {
+        // Sanitize payload to avoid 400 error from extra fields (e.g. from joins)
+        const payload = {
+            id: assignment.id,
+            course_id: assignment.course_id,
+            title: assignment.title,
+            description: assignment.description,
+            teacher_email: assignment.teacher_email,
+            start_at: assignment.start_at,
+            due_date: assignment.due_date,
+            points_possible: assignment.points_possible,
+            allow_late_submissions: assignment.allow_late_submissions,
+            late_penalty_per_day: assignment.late_penalty_per_day,
+            allowed_extensions: assignment.allowed_extensions,
+            questions: assignment.questions,
+            attachments: assignment.attachments,
+            status: assignment.status,
+            updated_at: new Date().toISOString()
+        };
+        if (assignment.created_at) payload.created_at = assignment.created_at;
+
         const { data, error } = await supabaseClient
             .from('assignments')
-            .upsert(assignment, { onConflict: 'id' })
+            .upsert(payload, { onConflict: 'id' })
             .select();
         if (error) throw error;
         return data?.[0];
@@ -267,7 +307,26 @@ class SupabaseDB {
     }
 
     static async saveSubmission(submission) {
-        const { assignments, ...payload } = submission;
+        // Sanitize payload
+        const payload = {
+            id: submission.id,
+            assignment_id: submission.assignment_id,
+            student_email: submission.student_email,
+            submitted_at: submission.submitted_at,
+            answers: submission.answers,
+            question_scores: submission.question_scores,
+            question_feedback: submission.question_feedback,
+            late_penalty_applied: submission.late_penalty_applied,
+            attachments: submission.attachments,
+            grade: submission.grade,
+            final_grade: submission.final_grade,
+            feedback: submission.feedback,
+            regrade_request: submission.regrade_request,
+            graded_at: submission.graded_at,
+            status: submission.status,
+            updated_at: new Date().toISOString()
+        };
+
         const { data, error } = await supabaseClient
             .from('submissions')
             .upsert(payload, { onConflict: 'assignment_id,student_email' })
@@ -298,9 +357,17 @@ class SupabaseDB {
     }
 
     static async saveEnrollment(enrollment) {
+        const payload = {
+            course_id: enrollment.course_id,
+            student_email: enrollment.student_email,
+            enrolled_at: enrollment.enrolled_at,
+            progress: enrollment.progress,
+            completed: enrollment.completed,
+            completed_lessons: enrollment.completed_lessons
+        };
         const { data, error } = await supabaseClient
             .from('enrollments')
-            .upsert(enrollment, { onConflict: 'course_id,student_email' })
+            .upsert(payload, { onConflict: 'course_id,student_email' })
             .select();
         if (error) throw error;
         _cache.invalidate(`enrollments_${enrollment.student_email}`);
@@ -424,9 +491,23 @@ class SupabaseDB {
     }
 
     static async saveCourse(course) {
+        // Sanitize payload to avoid 400 error from extra fields
+        const payload = {
+            id: course.id,
+            title: course.title,
+            description: course.description,
+            teacher_email: course.teacher_email,
+            created_by: course.created_by,
+            enrollment_id: course.enrollment_id,
+            status: course.status,
+            metadata: course.metadata,
+            updated_at: new Date().toISOString()
+        };
+        if (course.created_at) payload.created_at = course.created_at;
+
         const { data, error } = await supabaseClient
             .from('courses')
-            .upsert(course, { onConflict: 'id' })
+            .upsert(payload, { onConflict: 'id' })
             .select();
         if (error) throw error;
         _cache.invalidate('courses_all');
@@ -455,9 +536,20 @@ class SupabaseDB {
     }
 
     static async saveLesson(lesson) {
+        const payload = {
+            id: lesson.id,
+            course_id: lesson.course_id,
+            title: lesson.title,
+            content: lesson.content,
+            video_url: lesson.video_url,
+            order_index: lesson.order_index,
+            updated_at: new Date().toISOString()
+        };
+        if (lesson.created_at) payload.created_at = lesson.created_at;
+
         const { data, error } = await supabaseClient
             .from('lessons')
-            .upsert(lesson, { onConflict: 'id' })
+            .upsert(payload, { onConflict: 'id' })
             .select();
         if (error) throw error;
         return data?.[0];
@@ -483,9 +575,19 @@ class SupabaseDB {
     }
 
     static async saveMaterial(material) {
+        const payload = {
+            id: material.id,
+            course_id: material.course_id,
+            teacher_email: material.teacher_email,
+            title: material.title,
+            description: material.description,
+            file_url: material.file_url,
+            file_type: material.file_type,
+            created_at: material.created_at || new Date().toISOString()
+        };
         const { data, error } = await supabaseClient
             .from('materials')
-            .upsert(material, { onConflict: 'id' })
+            .upsert(payload, { onConflict: 'id' })
             .select();
         if (error) throw error;
         return data?.[0];
@@ -511,9 +613,20 @@ class SupabaseDB {
     }
 
     static async saveDiscussion(discussion) {
+        const payload = {
+            id: discussion.id,
+            course_id: discussion.course_id,
+            user_email: discussion.user_email,
+            parent_id: discussion.parent_id,
+            title: discussion.title,
+            content: discussion.content,
+            updated_at: new Date().toISOString()
+        };
+        if (discussion.created_at) payload.created_at = discussion.created_at;
+
         const { data, error } = await supabaseClient
             .from('discussions')
-            .upsert(discussion, { onConflict: 'id' })
+            .upsert(payload, { onConflict: 'id' })
             .select();
         if (error) throw error;
         return data?.[0];
@@ -547,9 +660,28 @@ class SupabaseDB {
     }
 
     static async saveQuiz(quiz) {
+        // Sanitize payload to avoid 400 error from extra fields
+        const payload = {
+            id: quiz.id,
+            course_id: quiz.course_id,
+            teacher_email: quiz.teacher_email,
+            title: quiz.title,
+            description: quiz.description,
+            time_limit: quiz.time_limit,
+            start_at: quiz.start_at,
+            end_at: quiz.end_at,
+            attempts_allowed: quiz.attempts_allowed,
+            passing_score: quiz.passing_score,
+            questions: quiz.questions,
+            shuffle_questions: quiz.shuffle_questions,
+            status: quiz.status,
+            updated_at: new Date().toISOString()
+        };
+        if (quiz.created_at) payload.created_at = quiz.created_at;
+
         const { data, error } = await supabaseClient
             .from('quizzes')
-            .upsert(quiz, { onConflict: 'id' })
+            .upsert(payload, { onConflict: 'id' })
             .select();
         if (error) throw error;
         _cache.invalidate(); // Quizzes have complex keys, simpler to clear all
@@ -575,7 +707,21 @@ class SupabaseDB {
     }
 
     static async saveQuizSubmission(submission) {
-        const { quizzes, ...payload } = submission;
+        // Sanitize payload to avoid 400 error from extra fields
+        const payload = {
+            id: submission.id,
+            quiz_id: submission.quiz_id,
+            student_email: submission.student_email,
+            score: submission.score,
+            total_points: submission.total_points,
+            answers: submission.answers,
+            analytics: submission.analytics,
+            status: submission.status,
+            time_spent: submission.time_spent,
+            started_at: submission.started_at,
+            submitted_at: submission.submitted_at
+        };
+
         const { data, error } = await supabaseClient
             .from('quiz_submissions')
             .upsert(payload, { onConflict: 'id' })
@@ -611,27 +757,32 @@ class SupabaseDB {
             .insert([{ user_email: userEmail, title, message, link, type }])
             .select();
         if (error) throw error;
+        _cache.invalidate(`notifications_${userEmail}`);
         return data?.[0];
     }
 
     static async getNotifications(userEmail) {
-        const { data, error } = await supabaseClient
-            .from('notifications')
-            .select('*')
-            .eq('user_email', userEmail)
-            .order('created_at', { ascending: false });
-        if (error) throw error;
-        return data || [];
+        return _cache.fetch(`notifications_${userEmail}`, async () => {
+            const { data, error } = await supabaseClient
+                .from('notifications')
+                .select('*')
+                .eq('user_email', userEmail)
+                .order('created_at', { ascending: false });
+            if (error) throw error;
+            return data || [];
+        });
     }
 
     static async getBroadcasts() {
-        const { data, error } = await supabaseClient
-            .from('broadcasts')
-            .select('*')
-            .gt('expires_at', new Date().toISOString())
-            .order('created_at', { ascending: false });
-        if (error) throw error;
-        return data || [];
+        return _cache.fetch('broadcasts_active', async () => {
+            const { data, error } = await supabaseClient
+                .from('broadcasts')
+                .select('*')
+                .gt('expires_at', new Date().toISOString())
+                .order('created_at', { ascending: false });
+            if (error) throw error;
+            return data || [];
+        });
     }
 
     static async deleteExpiredBroadcasts() {
@@ -643,11 +794,23 @@ class SupabaseDB {
     }
 
     static async saveBroadcast(broadcast) {
+        const payload = {
+            id: broadcast.id,
+            course_id: broadcast.course_id,
+            target_role: broadcast.target_role,
+            title: broadcast.title,
+            message: broadcast.message,
+            link: broadcast.link,
+            type: broadcast.type,
+            expires_at: broadcast.expires_at,
+            created_at: broadcast.created_at || new Date().toISOString()
+        };
         const { data, error } = await supabaseClient
             .from('broadcasts')
-            .upsert(broadcast, { onConflict: 'id' })
+            .upsert(payload, { onConflict: 'id' })
             .select();
         if (error) throw error;
+        _cache.invalidate('broadcasts_active');
         return data?.[0];
     }
 
@@ -658,13 +821,26 @@ class SupabaseDB {
             .eq('user_email', userEmail)
             .eq('is_read', false);
         if (error) throw error;
+        _cache.invalidate(`notifications_${userEmail}`);
+    }
+
+    static async invalidateCache(key = null) {
+        _cache.invalidate(key);
     }
 
     // Certificate operations
     static async issueCertificate(certificate) {
+        const payload = {
+            id: certificate.id,
+            course_id: certificate.course_id,
+            student_email: certificate.student_email,
+            issued_at: certificate.issued_at,
+            certificate_url: certificate.certificate_url,
+            metadata: certificate.metadata
+        };
         const { data, error } = await supabaseClient
             .from('certificates')
-            .upsert(certificate, { onConflict: 'id' })
+            .upsert(payload, { onConflict: 'id' })
             .select();
         if (error) throw error;
         return data?.[0];
@@ -691,9 +867,19 @@ class SupabaseDB {
     }
 
     static async savePlannerItem(item) {
+        const payload = {
+            id: item.id,
+            user_email: item.user_email,
+            title: item.title,
+            description: item.description,
+            due_date: item.due_date,
+            priority: item.priority,
+            completed: item.completed,
+            created_at: item.created_at || new Date().toISOString()
+        };
         const { data, error } = await supabaseClient
             .from('planner')
-            .upsert(item, { onConflict: 'id' })
+            .upsert(payload, { onConflict: 'id' })
             .select();
         if (error) throw error;
         return data?.[0];
@@ -709,9 +895,17 @@ class SupabaseDB {
 
     // Study session operations
     static async saveStudySession(session) {
+        const payload = {
+            id: session.id,
+            user_email: session.user_email,
+            course_id: session.course_id,
+            duration: session.duration,
+            started_at: session.started_at,
+            ended_at: session.ended_at
+        };
         const { data, error } = await supabaseClient
             .from('study_sessions')
-            .upsert(session, { onConflict: 'id' })
+            .upsert(payload, { onConflict: 'id' })
             .select();
         if (error) throw error;
         return data?.[0];
@@ -750,9 +944,27 @@ class SupabaseDB {
     }
 
     static async saveLiveClass(liveClass) {
+        // Sanitize payload
+        const payload = {
+            id: liveClass.id,
+            course_id: liveClass.course_id,
+            teacher_email: liveClass.teacher_email,
+            title: liveClass.title,
+            description: liveClass.description,
+            start_at: liveClass.start_at,
+            end_at: liveClass.end_at,
+            room_name: liveClass.room_name,
+            meeting_url: liveClass.meeting_url,
+            recording_url: liveClass.recording_url,
+            recurring_config: liveClass.recurring_config,
+            metadata: liveClass.metadata,
+            status: liveClass.status,
+            actual_end_at: liveClass.actual_end_at
+        };
+
         const { data, error } = await supabaseClient
             .from('live_classes')
-            .upsert(liveClass, { onConflict: 'id' })
+            .upsert(payload, { onConflict: 'id' })
             .select();
         if (error) throw error;
         return data?.[0];
@@ -767,9 +979,19 @@ class SupabaseDB {
     }
 
     static async saveAttendance(attendance) {
+        const payload = {
+            id: attendance.id,
+            live_class_id: attendance.live_class_id,
+            student_email: attendance.student_email,
+            join_time: attendance.join_time,
+            leave_time: attendance.leave_time,
+            duration: attendance.duration,
+            is_present: attendance.is_present,
+            created_at: attendance.created_at || new Date().toISOString()
+        };
         const { data, error } = await supabaseClient
             .from('attendance')
-            .upsert(attendance, { onConflict: 'id' })
+            .upsert(payload, { onConflict: 'id' })
             .select();
         if (error) throw error;
         return data?.[0];
@@ -800,9 +1022,19 @@ class SupabaseDB {
     }
 
     static async saveMaintenance(maintenance) {
+        const payload = {
+            id: maintenance.id,
+            enabled: maintenance.enabled,
+            manual_until: maintenance.manual_until,
+            message: maintenance.message,
+            schedules: maintenance.schedules,
+            updated_at: new Date().toISOString()
+        };
+        if (maintenance.created_at) payload.created_at = maintenance.created_at;
+
         const { data, error } = await supabaseClient
             .from('maintenance')
-            .upsert(maintenance, { onConflict: 'id' })
+            .upsert(payload, { onConflict: 'id' })
             .select();
         if (error) throw error;
         _cache.invalidate('maintenance');
@@ -811,9 +1043,19 @@ class SupabaseDB {
 
     // Invite operations
     static async saveInvite(invite) {
+        const payload = {
+            id: invite.id,
+            token: invite.token,
+            email: invite.email,
+            role: invite.role,
+            expires_at: invite.expires_at,
+            used_at: invite.used_at,
+            created_by: invite.created_by,
+            created_at: invite.created_at || new Date().toISOString()
+        };
         const { data, error } = await supabaseClient
             .from('invites')
-            .upsert(invite, { onConflict: 'token' })
+            .upsert(payload, { onConflict: 'token' })
             .select();
         if (error) throw error;
         return data?.[0];
