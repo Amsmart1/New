@@ -611,27 +611,32 @@ class SupabaseDB {
             .insert([{ user_email: userEmail, title, message, link, type }])
             .select();
         if (error) throw error;
+        _cache.invalidate(`notifications_${userEmail}`);
         return data?.[0];
     }
 
     static async getNotifications(userEmail) {
-        const { data, error } = await supabaseClient
-            .from('notifications')
-            .select('*')
-            .eq('user_email', userEmail)
-            .order('created_at', { ascending: false });
-        if (error) throw error;
-        return data || [];
+        return _cache.fetch(`notifications_${userEmail}`, async () => {
+            const { data, error } = await supabaseClient
+                .from('notifications')
+                .select('*')
+                .eq('user_email', userEmail)
+                .order('created_at', { ascending: false });
+            if (error) throw error;
+            return data || [];
+        });
     }
 
     static async getBroadcasts() {
-        const { data, error } = await supabaseClient
-            .from('broadcasts')
-            .select('*')
-            .gt('expires_at', new Date().toISOString())
-            .order('created_at', { ascending: false });
-        if (error) throw error;
-        return data || [];
+        return _cache.fetch('broadcasts_active', async () => {
+            const { data, error } = await supabaseClient
+                .from('broadcasts')
+                .select('*')
+                .gt('expires_at', new Date().toISOString())
+                .order('created_at', { ascending: false });
+            if (error) throw error;
+            return data || [];
+        });
     }
 
     static async deleteExpiredBroadcasts() {
@@ -648,6 +653,7 @@ class SupabaseDB {
             .upsert(broadcast, { onConflict: 'id' })
             .select();
         if (error) throw error;
+        _cache.invalidate('broadcasts_active');
         return data?.[0];
     }
 
@@ -658,6 +664,11 @@ class SupabaseDB {
             .eq('user_email', userEmail)
             .eq('is_read', false);
         if (error) throw error;
+        _cache.invalidate(`notifications_${userEmail}`);
+    }
+
+    static async invalidateCache(key = null) {
+        _cache.invalidate(key);
     }
 
     // Certificate operations

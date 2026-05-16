@@ -122,14 +122,14 @@ function showCourseForm(course = null) {
       const courseId = isEdit ? course.id : crypto.randomUUID();
 
       const courseData = {
-        ...course,
         id: courseId,
         title: document.getElementById('courseTitle').value,
         description: document.getElementById('courseDescription').value,
         enrollment_id: document.getElementById('courseEnrollmentId').value || null,
         status: document.getElementById('courseStatus').value,
         teacher_email: user.email,
-        created_by: user.full_name
+        created_by: user.full_name,
+        metadata: course?.metadata || {}
       };
 
       await SupabaseDB.saveCourse(courseData);
@@ -698,6 +698,10 @@ async function gradeSubmission(assignmentId, studentEmail) {
                     <label class="small m-0">Points Earned (max ${q.points}):</label>
                     <input type="number" class="q-score-input small w-auto m-0" style="width:80px" data-q-idx="${idx}" data-max="${q.points}" value="${score}" min="0" max="${q.points}">
                 </div>
+                <div class="mt-10">
+                    <label class="small">Teacher Comment for Question ${idx + 1}:</label>
+                    <textarea class="q-feedback-input small w-100 mt-5" data-q-idx="${idx}" rows="2" placeholder="Specific feedback for this answer...">${escapeHtml(submission.question_feedback?.[idx] || '')}</textarea>
+                </div>
               </div>`;
             }).join('')}
           </div>
@@ -755,11 +759,17 @@ async function gradeSubmission(assignmentId, studentEmail) {
           questionScores[input.dataset.qIdx] = parseInt(input.value) || 0;
       });
 
+      const questionFeedback = {};
+      document.querySelectorAll('.q-feedback-input').forEach(input => {
+          questionFeedback[input.dataset.qIdx] = input.value;
+      });
+
       const updatedSubmission = {
         ...submission,
         grade: parseInt(rawInput.value),
         final_grade: parseInt(finalInput.value),
         question_scores: questionScores,
+        question_feedback: questionFeedback,
         late_penalty_applied: latePenalty,
         feedback: document.getElementById('feedback').value,
         status: 'graded',
@@ -946,7 +956,6 @@ window.editQuiz = editQuiz;
 window.deleteQuizById = deleteQuizById;
 window.viewQuizResults = viewQuizResults;
 window.renderDashboard = renderDashboard;
-window.initRealtimeSubscriptions = initRealtimeSubscriptions;
 window.renderCourses = renderCourses;
 window.renderAssignments = renderAssignments;
 window.renderMaterials = renderMaterials;
@@ -955,68 +964,14 @@ window.renderStudents = renderStudents;
 window.renderDiscussions = renderDiscussions;
 window.renderQuizzes = renderQuizzes;
 window.renderLiveClasses = renderLiveClasses;
-window.renderSettings = renderSettings;
 window.showCertForm = showCertForm;
 window.issueCert = issueCert;
 window.renderCalendar = renderCalendar;
-window.renderSettings = renderSettings;
-
-function initRealtimeSubscriptions(email) {
-  if (!window.supabaseClient) return;
-
-  window.supabaseClient
-    .channel('teacher-db-changes')
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'quiz_submissions' }, () => {
-      const activeEl = document.activeElement;
-      const isTyping = activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA' || activeEl.tagName === 'SELECT');
-      if (!isTyping) {
-        if (document.querySelector('[data-page="quizzes"].active')) renderQuizzes();
-        if (document.querySelector('[data-page="grading"].active')) renderGrading();
-        if (document.querySelector('[data-page="gradebook"].active')) renderGradeBook();
-      }
-    })
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'notifications', filter: `user_email=eq.${email}` }, () => {
-      NotificationManager.updateUI();
-    })
-    .subscribe();
-}
 
 async function renderSettings() {
-  const content = document.getElementById('pageContent');
-  if (!content) return;
-
-  const prefs = await NotificationManager.getPreferences();
-
-  content.innerHTML = `
-    <h2 class="m-0">Settings</h2>
-    <div class="card mt-20">
-      <h3 class="m-0">Notification Preferences</h3>
-      <p class="small mt-5">Choose how you want to receive updates.</p>
-      <div class="flex-column gap-10 mt-15">
-        <label class="flex-center-y gap-10"><input type="checkbox" id="prefInApp" ${prefs.inApp ? 'checked' : ''} class="w-auto m-0"> In-App Notifications</label>
-        <label class="flex-center-y gap-10"><input type="checkbox" id="prefPush" ${prefs.push ? 'checked' : ''} class="w-auto m-0"> Browser Push Notifications</label>
-        <label class="flex-center-y gap-10"><input type="checkbox" id="prefEmail" ${prefs.email ? 'checked' : ''} class="w-auto m-0"> Email Alerts</label>
-        <button class="button w-auto mt-10 px-30" onclick="saveNotificationSettings()">Save Preferences</button>
-      </div>
-    </div>
-    <div class="card mt-20">
-      <h3 class="m-0">Push Subscription</h3>
-      <p class="small mt-5">Enable real-time desktop notifications even when the app is closed.</p>
-      <button class="button secondary w-auto mt-10 px-30" onclick="NotificationManager.subscribeToPush()">Enable Push Notifications</button>
-    </div>
-  `;
+    NotificationManager.renderSettings('Settings', 'Enable real-time desktop notifications even when the app is closed.');
 }
 
-async function saveNotificationSettings() {
-  const prefs = {
-    inApp: document.getElementById('prefInApp').checked,
-    push: document.getElementById('prefPush').checked,
-    email: document.getElementById('prefEmail').checked
-  };
-  await NotificationManager.updatePreferences(prefs);
-}
-
-window.saveNotificationSettings = saveNotificationSettings;
 window.renderSettings = renderSettings;
 
 async function renderLiveClasses() {
@@ -2109,7 +2064,15 @@ document.addEventListener('DOMContentLoaded', async () => {
   const user = await initDashboard('teacher');
   if (user) {
     initNav();
-    initRealtimeSubscriptions(user.email);
+    NotificationManager.initRealtimeSubscriptions(user.email, 'teacher', () => {
+        const activeEl = document.activeElement;
+        const isTyping = activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA' || activeEl.tagName === 'SELECT');
+        if (!isTyping) {
+          if (document.querySelector('[data-page="quizzes"].active')) renderQuizzes();
+          if (document.querySelector('[data-page="grading"].active')) renderGrading();
+          if (document.querySelector('[data-page="gradebook"].active')) renderGradeBook();
+        }
+    });
     renderDashboard();
     setInterval(updateMaintBanner, 30000);
     updateMaintBanner();
