@@ -5,6 +5,7 @@
 async function renderCalendar() {
   const content = document.getElementById('pageContent');
   if (!content) return;
+  if (typeof clearActiveCountdowns === 'function') clearActiveCountdowns();
 
   const user = await SessionManager.getCurrentUser();
   const isTeacher = user.role === 'teacher';
