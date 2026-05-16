@@ -362,14 +362,12 @@ async function renderStudents() {
     const myCourseIds = myCourses.map(c => c.id);
 
     const enrollments = await SupabaseDB.getEnrollmentsByCourses(myCourseIds);
-    const users = await SupabaseDB.getUsers();
 
     const students = enrollments.map(e => {
-        const u = users.find(user => user.email === e.student_email);
-        const course = myCourses.find(c => c.id === e.course_id);
         return {
-            ...u,
-            course_title: course?.title,
+            full_name: e.users?.full_name,
+            email: e.student_email,
+            course_title: e.courses?.title,
             course_id: e.course_id
         };
     }).filter(s => s.email);

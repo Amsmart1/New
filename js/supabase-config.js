@@ -106,7 +106,7 @@ class SupabaseDB {
         if (!courseIds || courseIds.length === 0) return [];
         const { data, error } = await supabaseClient
             .from('enrollments')
-            .select('*')
+            .select('*, users(*), courses(title)')
             .in('course_id', courseIds);
         if (error) throw error;
         return data || [];
@@ -305,6 +305,17 @@ class SupabaseDB {
         if (error) throw error;
         _cache.invalidate(`enrollments_${enrollment.student_email}`);
         return data?.[0];
+    }
+
+    static async enrollInCourse(courseId, studentEmail, enrollmentId = null) {
+        const { error } = await supabaseClient.rpc('enroll_in_course', {
+            p_course_id: courseId,
+            p_student_email: studentEmail,
+            p_enrollment_id: enrollmentId
+        });
+        if (error) throw error;
+        _cache.invalidate(`enrollments_${studentEmail}`);
+        _cache.invalidate(`enrolled_courses_${studentEmail}`);
     }
 
     static async deleteEnrollment(courseId, studentEmail) {

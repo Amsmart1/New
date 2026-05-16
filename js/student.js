@@ -168,15 +168,13 @@ async function enroll(courseId) {
     const user = await SessionManager.getCurrentUser();
     const course = await SupabaseDB.getCourse(courseId);
 
+    let enrollmentId = null;
     if (course.enrollment_id) {
-        const inputId = prompt('This course requires an Enrollment ID. Please enter it:');
-        if (inputId !== course.enrollment_id) {
-            alert('Invalid Enrollment ID. Enrollment cancelled.');
-            return;
-        }
+        enrollmentId = prompt('This course requires an Enrollment ID. Please enter it:');
+        if (enrollmentId === null) return; // User cancelled prompt
     }
 
-    await SupabaseDB.saveEnrollment({ course_id: courseId, student_email: user.email });
+    await SupabaseDB.enrollInCourse(courseId, user.email, enrollmentId);
     alert('Successfully enrolled!');
     renderCourses();
   } catch (e) {

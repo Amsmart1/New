@@ -514,6 +514,49 @@ $$ LANGUAGE plpgsql;
 
 CREATE TRIGGER tr_grade_posted AFTER INSERT OR UPDATE ON submissions FOR EACH ROW EXECUTE PROCEDURE tr_notify_grade();
 
+-- Functions for syncing teacher names
+CREATE OR REPLACE FUNCTION tr_sync_course_teacher_name() RETURNS TRIGGER AS $$
+BEGIN
+  SELECT full_name INTO NEW.created_by FROM users WHERE email = NEW.teacher_email;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER tr_course_teacher_name_sync
+BEFORE INSERT OR UPDATE OF teacher_email ON courses
+FOR EACH ROW EXECUTE PROCEDURE tr_sync_course_teacher_name();
+
+CREATE OR REPLACE FUNCTION tr_update_courses_teacher_name() RETURNS TRIGGER AS $$
+BEGIN
+  IF (OLD.full_name IS DISTINCT FROM NEW.full_name) THEN
+    UPDATE courses SET created_by = NEW.full_name WHERE teacher_email = NEW.email;
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER tr_users_teacher_name_sync
+AFTER UPDATE OF full_name ON users
+FOR EACH ROW EXECUTE PROCEDURE tr_update_courses_teacher_name();
+
+-- Secure Enrollment RPC
+CREATE OR REPLACE FUNCTION enroll_in_course(p_course_id UUID, p_student_email VARCHAR, p_enrollment_id VARCHAR DEFAULT NULL)
+RETURNS VOID AS $$
+DECLARE
+  v_actual_enrollment_id VARCHAR;
+BEGIN
+  SELECT enrollment_id INTO v_actual_enrollment_id FROM courses WHERE id = p_course_id;
+
+  IF v_actual_enrollment_id IS NOT NULL AND (p_enrollment_id IS NULL OR v_actual_enrollment_id != p_enrollment_id) THEN
+    RAISE EXCEPTION 'Invalid Enrollment ID';
+  END IF;
+
+  INSERT INTO enrollments (course_id, student_email)
+  VALUES (p_course_id, p_student_email)
+  ON CONFLICT (course_id, student_email) DO NOTHING;
+END;
+$$ LANGUAGE plpgsql;
+
 -- Grant Full Permissions
 ALTER TABLE broadcasts ENABLE ROW LEVEL SECURITY;
 GRANT ALL ON ALL TABLES IN SCHEMA public TO anon, authenticated, postgres, service_role;
