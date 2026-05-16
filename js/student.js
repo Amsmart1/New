@@ -53,6 +53,7 @@ window._getDueSoonCount = _getDueSoonCount;
 async function renderCourses() {
   const container = document.getElementById('pageContent');
   if (!container) return;
+  clearActiveCountdowns();
 
   try {
     const user = await SessionManager.getCurrentUser();
@@ -127,6 +128,7 @@ function filterCatalog() {
 }
 
 async function renderMyCourses() {
+  clearActiveCountdowns();
   const user = await SessionManager.getCurrentUser();
   const [myCourses, enrollments] = await Promise.all([
     SupabaseDB.getEnrolledCourses(user.email),
@@ -336,6 +338,7 @@ async function renderAssignments(){
       <td>
         <div class="${isOverdue ? 'danger-text' : ''}">${dueDate.toLocaleDateString()}</div>
         ${isOverdue ? '<div class="small danger-text">(Overdue)</div>' : ''}
+        ${!isOverdue && !submission ? `<div class="tiny text-muted assign-due-countdown" data-target="${dueDate.getTime()}"></div>` : ''}
       </td>
       <td>${isUpcoming ? '<span class="badge badge-warn">UPCOMING</span>' : statusHtml}</td>
       <td>${submission?.grade !== undefined && submission?.grade !== null ? `
@@ -345,7 +348,7 @@ async function renderAssignments(){
       <td>
         <div class="flex gap-5">
           ${isUpcoming ? `
-              <div class="small bold purple-text assign-countdown" data-target="${startAt}"></div>
+              <div class="small bold purple-text assign-open-countdown" data-target="${startAt}"></div>
             ` : !submission ?
             `<button class="button small w-auto ${isOverdue ? 'danger' : ''}" onclick="showAssignmentForm('${a.id}')">${isOverdue ? 'Submit Late' : 'Submit'}</button>` :
             (submission.status === 'submitted' || submission.status === 'draft' ?
@@ -359,7 +362,7 @@ async function renderAssignments(){
     });
 
   // Initialize countdowns
-  document.querySelectorAll('.assign-countdown').forEach(el => {
+  document.querySelectorAll('.assign-open-countdown').forEach(el => {
       const target = parseInt(el.dataset.target);
       const c = new Countdown({
           targetDate: target,
@@ -369,6 +372,23 @@ async function renderAssignments(){
               const d = time.days > 0 ? time.days + 'd ' : '';
               const h = String(time.hours).padStart(2, '0');
               el.textContent = 'Opens in ' + d + h + 'h';
+          }
+      });
+      c.mount();
+      activeCountdowns.push(c);
+  });
+
+  document.querySelectorAll('.assign-due-countdown').forEach(el => {
+      const target = parseInt(el.dataset.target);
+      const c = new Countdown({
+          targetDate: target,
+          headless: true,
+          onEnd: () => renderAssignments(),
+          onTick: (time) => {
+              const d = time.days > 0 ? time.days + 'd ' : '';
+              const h = String(time.hours).padStart(2, '0');
+              const m = String(time.minutes).padStart(2, '0');
+              el.textContent = 'Due in: ' + d + h + 'h ' + m + 'm';
           }
       });
       c.mount();
@@ -543,6 +563,7 @@ async function viewFeedback(assignmentId) {
 
 async function renderDashboardOverview() {
   NotificationManager.initPolling();
+  clearActiveCountdowns();
   const user = await SessionManager.getCurrentUser();
 
   const [enrollments, gradedCount] = await Promise.all([
@@ -588,6 +609,7 @@ async function renderDashboardOverview() {
               <div>
                 <div class="bold">${escapeHtml(a.title)}</div>
                 <div class="tiny text-muted">Due: ${new Date(a.due_date).toLocaleDateString()}</div>
+                <div class="tiny purple-text bold dashboard-assign-countdown" data-target="${new Date(a.due_date).getTime()}"></div>
               </div>
               <button class="button small w-auto" onclick="showAssignmentForm('${a.id}')">Submit</button>
             </div>
@@ -597,9 +619,27 @@ async function renderDashboardOverview() {
       </div>
     </div>
   `;
+
+  document.querySelectorAll('.dashboard-assign-countdown').forEach(el => {
+      const target = parseInt(el.dataset.target);
+      const c = new Countdown({
+          targetDate: target,
+          headless: true,
+          onEnd: () => renderDashboardOverview(),
+          onTick: (time) => {
+              const d = time.days > 0 ? time.days + 'd ' : '';
+              const h = String(time.hours).padStart(2, '0');
+              const m = String(time.minutes).padStart(2, '0');
+              el.textContent = 'Due in: ' + d + h + 'h ' + m + 'm';
+          }
+      });
+      c.mount();
+      activeCountdowns.push(c);
+  });
 }
 
 async function renderProgress() {
+  clearActiveCountdowns();
   const user = await SessionManager.getCurrentUser();
   const [sessions, enrollments, courses] = await Promise.all([
     SupabaseDB.getStudySessions(user.email),
@@ -707,6 +747,7 @@ window.startStudySession = startStudySession;
 window.stopStudySession = stopStudySession;
 
 async function renderGrades() {
+  clearActiveCountdowns();
   const user = await SessionManager.getCurrentUser();
   const [submissions, assigns] = await Promise.all([
     SupabaseDB.getSubmissions(null, user.email),
@@ -788,6 +829,7 @@ async function renderGrades() {
 async function renderMaterials() {
   const content = document.getElementById('pageContent');
   if (!content) return;
+  clearActiveCountdowns();
 
   try {
     const user = await SessionManager.getCurrentUser();
@@ -830,6 +872,7 @@ async function renderMaterials() {
 }
 
 async function renderDiscussions() {
+  clearActiveCountdowns();
   const user = await SessionManager.getCurrentUser();
   const enrollments = await SupabaseDB.getEnrollments(user.email);
   const courses = await SupabaseDB.getCourses();
@@ -997,6 +1040,7 @@ window.filterCatalog = filterCatalog;
 window.viewStudentDiscussions = viewStudentDiscussions;
 
 async function renderCertificates() {
+  clearActiveCountdowns();
   const user = await SessionManager.getCurrentUser();
   const certs = await SupabaseDB.getCertificates(user.email);
   const container = document.getElementById('pageContent');
@@ -1017,6 +1061,7 @@ async function renderCertificates() {
 }
 
 async function renderPlanner() {
+  clearActiveCountdowns();
   const user = await SessionManager.getCurrentUser();
   const items = await SupabaseDB.getPlannerItems(user.email);
   const container = document.getElementById('pageContent');
@@ -1065,6 +1110,7 @@ async function deletePlannerItem(id) {
 async function renderLiveClasses() {
   const content = document.getElementById('pageContent');
   if (!content) return;
+  clearActiveCountdowns();
 
   try {
     const user = await SessionManager.getCurrentUser();
@@ -1072,6 +1118,7 @@ async function renderLiveClasses() {
     const enrolledCourseIds = enrollments.map(e => e.course_id);
 
     const myClasses = await SupabaseDB.getLiveClasses(null, null, enrolledCourseIds);
+    const now = Date.now();
 
     content.innerHTML = `
       <div class="card">
@@ -1080,6 +1127,9 @@ async function renderLiveClasses() {
       <div class="grid mt-20">
         ${myClasses.map(liveClass => {
           const isLive = liveClass.status === 'live';
+          const startAt = new Date(liveClass.start_at).getTime();
+          const isUpcoming = startAt > now;
+
           return `
             <div class="card">
               <div class="flex-between" style="align-items:start">
@@ -1092,7 +1142,13 @@ async function renderLiveClasses() {
               <div class="mt-15">
                 ${isLive ?
                   `<button class="button w-auto" onclick="handleJoinLiveClass('${liveClass.id}', '${liveClass.room_name}', '${escapeAttr(liveClass.meeting_url || '')}')">Join Now</button>` :
-                  `<button class="button secondary w-auto" disabled>Not Started</button>`
+                  isUpcoming ? `
+                    <div class="mb-10 p-5 border-radius-sm text-center" style="background:var(--bg); border:1px solid var(--border)">
+                        <div class="tiny bold text-muted">Starts In:</div>
+                        <div class="bold small purple-text live-countdown" data-target="${startAt}"></div>
+                    </div>
+                    <button class="button secondary w-auto" disabled>Not Started</button>
+                  ` : `<button class="button secondary w-auto" disabled>Not Started</button>`
                 }
               </div>
             </div>
@@ -1101,6 +1157,25 @@ async function renderLiveClasses() {
       </div>
       <div id="jitsi-container" class="hidden mt-20" style="height:600px; border:1px solid var(--border); border-radius:8px; overflow:hidden; position:relative"></div>
     `;
+
+    document.querySelectorAll('.live-countdown').forEach(el => {
+        const target = parseInt(el.dataset.target);
+        const c = new Countdown({
+            targetDate: target,
+            headless: true,
+            onEnd: () => renderLiveClasses(),
+            onTick: (time) => {
+                const d = time.days > 0 ? time.days + 'd ' : '';
+                const h = String(time.hours).padStart(2, '0');
+                const m = String(time.minutes).padStart(2, '0');
+                const s = String(time.seconds).padStart(2, '0');
+                el.textContent = d + h + ':' + m + ':' + s;
+            }
+        });
+        c.mount();
+        activeCountdowns.push(c);
+    });
+
   } catch (error) {
     console.error('Live Classes error:', error);
     content.innerHTML = `<div class="stat-card danger"><h3>Error Loading Live Classes</h3></div>`;
@@ -1378,9 +1453,15 @@ async function renderQuizzes() {
                     </div>
                 ` : isExpired ? `
                     <div class="badge badge-inactive w-100 text-center">Quiz Ended on ${new Date(endAt).toLocaleString()}</div>
-                ` : canAttempt ?
-                    `<button class="button w-auto small px-20" onclick="startQuiz('${q.id}')">${draft ? 'Resume Attempt' : 'Start New Attempt'}</button>` :
-                    '<div class="badge badge-inactive w-100 text-center">No Access / Attempts Used</div>'
+                ` : canAttempt ? `
+                    ${endAt !== Infinity ? `
+                        <div class="mb-10 p-5 border-radius-sm text-center" style="background:#fffcf0; border:1px solid #ffeeba">
+                            <div class="tiny bold text-muted">Ends In:</div>
+                            <div class="bold small danger-text quiz-countdown" data-target="${endAt}"></div>
+                        </div>
+                    ` : ''}
+                    <button class="button w-auto small px-20" onclick="startQuiz('${q.id}')">${draft ? 'Resume Attempt' : 'Start New Attempt'}</button>
+                ` : '<div class="badge badge-inactive w-100 text-center">No Access / Attempts Used</div>'
                 }
             </div>
           </div>

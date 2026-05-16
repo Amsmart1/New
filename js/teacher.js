@@ -1,7 +1,15 @@
+let activeCountdowns = [];
+
+function clearActiveCountdowns() {
+    activeCountdowns.forEach(c => c.destroy());
+    activeCountdowns = [];
+}
+
 async function renderDashboard() {
   NotificationManager.initPolling();
   const content = document.getElementById('pageContent');
   if (!content) return;
+  clearActiveCountdowns();
 
   try {
     const user = await SessionManager.getCurrentUser();
@@ -34,6 +42,7 @@ async function renderDashboard() {
 async function renderCourses() {
   const content = document.getElementById('pageContent');
   if (!content) return;
+  clearActiveCountdowns();
 
   try {
     const user = await SessionManager.getCurrentUser();
@@ -250,6 +259,7 @@ async function deleteCourseById(id) {
 async function renderAssignments() {
   const content = document.getElementById('pageContent');
   if (!content) return;
+  clearActiveCountdowns();
 
   try {
     const user = await SessionManager.getCurrentUser();
@@ -278,7 +288,12 @@ async function renderAssignments() {
           <h3 class="m-0">${escapeHtml(a.title)}</h3>
           <p class="small"><strong>Course:</strong> ${escapeHtml(course?.title || 'None')}</p>
           <p class="small">${escapeHtml(a.description || '')}</p>
-          <p class="small mt-10">Due: ${new Date(a.due_date).toLocaleString()}</p>
+          <div class="mt-10">
+            <p class="small m-0">Due: ${new Date(a.due_date).toLocaleString()}</p>
+            ${new Date(a.due_date) > new Date() ? `
+                <div class="bold purple-text tiny assign-countdown" data-target="${new Date(a.due_date).getTime()}"></div>
+            ` : '<div class="danger-text bold tiny">Past Due</div>'}
+          </div>
           <div class="flex gap-10 mt-15">
             <button class="button small w-auto" onclick="editAssignment('${escapeAttr(a.id)}')">Edit</button>
             <button class="button small w-auto danger" onclick="deleteAssignmentById('${escapeAttr(a.id)}')">Delete</button>
@@ -287,6 +302,24 @@ async function renderAssignments() {
 `;}).join('') || '<div class="empty">No assignments found.</div>'}
       </div>
     `;
+
+    document.querySelectorAll('.assign-countdown').forEach(el => {
+        const target = parseInt(el.dataset.target);
+        const c = new Countdown({
+            targetDate: target,
+            headless: true,
+            onEnd: () => renderAssignments(),
+            onTick: (time) => {
+                const d = time.days > 0 ? time.days + 'd ' : '';
+                const h = String(time.hours).padStart(2, '0');
+                const m = String(time.minutes).padStart(2, '0');
+                el.textContent = 'Expires in: ' + d + h + 'h ' + m + 'm';
+            }
+        });
+        c.mount();
+        activeCountdowns.push(c);
+    });
+
   } catch (error) {
     console.error('Assignments error:', error);
     content.innerHTML = `<div class="stat-card danger">
@@ -299,6 +332,7 @@ async function renderAssignments() {
 async function renderGrading() {
   const content = document.getElementById('pageContent');
   if (!content) return;
+  clearActiveCountdowns();
 
   try {
     const user = await SessionManager.getCurrentUser();
@@ -355,6 +389,7 @@ async function renderGrading() {
 async function renderStudents() {
   const content = document.getElementById('pageContent');
   if (!content) return;
+  clearActiveCountdowns();
 
   try {
     const user = await SessionManager.getCurrentUser();
@@ -796,6 +831,7 @@ async function gradeSubmission(assignmentId, studentEmail) {
 async function renderDiscussions() {
   const container = document.getElementById('pageContent');
   if (!container) return;
+  clearActiveCountdowns();
 
   try {
     const user = await SessionManager.getCurrentUser();
@@ -977,6 +1013,7 @@ window.renderSettings = renderSettings;
 async function renderLiveClasses() {
   const content = document.getElementById('pageContent');
   if (!content) return;
+  clearActiveCountdowns();
 
   try {
     const user = await SessionManager.getCurrentUser();
@@ -1009,6 +1046,11 @@ async function renderLiveClasses() {
         ${liveClasses.map(liveClass => {
           const course = courses.find(c => c.id === liveClass.course_id);
           const isLive = liveClass.status === 'live';
+          const startAt = new Date(liveClass.start_at).getTime();
+          const endAt = new Date(liveClass.end_at).getTime();
+          const now = Date.now();
+          const isUpcoming = startAt > now;
+
           return `
             <div class="card">
               <div class="flex-between" style="align-items:start">
@@ -1018,6 +1060,15 @@ async function renderLiveClasses() {
                   <p class="small"><strong>Time:</strong> ${new Date(liveClass.start_at).toLocaleString()} - ${new Date(liveClass.end_at).toLocaleTimeString()}</p>
                 </div>
                 <span class="badge ${isLive ? 'badge-active' : ''}">${liveClass.status.toUpperCase()}</span>
+              </div>
+              <div class="mt-10 mb-10 p-5 border-radius-sm" style="background:var(--bg)">
+                  ${isUpcoming ? `
+                    <div class="tiny bold">Starts In:</div>
+                    <div class="bold small purple-text live-sch-countdown" data-target="${startAt}"></div>
+                  ` : isLive ? `
+                    <div class="tiny bold">Ends In:</div>
+                    <div class="bold small danger-text live-sch-countdown" data-target="${endAt}"></div>
+                  ` : '<div class="tiny text-muted">Session Finished</div>'}
               </div>
               <div class="flex gap-10 mt-15">
                 <button class="button w-auto small" onclick="handleStartLiveClass('${liveClass.id}', '${liveClass.room_name}', '${escapeAttr(liveClass.meeting_url || '')}')">
@@ -1034,6 +1085,25 @@ async function renderLiveClasses() {
       <div id="liveFormArea" class="hidden mt-20"></div>
       <div id="jitsi-container" class="hidden mt-20" style="height:600px; border:1px solid var(--border); border-radius:8px; overflow:hidden"></div>
     `;
+
+    document.querySelectorAll('.live-sch-countdown').forEach(el => {
+        const target = parseInt(el.dataset.target);
+        const c = new Countdown({
+            targetDate: target,
+            headless: true,
+            onEnd: () => renderLiveClasses(),
+            onTick: (time) => {
+                const d = time.days > 0 ? time.days + 'd ' : '';
+                const h = String(time.hours).padStart(2, '0');
+                const m = String(time.minutes).padStart(2, '0');
+                const s = String(time.seconds).padStart(2, '0');
+                el.textContent = d + h + ':' + m + ':' + s;
+            }
+        });
+        c.mount();
+        activeCountdowns.push(c);
+    });
+
   } catch (error) {
     console.error('Live Classes error:', error);
     content.innerHTML = `<div class="card"><h3>Error Loading Live Classes</h3></div>`;
@@ -1436,6 +1506,7 @@ window.renderLiveClasses = renderLiveClasses;
 async function renderQuizzes() {
   const container = document.getElementById('pageContent');
   if (!container) return;
+  clearActiveCountdowns();
 
   try {
     const user = await SessionManager.getCurrentUser();
@@ -1457,6 +1528,17 @@ async function renderQuizzes() {
           <p class="small"><strong>Course:</strong> ${escapeHtml(course?.title || 'None')}</p>
           <p class="small">Status: ${q.status}</p>
           <p class="small">Questions: ${q.questions?.length || 0}</p>
+          ${q.start_at || q.end_at ? `
+            <div class="mt-10 mb-10 p-5 border-radius-sm" style="background:var(--bg)">
+                ${q.start_at && new Date(q.start_at) > new Date() ? `
+                    <div class="tiny bold">Starts In:</div>
+                    <div class="bold small purple-text quiz-sch-countdown" data-target="${new Date(q.start_at).getTime()}"></div>
+                ` : q.end_at && new Date(q.end_at) > new Date() ? `
+                    <div class="tiny bold">Ends In:</div>
+                    <div class="bold small danger-text quiz-sch-countdown" data-target="${new Date(q.end_at).getTime()}"></div>
+                ` : q.end_at ? '<div class="tiny danger-text bold">Expired</div>' : ''}
+            </div>
+          ` : ''}
           <div class="flex gap-10 mt-15">
             <button class="button small w-auto" onclick="editQuiz('${q.id}')">Edit</button>
             <button class="button small w-auto success" style="background:var(--ok)" onclick="viewQuizResults('${q.id}')">Results</button>
@@ -1466,6 +1548,24 @@ async function renderQuizzes() {
 `;}).join('') || '<div class="empty">No quizzes created yet.</div>'}
       </div>
     `;
+
+    document.querySelectorAll('.quiz-sch-countdown').forEach(el => {
+        const target = parseInt(el.dataset.target);
+        const c = new Countdown({
+            targetDate: target,
+            headless: true,
+            onEnd: () => renderQuizzes(),
+            onTick: (time) => {
+                const d = time.days > 0 ? time.days + 'd ' : '';
+                const h = String(time.hours).padStart(2, '0');
+                const m = String(time.minutes).padStart(2, '0');
+                el.textContent = d + h + 'h ' + m + 'm';
+            }
+        });
+        c.mount();
+        activeCountdowns.push(c);
+    });
+
   } catch (error) {
     console.error('Quizzes error:', error);
     container.innerHTML = `<div class="stat-card danger">
@@ -1801,6 +1901,7 @@ window.gradeQuizSubmission = gradeQuizSubmission;
 async function renderGradeBook() {
     const content = document.getElementById('pageContent');
     if (!content) return;
+    clearActiveCountdowns();
 
     try {
         const user = await SessionManager.getCurrentUser();
@@ -1955,6 +2056,7 @@ function initNav() {
 async function renderMaterials() {
   const content = document.getElementById('pageContent');
   if (!content) return;
+  clearActiveCountdowns();
   const user = await SessionManager.getCurrentUser();
   const courses = await SupabaseDB.getCourses(user.email);
   const courseIds = courses.map(c => c.id);

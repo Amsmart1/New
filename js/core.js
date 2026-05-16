@@ -280,6 +280,7 @@ const NotificationManager = {
             return [...personal, ...mappedBroadcasts].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
         } catch (e) {
             console.warn('Failed to fetch notifications:', e);
+            UI.showNotification('Could not update notifications. Retrying...', 'error');
             return [];
         }
     },
@@ -351,7 +352,7 @@ const NotificationManager = {
             try {
             const itemsHtml = notifications.map(n => `
                 <div class="notif-item" style="padding:10px; border-bottom:1px solid #f9f9f9; background:${n.is_read ? '#fff' : '#f0f4ff'}; cursor:pointer"
-                        onclick="${n.is_broadcast ? `NotificationManager.markBroadcastRead('${n.id}');` : ''} ${n.link ? `window.location.href='${escapeAttr(n.link)}'` : ''}">
+                        onclick="NotificationManager.handleNotificationClick('${n.id}', ${n.is_broadcast}, '${n.link || ''}')">
                     <div style="font-weight:600; font-size:13px">${n.is_broadcast ? '📢 ' : ''}${escapeHtml(n.title)}</div>
                     <div style="font-size:12px; color:#444">${escapeHtml(n.message)}</div>
                     <div style="font-size:10px; color:#999; margin-top:4px">${new Date(n.created_at).toLocaleString()}</div>
@@ -374,10 +375,30 @@ const NotificationManager = {
         // Browser notification for new unread ones
         const lastCount = parseInt(sessionStorage.getItem('lastNotifCount') || '0');
         if (unreadCount > lastCount) {
-            const latest = notifications[notifications.length - 1];
-        if (latest) this.sendBrowserNotification(latest.title, latest.message);
+            // Newest notifications are first in the list
+            const latest = notifications.find(n => !n.is_read);
+            if (latest) this.sendBrowserNotification(latest.title, latest.message);
         }
         sessionStorage.setItem('lastNotifCount', unreadCount);
+    },
+
+    async handleNotificationClick(id, isBroadcast, link) {
+        if (isBroadcast) {
+            this.markBroadcastRead(id);
+        } else {
+            try {
+                const user = await SessionManager.getCurrentUser();
+                if (user) {
+                    await SupabaseDB.markNotificationsAsRead(user.email, id);
+                    this.updateUI();
+                }
+            } catch (e) {
+                console.warn('Failed to mark notification as read:', e);
+            }
+        }
+        if (link) {
+            window.location.href = link;
+        }
     },
 
     markBroadcastRead(id) {
@@ -447,19 +468,27 @@ const NotificationManager = {
         }
 
         // Global event delegation for the notification bell
-        document.addEventListener('click', (e) => {
-            const bell = e.target.closest('#notifBell') || e.target.closest('#unreadCount');
-            const list = document.getElementById('notifList');
+        if (!document.documentElement.hasAttribute('data-notif-listener')) {
+            document.documentElement.setAttribute('data-notif-listener', 'true');
+            document.addEventListener('click', (e) => {
+                const bell = e.target.closest('#notifBell') || e.target.closest('#unreadCount');
+                const list = document.getElementById('notifList');
 
-            if (bell) {
-                e.stopPropagation();
-                if (list) list.classList.toggle('active');
-            } else if (list && list.classList.contains('active')) {
-                if (!list.contains(e.target)) {
-                    list.classList.remove('active');
+                if (bell) {
+                    e.stopPropagation();
+                    if (list) {
+                        const isActive = list.classList.contains('active');
+                        // Close all other dropdowns if any, then toggle this one
+                        document.querySelectorAll('.notif-list.active').forEach(el => el.classList.remove('active'));
+                        if (!isActive) list.classList.add('active');
+                    }
+                } else if (list && list.classList.contains('active')) {
+                    if (!list.contains(e.target)) {
+                        list.classList.remove('active');
+                    }
                 }
-            }
-        });
+            });
+        }
     },
 
     initRealtimeSubscriptions(email, role, onTableChange = null) {
