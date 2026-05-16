@@ -469,8 +469,7 @@ async function updateMaintBanner() {
         if (!maintCountdown) {
             maintCountdown = new Countdown({
                 targetDate: targetDate,
-                className: 'maint-timer',
-                showIcon: false,
+                headless: true,
                 onEnd: () => {
                     maintCountdown = null;
                     updateMaintBanner();
@@ -490,16 +489,13 @@ async function updateMaintBanner() {
                     });
                 }
             });
-            // Override the renderInitialDOM to avoid rendering the default units
-            maintCountdown.renderInitialDOM = () => {};
         } else {
             maintCountdown.setTargetDate(targetDate);
         }
 
         // Ensure it is "mounted" (subscribed to TimerManager)
         if (!maintCountdown.mounted) {
-            // We don't use a real selector for mount since we handle multiple IDs in update()
-            maintCountdown.mount(document.createElement('div'));
+            maintCountdown.mount();
         }
         maintCountdown.update();
     } else {

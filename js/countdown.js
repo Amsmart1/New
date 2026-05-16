@@ -182,6 +182,7 @@
             this.targetDate = options.targetDate;
             this.onEnd = options.onEnd || null;
             this.onTick = options.onTick || null;
+            this.headless = options.headless === true;
             this.className = Utils.sanitizeClassName(
                 options.className
             );
@@ -210,16 +211,20 @@
                 this.destroy();
             }
 
-            this.container =
-                typeof selector === 'string'
-                    ? document.querySelector(selector)
-                    : selector;
+            if (this.headless) {
+                this.container = null;
+            } else {
+                this.container =
+                    typeof selector === 'string'
+                        ? document.querySelector(selector)
+                        : selector;
 
-            if (!this.container) {
-                console.error(
-                    `Countdown element not found: ${selector}`
-                );
-                return this;
+                if (!this.container) {
+                    console.error(
+                        `Countdown element not found: ${selector}`
+                    );
+                    return this;
+                }
             }
 
             this.targetTimestamp = Utils.parseDate(
@@ -227,7 +232,7 @@
             );
 
             if (!this.targetTimestamp) {
-                this.container.innerHTML = '';
+                if (!this.headless) this.container.innerHTML = '';
                 return this;
             }
 
@@ -279,6 +284,7 @@
         }
 
         renderInitialDOM() {
+            if (this.headless) return;
             const iconSize = this.compact ? 14 : 18;
 
             // Check if we already have a countdown display
@@ -325,7 +331,7 @@
         update() {
             if (!this.mounted) return;
 
-            if (this.container && !document.body.contains(this.container)) {
+            if (!this.headless && this.container && !document.body.contains(this.container)) {
                 this.destroy();
                 return;
             }
@@ -350,30 +356,32 @@
                 return;
             }
 
-            this.elements.days.textContent =
-                time.days > 0
-                    ? `${time.days}d `
-                    : '';
+            if (!this.headless) {
+                this.elements.days.textContent =
+                    time.days > 0
+                        ? `${time.days}d `
+                        : '';
 
-            this.elements.hours.textContent =
-                time.days > 0 || time.hours > 0
-                    ? `${String(time.hours).padStart(
-                          2,
-                          '0'
-                      )}h `
-                    : '';
+                this.elements.hours.textContent =
+                    time.days > 0 || time.hours > 0
+                        ? `${String(time.hours).padStart(
+                              2,
+                              '0'
+                          )}h `
+                        : '';
 
-            this.elements.minutes.textContent =
-                `${String(time.minutes).padStart(
-                    2,
-                    '0'
-                )}m `;
+                this.elements.minutes.textContent =
+                    `${String(time.minutes).padStart(
+                        2,
+                        '0'
+                    )}m `;
 
-            this.elements.seconds.textContent =
-                `${String(time.seconds).padStart(
-                    2,
-                    '0'
-                )}s`;
+                this.elements.seconds.textContent =
+                    `${String(time.seconds).padStart(
+                        2,
+                        '0'
+                    )}s`;
+            }
         }
 
         handleEnd() {
@@ -381,28 +389,30 @@
 
             this.hasEndedCalled = true;
 
-            if (this.endLabel === null) {
-                const display = this.container.querySelector(':scope > .countdown-display');
-                if (display) display.remove();
-            } else {
-                let display = this.container.querySelector(':scope > .countdown-display');
-                if (!display) {
-                    display = document.createElement('div');
-                    display.className = 'countdown-display';
-                    this.container.appendChild(display);
+            if (!this.headless) {
+                if (this.endLabel === null) {
+                    const display = this.container.querySelector(':scope > .countdown-display');
+                    if (display) display.remove();
+                } else {
+                    let display = this.container.querySelector(':scope > .countdown-display');
+                    if (!display) {
+                        display = document.createElement('div');
+                        display.className = 'countdown-display';
+                        this.container.appendChild(display);
+                    }
+                    display.innerHTML = `
+                        <span class="countdown-ended">
+                            ${
+                                this.showIcon
+                                    ? Icons.Clock(12)
+                                    : ''
+                            }
+                            ${Utils.escapeHtml(
+                                this.endLabel
+                            )}
+                        </span>
+                    `;
                 }
-                display.innerHTML = `
-                    <span class="countdown-ended">
-                        ${
-                            this.showIcon
-                                ? Icons.Clock(12)
-                                : ''
-                        }
-                        ${Utils.escapeHtml(
-                            this.endLabel
-                        )}
-                    </span>
-                `;
             }
 
             if (typeof this.onEnd === 'function') {
