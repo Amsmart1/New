@@ -83,6 +83,8 @@ CREATE TABLE courses (
   title VARCHAR(255) NOT NULL,
   description TEXT,
   teacher_email VARCHAR(255) REFERENCES users(email) ON UPDATE CASCADE ON DELETE SET NULL,
+  created_by VARCHAR(255), -- Stores teacher's full name
+  enrollment_id VARCHAR(255), -- Optional ID required for student enrollment
   status VARCHAR(50) DEFAULT 'draft' CHECK (status IN ('draft', 'published', 'archived')),
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),

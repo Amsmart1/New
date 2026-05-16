@@ -97,6 +97,10 @@ function showCourseForm(course = null) {
             <textarea id="courseDescription" placeholder="Description" rows="4">${isEdit ? escapeHtml(course.description || '') : ''}</textarea>
           </div>
           <div>
+            <label>Enrollment ID (Optional)</label>
+            <input type="text" id="courseEnrollmentId" placeholder="Require ID for enrollment" value="${isEdit ? escapeHtml(course.enrollment_id || '') : ''}">
+          </div>
+          <div>
             <label>Status</label>
             <select id="courseStatus">
               <option value="draft" ${isEdit && course.status === 'draft' ? 'selected' : ''}>Draft</option>
@@ -122,8 +126,10 @@ function showCourseForm(course = null) {
         id: courseId,
         title: document.getElementById('courseTitle').value,
         description: document.getElementById('courseDescription').value,
+        enrollment_id: document.getElementById('courseEnrollmentId').value || null,
         status: document.getElementById('courseStatus').value,
-        teacher_email: user.email
+        teacher_email: user.email,
+        created_by: user.full_name
       };
 
       await SupabaseDB.saveCourse(courseData);
@@ -355,24 +361,37 @@ async function renderStudents() {
     const myCourses = await SupabaseDB.getCourses(user.email);
     const myCourseIds = myCourses.map(c => c.id);
 
-    const students = await SupabaseDB.getEnrolledStudents(myCourseIds);
+    const enrollments = await SupabaseDB.getEnrollmentsByCourses(myCourseIds);
+    const users = await SupabaseDB.getUsers();
+
+    const students = enrollments.map(e => {
+        const u = users.find(user => user.email === e.student_email);
+        const course = myCourses.find(c => c.id === e.course_id);
+        return {
+            ...u,
+            course_title: course?.title,
+            course_id: e.course_id
+        };
+    }).filter(s => s.email);
 
     content.innerHTML = `
     <div class="card">
       <h2 class="m-0">My Enrolled Students</h2>
       <div class="p-0 mt-15" style="overflow-x:auto">
           <table>
-            <thead><tr><th>Name</th><th>Email</th><th>Action</th></tr></thead>
+            <thead><tr><th>Name</th><th>Email</th><th>Course</th><th>Action</th></tr></thead>
             <tbody>
               ${students.map(s => `
                 <tr>
                   <td>${escapeHtml(s.full_name)}</td>
                   <td>${escapeHtml(s.email)}</td>
-                  <td>
+                  <td>${escapeHtml(s.course_title || 'Unknown')}</td>
+                  <td class="flex gap-10">
                     <button class="button small w-auto" onclick="showCertForm('${escapeAttr(s.email)}')">Issue Certificate</button>
+                    <button class="button danger small w-auto" onclick="unenrollStudent('${escapeAttr(s.course_id)}', '${escapeAttr(s.email)}')">Unenroll</button>
                   </td>
                 </tr>
-              `).join('') || '<tr><td colspan="3" class="empty">No students enrolled.</td></tr>'}
+              `).join('') || '<tr><td colspan="4" class="empty">No students enrolled.</td></tr>'}
             </tbody>
           </table>
       </div>
@@ -388,6 +407,18 @@ async function renderStudents() {
     </div>`;
   }
 }
+
+async function unenrollStudent(courseId, studentEmail) {
+  if (!confirm('Are you sure you want to completely unenroll this student? This will delete all their progress in this course.')) return;
+  try {
+    await SupabaseDB.deleteEnrollment(courseId, studentEmail);
+    alert('Student unenrolled successfully.');
+    renderStudents();
+  } catch (e) {
+    alert('Unenrollment failed: ' + e.message);
+  }
+}
+window.unenrollStudent = unenrollStudent;
 
 async function showCertForm(studentEmail) {
   const user = await SessionManager.getCurrentUser();

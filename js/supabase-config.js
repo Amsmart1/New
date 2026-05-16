@@ -307,6 +307,16 @@ class SupabaseDB {
         return data?.[0];
     }
 
+    static async deleteEnrollment(courseId, studentEmail) {
+        const { error } = await supabaseClient
+            .from('enrollments')
+            .delete()
+            .match({ course_id: courseId, student_email: studentEmail });
+        if (error) throw error;
+        _cache.invalidate(`enrollments_${studentEmail}`);
+        _cache.invalidate(`enrolled_courses_${studentEmail}`);
+    }
+
     static async markLessonComplete(courseId, studentEmail, lessonId) {
         const { data: enrollment, error: fetchError } = await supabaseClient
             .from('enrollments')
