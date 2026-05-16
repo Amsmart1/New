@@ -323,18 +323,56 @@ const NotificationManager = {
         const user = await SessionManager.getCurrentUser();
         if (!user) return;
 
-        const notifications = await this.fetchNotifications();
+        try {
+            const notifications = await this.fetchNotifications();
 
-        // Mark personal notifications in DB
-        await SupabaseDB.markNotificationsAsRead(user.email);
+            // Mark personal notifications in DB
+            await SupabaseDB.markNotificationsAsRead(user.email);
 
-        // Mark broadcasts in localStorage
-        const broadcastIds = notifications.filter(n => n.is_broadcast).map(n => n.id);
-        const readBroadcasts = JSON.parse(localStorage.getItem(`read_broadcasts_${user.email}`) || '[]');
-        const updatedRead = [...new Set([...readBroadcasts, ...broadcastIds])];
-        localStorage.setItem(`read_broadcasts_${user.email}`, JSON.stringify(updatedRead));
+            // Mark broadcasts in localStorage
+            const broadcastIds = notifications.filter(n => n.is_broadcast).map(n => n.id);
+            const readBroadcasts = JSON.parse(localStorage.getItem(`read_broadcasts_${user.email}`) || '[]');
+            const updatedRead = [...new Set([...readBroadcasts, ...broadcastIds])];
+            localStorage.setItem(`read_broadcasts_${user.email}`, JSON.stringify(updatedRead));
 
-        this.updateUI();
+            this.updateUI();
+            UI.showNotification('All notifications marked as read', 'success');
+        } catch (e) {
+            console.error('Failed to mark all as read:', e);
+        }
+    },
+
+    async clearAll() {
+        if (!confirm('Are you sure you want to clear all notification history? Broadcasts will only be hidden.')) return;
+
+        const user = await SessionManager.getCurrentUser();
+        if (!user) return;
+
+        try {
+            const notifications = await this.fetchNotifications();
+
+            // Mark all broadcasts as read (effectively hiding them if they are filtered by is_read elsewhere,
+            // but here we just follow the "Mark All as Read" logic for broadcasts)
+            const broadcastIds = notifications.filter(n => n.is_broadcast).map(n => n.id);
+            const readBroadcasts = JSON.parse(localStorage.getItem(`read_broadcasts_${user.email}`) || '[]');
+            const updatedRead = [...new Set([...readBroadcasts, ...broadcastIds])];
+            localStorage.setItem(`read_broadcasts_${user.email}`, JSON.stringify(updatedRead));
+
+            // Actually delete personal notifications for this user
+            const { error } = await window.supabaseClient
+                .from('notifications')
+                .delete()
+                .eq('user_email', user.email);
+
+            if (error) throw error;
+
+            SupabaseDB.invalidateCache(`notifications_${user.email}`);
+            this.updateUI();
+            UI.showNotification('Notifications cleared', 'info');
+        } catch (e) {
+            console.error('Failed to clear notifications:', e);
+            UI.showNotification('Error clearing notifications', 'error');
+        }
     },
 
     async updateUI() {
@@ -351,20 +389,31 @@ const NotificationManager = {
         if (list) {
             try {
             const itemsHtml = notifications.map(n => `
-                <div class="notif-item" style="padding:10px; border-bottom:1px solid #f9f9f9; background:${n.is_read ? '#fff' : '#f0f4ff'}; cursor:pointer"
-                        onclick="NotificationManager.handleNotificationClick('${n.id}', ${n.is_broadcast}, '${n.link || ''}')">
-                    <div style="font-weight:600; font-size:13px">${n.is_broadcast ? '📢 ' : ''}${escapeHtml(n.title)}</div>
-                    <div style="font-size:12px; color:#444">${escapeHtml(n.message)}</div>
-                    <div style="font-size:10px; color:#999; margin-top:4px">${new Date(n.created_at).toLocaleString()}</div>
+                <div class="notif-item" style="padding:12px; border-bottom:1px solid #f0f0f0; background:${n.is_read ? '#fff' : '#f0f4ff'}; cursor:pointer; transition: background 0.2s"
+                        onclick="NotificationManager.handleNotificationClick('${n.id}', ${!!n.is_broadcast}, '${n.link || ''}')">
+                    <div style="display:flex; justify-content:space-between; align-items:start">
+                        <div style="font-weight:600; font-size:13px; color:var(--text)">${n.is_broadcast ? '📢 ' : ''}${escapeHtml(n.title)}</div>
+                        ${!n.is_read ? '<div style="width:8px; height:8px; background:var(--purple); border-radius:50%; margin-top:4px"></div>' : ''}
+                    </div>
+                    <div style="font-size:12px; color:#555; margin-top:4px; line-height:1.4">${escapeHtml(n.message)}</div>
+                    <div style="font-size:10px; color:#999; margin-top:8px; display:flex; justify-content:space-between">
+                        <span>${new Date(n.created_at).toLocaleString()}</span>
+                        ${n.is_broadcast ? '<span style="color:var(--purple); font-weight:bold">BROADCAST</span>' : ''}
+                    </div>
                 </div>
             `).join('');
 
             list.innerHTML = `
-                <div style="padding:10px; border-bottom:1px solid #eee; display:flex; justify-content:space-between; align-items:center">
-                    <strong>Notifications</strong>
-                    <button class="button secondary" style="padding:2px 6px; font-size:10px; width:auto; margin:0" onclick="NotificationManager.markAllAsRead(); event.stopPropagation();">Mark all as read</button>
+                <div style="padding:12px; border-bottom:1px solid #eee; display:flex; justify-content:space-between; align-items:center; background:#fafafa; position:sticky; top:0; z-index:10">
+                    <strong style="font-size:14px">Notifications</strong>
+                    <div class="flex gap-5">
+                        <button class="button secondary tiny" style="width:auto; margin:0" onclick="NotificationManager.markAllAsRead(); event.stopPropagation();">Mark Read</button>
+                        <button class="button danger tiny" style="width:auto; margin:0; background:#fee2e2; color:#b91c1c" onclick="NotificationManager.clearAll(); event.stopPropagation();">Clear All</button>
+                    </div>
                 </div>
-                ${notifications.length === 0 ? '<div style="padding:20px; text-align:center; color:#666">No notifications</div>' : itemsHtml}
+                <div class="notif-items-container" style="max-height:350px; overflow-y:auto">
+                    ${notifications.length === 0 ? '<div style="padding:40px 20px; text-align:center; color:#999"><div style="font-size:32px; margin-bottom:10px">🔔</div>No notifications yet</div>' : itemsHtml}
+                </div>
             `;
             } catch (e) {
                 console.warn('Error updating notif list:', e);
@@ -397,6 +446,25 @@ const NotificationManager = {
             }
         }
         if (link) {
+            // Internal deep linking support
+            if (link.startsWith('student.html') || link.startsWith('teacher.html') || link.startsWith('admin.html')) {
+                const url = new URL(link, window.location.origin);
+                const page = url.searchParams.get('page');
+
+                // If we are already on the same dashboard, use internal navigation
+                const currentDashboard = window.location.pathname.split('/').pop();
+                const targetDashboard = link.split('?')[0];
+
+                if (currentDashboard === targetDashboard && page) {
+                    const navBtn = document.querySelector(`nav button[data-page="${page}"]`);
+                    if (navBtn) {
+                        navBtn.click();
+                        // Close notification list
+                        document.getElementById('notifList')?.classList.remove('active');
+                        return;
+                    }
+                }
+            }
             window.location.href = link;
         }
     },

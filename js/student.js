@@ -1915,7 +1915,21 @@ document.addEventListener('DOMContentLoaded', async () => {
     NotificationManager.initRealtimeSubscriptions(user.email, 'student', () => {
         if (!currentQuiz) renderQuizzes();
     });
-    renderDashboardOverview();
+
+    // Deep linking support
+    const urlParams = new URLSearchParams(window.location.search);
+    const page = urlParams.get('page');
+    if (page) {
+        const navBtn = document.querySelector(`nav button[data-page="${page}"]`);
+        if (navBtn) {
+            navBtn.click();
+        } else {
+            renderDashboardOverview();
+        }
+    } else {
+        renderDashboardOverview();
+    }
+
     setInterval(updateMaintBanner, 30000);
     updateMaintBanner();
     const logoutBtn = document.getElementById('logoutBtn');

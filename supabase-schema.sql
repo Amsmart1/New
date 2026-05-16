@@ -595,6 +595,12 @@ GRANT ALL ON ALL TABLES IN SCHEMA public TO anon, authenticated, postgres, servi
 GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO anon, authenticated, postgres, service_role;
 GRANT ALL ON ALL FUNCTIONS IN SCHEMA public TO anon, authenticated, postgres, service_role;
 
+-- Server Time Helper
+CREATE OR REPLACE FUNCTION get_server_time()
+RETURNS TIMESTAMP WITH TIME ZONE AS $$
+  SELECT NOW();
+$$ LANGUAGE sql STABLE;
+
 -- Insert default maintenance record
 -- Insert default maintenance record idempotently
 INSERT INTO maintenance (enabled, schedules)
