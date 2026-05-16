@@ -97,40 +97,9 @@ const Auth = {
     },
 
     async updateMaintBanners(existingM = null) {
-        const m = existingM || await this.getMaintenance();
-        const b = this.mountMaintBanners();
-        const banners = [b.landing, b.signup, b.login, b.reset];
-        const showText = (el, text) => { 
-            if (!el) return; 
-            if (text) { 
-                el.style.display = 'block'; 
-                el.textContent = text; 
-            } else { 
-                el.style.display = 'none'; 
-                el.textContent = ''; 
-            } 
-        };
-        
-        if (isActiveMaintenance(m)) {
-            const until = getActiveMaintenanceEnd(m);
-            const remain = Math.max(0, (until || Date.now()) - Date.now());
-            const h = Math.floor(remain / 3600000);
-            const mm = Math.floor((remain % 3600000) / 60000);
-            const ss = Math.floor((remain % 60000) / 1000);
-            const msg = `System maintenance ACTIVE — restores in ${h}h ${mm}m ${ss}s (until ${new Date(until || Date.now()).toLocaleString()})`;
-            banners.forEach(el => showText(el, msg));
-        } else {
-            const up = getUpcomingMaintenance(m);
-            if (up) {
-                const remain = Math.max(0, new Date(up.startAt).getTime() - Date.now());
-                const h = Math.floor(remain / 3600000);
-                const mm = Math.floor((remain % 3600000) / 60000);
-                const ss = Math.floor((remain % 60000) / 1000);
-                const msg = `Upcoming system maintenance — starts in ${h}h ${mm}m ${ss}s (at ${new Date(up.startAt).toLocaleString()})`;
-                banners.forEach(el => showText(el, msg));
-            } else {
-                banners.forEach(el => showText(el, null));
-            }
+        // Delegate to global updateMaintBanner if core.js is loaded
+        if (typeof updateMaintBanner === 'function') {
+            return updateMaintBanner();
         }
     },
 

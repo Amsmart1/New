@@ -473,8 +473,16 @@ async function showAssignmentForm(assignment = null, courseId = null) {
         <label>Description</label>
         <textarea id="assignmentDescription" placeholder="Description" rows="4">${isEdit ? escapeHtml(assignment.description) : ''}</textarea>
 
-        <label>Due Date</label>
-        <input type="datetime-local" id="assignmentDueDate" value="${isEdit ? new Date(assignment.due_date).toISOString().slice(0, 16) : ''}" required>
+        <div class="grid-2">
+          <div>
+            <label>Release Date</label>
+            <input type="datetime-local" id="assignmentStartAt" value="${isEdit && assignment.start_at ? new Date(assignment.start_at).toISOString().slice(0, 16) : ''}">
+          </div>
+          <div>
+            <label>Due Date</label>
+            <input type="datetime-local" id="assignmentDueDate" value="${isEdit && assignment.due_date ? new Date(assignment.due_date).toISOString().slice(0, 16) : ''}" required>
+          </div>
+        </div>
 
         <div class="grid-3 mt-10">
           <div><label class="small">Max Points:</label><input type="number" id="assignmentPoints" value="${isEdit ? assignment.points_possible : 0}" readonly style="background:#f0f0f0"></div>
@@ -578,6 +586,7 @@ async function showAssignmentForm(assignment = null, courseId = null) {
         course_id: selCourseId,
         title: document.getElementById('assignmentTitle').value,
         description: document.getElementById('assignmentDescription').value,
+        start_at: document.getElementById('assignmentStartAt').value ? new Date(document.getElementById('assignmentStartAt').value).toISOString() : null,
         due_date: new Date(document.getElementById('assignmentDueDate').value).toISOString(),
         points_possible: parseInt(document.getElementById('assignmentPoints').value) || 100,
         late_penalty_per_day: parseInt(document.getElementById('assignmentLatePenalty').value) || 0,
@@ -1179,24 +1188,31 @@ let jitsiAPI = null;
 let liveClassTimer = null;
 
 function startLiveClassTimer(id, endAt) {
-    if (liveClassTimer) clearInterval(liveClassTimer);
+    if (liveClassTimer instanceof Countdown) liveClassTimer.destroy();
+    else if (liveClassTimer) clearInterval(liveClassTimer);
+
     window._warnedEnd = false;
     const endTime = new Date(endAt).getTime();
 
-    liveClassTimer = setInterval(() => {
-        const now = Date.now();
-        if (now >= endTime) {
-            clearInterval(liveClassTimer);
+    liveClassTimer = new Countdown({
+        targetDate: endTime,
+        headless: true,
+        onEnd: () => {
             if (confirm('Scheduled class time has reached. Do you want to extend by 15 minutes? Press Cancel to end class.')) {
                 extendLiveClass(id, 15);
             } else {
                 stopLiveClass(id);
             }
-        } else if (endTime - now <= 5 * 60 * 1000 && !window._warnedEnd) {
-            window._warnedEnd = true;
-            UI.showNotification('Class ends in 5 minutes', 'warn');
+        },
+        onTick: (time) => {
+            if (time.total <= 5 * 60 * 1000 && !window._warnedEnd && time.total > 0) {
+                window._warnedEnd = true;
+                UI.showNotification('Class ends in 5 minutes', 'warn');
+            }
         }
-    }, 30000);
+    });
+
+    liveClassTimer.mount();
 }
 
 async function handleStartLiveClass(id, roomName, meetingUrl) {
@@ -1321,7 +1337,8 @@ async function startTeacherLiveClass(id, roomName) {
     container.classList.add('hidden');
     if (modControls) modControls.classList.add('hidden');
     if (stopBtn) stopBtn.classList.add('hidden');
-    if (liveClassTimer) clearInterval(liveClassTimer);
+    if (liveClassTimer instanceof Countdown) liveClassTimer.destroy();
+    else if (liveClassTimer) clearInterval(liveClassTimer);
 
     // Only set status back to scheduled if the teacher didn't stop the class manually
     try {
@@ -1496,6 +1513,10 @@ async function showQuizForm(quiz = null) {
           <div><label class="small">Attempts Allowed:</label><input type="number" id="quizAttempts" value="${isEdit ? quiz.attempts_allowed : 1}" min="1"></div>
         </div>
         <div class="grid-2 mt-10">
+          <div><label class="small">Available From:</label><input type="datetime-local" id="quizStartAt" value="${isEdit && quiz.start_at ? new Date(quiz.start_at).toISOString().slice(0, 16) : ''}"></div>
+          <div><label class="small">Available Until:</label><input type="datetime-local" id="quizEndAt" value="${isEdit && quiz.end_at ? new Date(quiz.end_at).toISOString().slice(0, 16) : ''}"></div>
+        </div>
+        <div class="grid-2 mt-10">
           <div><label class="small">Passing Score (%):</label><input type="number" id="quizPassingScore" value="${isEdit ? quiz.passing_score : 60}" min="0" max="100"></div>
           <div>
             <label class="small">Shuffle Questions?</label>
@@ -1627,6 +1648,8 @@ window.shuffleQuizQuestions = () => {
         time_limit: parseInt(document.getElementById('quizLimit').value) || 0,
         attempts_allowed: parseInt(document.getElementById('quizAttempts').value) || 1,
         passing_score: parseInt(document.getElementById('quizPassingScore').value) || 60,
+        start_at: document.getElementById('quizStartAt').value ? new Date(document.getElementById('quizStartAt').value).toISOString() : null,
+        end_at: document.getElementById('quizEndAt').value ? new Date(document.getElementById('quizEndAt').value).toISOString() : null,
         shuffle_questions: document.getElementById('quizShuffle').value === 'true',
         status: document.getElementById('quizStatus').value,
         questions,

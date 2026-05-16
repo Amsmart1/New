@@ -416,6 +416,8 @@ const NotificationManager = {
     }
 };
 
+let maintCountdown = null;
+
 async function updateMaintBanner() {
     let m;
     try {
@@ -449,33 +451,63 @@ async function updateMaintBanner() {
 
     const ids = ['maintBanner', 'maintBannerSignup', 'maintBannerLogin', 'maintBannerReset'];
     
-    let content = '';
+    let targetDate = null;
+    let labelPrefix = '';
 
     if (isActiveMaintenance(m)) {
-        const until = getActiveMaintenanceEnd(m);
-        const remain = Math.max(0, (until || Date.now()) - Date.now());
-        const h = Math.floor(remain / 3600000), mm = Math.floor((remain % 3600000) / 60000), ss = Math.floor((remain % 60000) / 1000);
-        content = `System maintenance ACTIVE — restores in ${h}h ${mm}m ${ss}s (until ${new Date(until || Date.now()).toLocaleString()})`;
+        targetDate = getActiveMaintenanceEnd(m);
+        labelPrefix = 'System maintenance ACTIVE — restores in ';
     } else {
         const up = getUpcomingMaintenance(m);
         if (up) {
-            const remain = Math.max(0, new Date(up.startAt).getTime() - Date.now());
-            const h = Math.floor(remain / 3600000), mm = Math.floor((remain % 3600000) / 60000), ss = Math.floor((remain % 60000) / 1000);
-            content = `Upcoming system maintenance — starts in ${h}h ${mm}m ${ss}s (at ${new Date(up.startAt).toLocaleString()})`;
+            targetDate = new Date(up.startAt).getTime();
+            labelPrefix = 'Upcoming system maintenance — starts in ';
         }
     }
 
-    ids.forEach(id => {
-        const b = document.getElementById(id);
-        if (b) {
-            if (content) {
-                b.style.display = 'block';
-                b.textContent = content;
-            } else {
-                b.style.display = 'none';
-            }
+    if (targetDate) {
+        if (!maintCountdown) {
+            maintCountdown = new Countdown({
+                targetDate: targetDate,
+                headless: true,
+                onEnd: () => {
+                    maintCountdown = null;
+                    updateMaintBanner();
+                },
+                onTick: (time) => {
+                    const h = Math.floor(time.total / 3600000);
+                    const mm = Math.floor((time.total % 3600000) / 60000);
+                    const ss = Math.floor((time.total % 60000) / 1000);
+                    const timeStr = `${h}h ${mm}m ${ss}s (at ${new Date(targetDate).toLocaleString()})`;
+
+                    ids.forEach(id => {
+                        const b = document.getElementById(id);
+                        if (b) {
+                            b.style.display = 'block';
+                            b.textContent = labelPrefix + timeStr;
+                        }
+                    });
+                }
+            });
+        } else {
+            maintCountdown.setTargetDate(targetDate);
         }
-    });
+
+        // Ensure it is "mounted" (subscribed to TimerManager)
+        if (!maintCountdown.mounted) {
+            maintCountdown.mount();
+        }
+        maintCountdown.update();
+    } else {
+        ids.forEach(id => {
+            const b = document.getElementById(id);
+            if (b) b.style.display = 'none';
+        });
+        if (maintCountdown) {
+            maintCountdown.destroy();
+            maintCountdown = null;
+        }
+    }
 }
 
 window.normalizeEmail = function(email) {

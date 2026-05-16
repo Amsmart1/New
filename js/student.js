@@ -1,3 +1,10 @@
+let activeCountdowns = [];
+
+function clearActiveCountdowns() {
+    activeCountdowns.forEach(c => c.destroy());
+    activeCountdowns = [];
+}
+
 async function updateHeaderStats() {
   try {
   const me = await SessionManager.getCurrentUser();
@@ -236,6 +243,7 @@ window.stopAndNavigateToViewCourse = stopAndNavigateToViewCourse;
 async function renderAssignments(){
   const container = document.getElementById('pageContent');
   if (!container) return;
+  clearActiveCountdowns();
 
   try {
     const user = await SessionManager.getCurrentUser();
@@ -286,6 +294,9 @@ async function renderAssignments(){
   mine.forEach(a => {
     if (a.status !== 'published') return;
 
+    const startAt = a.start_at ? new Date(a.start_at).getTime() : 0;
+    const isUpcoming = startAt > now;
+
     // Check if it's past due and late submissions are NOT allowed
     const dueDate = new Date(a.due_date);
     const isPastDue = dueDate.getTime() < now;
@@ -316,14 +327,16 @@ async function renderAssignments(){
         <div class="${isOverdue ? 'danger-text' : ''}">${dueDate.toLocaleDateString()}</div>
         ${isOverdue ? '<div class="small danger-text">(Overdue)</div>' : ''}
       </td>
-      <td>${statusHtml}</td>
+      <td>${isUpcoming ? '<span class="badge badge-warn">UPCOMING</span>' : statusHtml}</td>
       <td>${submission?.grade !== undefined && submission?.grade !== null ? `
           <div class="success-text bold">${submission.final_grade}%</div>
           <div class="tiny text-muted">${submission.grade} / ${a.points_possible}</div>
         ` : '-'}</td>
       <td>
         <div class="flex gap-5">
-          ${!submission ?
+          ${isUpcoming ? `
+              <div class="small bold purple-text assign-countdown" data-target="${startAt}"></div>
+            ` : !submission ?
             `<button class="button small w-auto ${isOverdue ? 'danger' : ''}" onclick="showAssignmentForm('${a.id}')">${isOverdue ? 'Submit Late' : 'Submit'}</button>` :
             (submission.status === 'submitted' || submission.status === 'draft' ?
               `<button class="button secondary small w-auto" onclick="showAssignmentForm('${a.id}')">View/Edit</button>` :
@@ -334,6 +347,24 @@ async function renderAssignments(){
     `;
     tbody.appendChild(row);
     });
+
+  // Initialize countdowns
+  document.querySelectorAll('.assign-countdown').forEach(el => {
+      const target = parseInt(el.dataset.target);
+      const c = new Countdown({
+          targetDate: target,
+          headless: true,
+          onEnd: () => renderAssignments(),
+          onTick: (time) => {
+              const d = time.days > 0 ? time.days + 'd ' : '';
+              const h = String(time.hours).padStart(2, '0');
+              el.textContent = 'Opens in ' + d + h + 'h';
+          }
+      });
+      c.mount();
+      activeCountdowns.push(c);
+  });
+
   } catch (error) {
     console.error('Assignments error:', error);
     container.innerHTML = `<div class="card" style="border-left: 4px solid var(--danger)">
@@ -431,6 +462,12 @@ async function viewFeedback(assignmentId) {
     SupabaseDB.getAssignment(assignmentId),
     SupabaseDB.getSubmission(assignmentId, user.email)
   ]);
+
+  const now = Date.now();
+  if (a.start_at && new Date(a.start_at).getTime() > now) {
+      alert('This assignment is not available yet.');
+      return;
+  }
 
   const container = document.getElementById('pageContent');
   if (!container) return;
@@ -1302,6 +1339,7 @@ async function saveNotificationSettings() {
 window.saveNotificationSettings = saveNotificationSettings;
 
 async function renderQuizzes() {
+  clearActiveCountdowns();
   const user = await SessionManager.getCurrentUser();
   const enrollments = await SupabaseDB.getEnrollments(user.email);
   const enrolledCourseIds = enrollments.map(e => e.course_id);
@@ -1315,6 +1353,7 @@ async function renderQuizzes() {
 
   const container = document.getElementById('pageContent');
   if (!container) return;
+  const now = Date.now();
   container.innerHTML = `
     <h2 class="m-0">My Quizzes</h2>
     <div class="grid mt-20">
@@ -1323,7 +1362,14 @@ async function renderQuizzes() {
         const draft = subs.find(s => s.quiz_id === q.id && s.status === 'draft');
         const bestScore = mySubs.length ? Math.max(...mySubs.map(s => s.score || 0)) : '-';
         const attemptsUsed = subs.filter(s => s.quiz_id === q.id).length;
-        const canAttempt = attemptsUsed < q.attempts_allowed || !!draft;
+
+        const startAt = q.start_at ? new Date(q.start_at).getTime() : 0;
+        const endAt = q.end_at ? new Date(q.end_at).getTime() : Infinity;
+        const isUpcoming = startAt > now;
+        const isExpired = endAt < now;
+        const isAvailable = now >= startAt && now <= endAt;
+
+        const canAttempt = (attemptsUsed < q.attempts_allowed || !!draft) && isAvailable;
 
         const course = courses.find(c => c.id === q.course_id);
         return `
@@ -1357,9 +1403,16 @@ async function renderQuizzes() {
             ` : ''}
 
             <div class="mt-20">
-                ${canAttempt ?
+                ${isUpcoming ? `
+                    <div class="p-10 border-radius-sm text-center" style="background:var(--bg); border:1px solid var(--border)">
+                        <div class="small bold text-muted mb-5">Available In:</div>
+                        <div class="bold purple-text quiz-countdown" data-target="${startAt}"></div>
+                    </div>
+                ` : isExpired ? `
+                    <div class="badge badge-inactive w-100 text-center">Quiz Ended on ${new Date(endAt).toLocaleString()}</div>
+                ` : canAttempt ?
                     `<button class="button w-auto small px-20" onclick="startQuiz('${q.id}')">${draft ? 'Resume Attempt' : 'Start New Attempt'}</button>` :
-                    '<div class="badge badge-inactive w-100 text-center">All Attempts Used</div>'
+                    '<div class="badge badge-inactive w-100 text-center">No Access / Attempts Used</div>'
                 }
             </div>
           </div>
@@ -1368,6 +1421,25 @@ async function renderQuizzes() {
     </div>
     <div id="quizArea" class="hidden mt-20"></div>
   `;
+
+  // Initialize countdowns
+  document.querySelectorAll('.quiz-countdown').forEach(el => {
+      const target = parseInt(el.dataset.target);
+      const c = new Countdown({
+          targetDate: target,
+          headless: true,
+          onEnd: () => renderQuizzes(),
+          onTick: (time) => {
+              const d = time.days > 0 ? time.days + 'd ' : '';
+              const h = String(time.hours).padStart(2, '0');
+              const m = String(time.minutes).padStart(2, '0');
+              const s = String(time.seconds).padStart(2, '0');
+              el.textContent = d + h + ':' + m + ':' + s;
+          }
+      });
+      c.mount();
+      activeCountdowns.push(c);
+  });
 }
 
 let quizTimer = null;
@@ -1377,6 +1449,19 @@ let currentSubmission = null;
 async function startQuiz(quizId) {
   const user = await SessionManager.getCurrentUser();
   const quiz = await SupabaseDB.getQuiz(quizId);
+
+  const now = Date.now();
+  const startAt = quiz.start_at ? new Date(quiz.start_at).getTime() : 0;
+  const endAt = quiz.end_at ? new Date(quiz.end_at).getTime() : Infinity;
+
+  if (now < startAt) {
+      alert('This quiz is not available yet.');
+      return;
+  }
+  if (now > endAt) {
+      alert('This quiz has ended.');
+      return;
+  }
 
   // Check for existing draft
   const subs = await SupabaseDB.getQuizSubmissions(quizId, user.email);
@@ -1485,17 +1570,31 @@ async function startQuiz(quizId) {
 
   // Start Timer
   if (quiz.time_limit > 0) {
-    let secondsLeft = quiz.time_limit * 60;
-    updateTimerDisplay(secondsLeft);
-    quizTimer = setInterval(() => {
-      secondsLeft--;
-      updateTimerDisplay(secondsLeft);
-      if (secondsLeft <= 0) {
-        clearInterval(quizTimer);
-        alert('Time is up! Submitting your quiz automatically.');
-        submitQuiz();
-      }
-    }, 1000);
+    const endTime = new Date(currentSubmission.started_at).getTime() + (quiz.time_limit * 60 * 1000);
+
+    if (quizTimer instanceof Countdown) {
+        quizTimer.destroy();
+    }
+
+    quizTimer = new Countdown({
+        targetDate: endTime,
+        headless: true,
+        onEnd: () => {
+            alert('Time is up! Submitting your quiz automatically.');
+            submitQuiz();
+        },
+        onTick: (time) => {
+            const m = Math.floor(time.total / 60000);
+            const s = Math.floor((time.total % 60000) / 1000);
+            const display = document.getElementById('quizTimerDisplay');
+            if (display) {
+                display.textContent = `Time Remaining: ${m}:${s.toString().padStart(2, '0')}`;
+            }
+        }
+    });
+
+    quizTimer.mount();
+
   } else {
     const timerDisplay = document.getElementById('quizTimerDisplay');
     if (timerDisplay) timerDisplay.textContent = 'No Time Limit';
@@ -1504,12 +1603,6 @@ async function startQuiz(quizId) {
   quizArea.scrollIntoView({ behavior: 'smooth' });
 }
 
-function updateTimerDisplay(s) {
-  const m = Math.floor(s / 60);
-  const rs = s % 60;
-  const timerDisplay = document.getElementById('quizTimerDisplay');
-  if (timerDisplay) timerDisplay.textContent = `Time Remaining: ${m}:${rs.toString().padStart(2, '0')}`;
-}
 
 let quizDebounceTimer = null;
 async function autoSubmitQuiz() {
@@ -1539,7 +1632,8 @@ function getQuizAnswers() {
 async function submitQuiz() {
   const btn = document.getElementById('submitQuizBtn');
   if (btn) btn.disabled = true;
-  if (quizTimer) clearInterval(quizTimer);
+  if (quizTimer instanceof Countdown) quizTimer.destroy();
+  else if (quizTimer) clearInterval(quizTimer);
   if (quizDebounceTimer) clearTimeout(quizDebounceTimer);
   const user = await SessionManager.getCurrentUser();
   const answers = getQuizAnswers();
