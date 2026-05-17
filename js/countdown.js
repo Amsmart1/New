@@ -1,7 +1,3 @@
- //
- * Countdown Component - Vanilla JavaScript
- * Supports multiple countdown instances with shared timer
- */
 
 (function(global) {
     'use strict';
