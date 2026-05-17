@@ -2175,7 +2175,21 @@ document.addEventListener('DOMContentLoaded', async () => {
           if (document.querySelector('[data-page="gradebook"].active')) renderGradeBook();
         }
     });
-    renderDashboard();
+
+    // Deep linking support
+    const urlParams = new URLSearchParams(window.location.search);
+    const page = urlParams.get('page');
+    if (page) {
+        const navBtn = document.querySelector(`nav button[data-page="${page}"]`);
+        if (navBtn) {
+            navBtn.click();
+        } else {
+            renderDashboard();
+        }
+    } else {
+        renderDashboard();
+    }
+
     setInterval(updateMaintBanner, 30000);
     updateMaintBanner();
     const logoutBtn = document.getElementById('logoutBtn');

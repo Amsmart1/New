@@ -11,25 +11,72 @@
     // ============================================
     const TimerManager = {
         currentTime: Date.now(),
+        serverOffset: 0,
         intervalId: null,
         listeners: new Set(),
         tickInterval: 1000, // Update every second
+        isSyncing: false,
+
+        async syncWithServer() {
+            if (this.isSyncing) return;
+            this.isSyncing = true;
+            try {
+                if (window.supabaseClient) {
+                    const start = performance.now();
+                    const { data, error } = await window.supabaseClient.rpc('get_server_time');
+                    const end = performance.now();
+
+                    if (!error && data) {
+                        const serverTime = new Date(data).getTime();
+                        const latency = (end - start) / 2;
+                        this.serverOffset = (serverTime + latency) - Date.now();
+                    }
+                }
+            } catch (e) {
+                console.warn('TimerManager: Server sync failed, using local clock.', e);
+            } finally {
+                this.isSyncing = false;
+                this.currentTime = Date.now() + this.serverOffset;
+                this.notifyListeners();
+            }
+        },
 
         init() {
             if (this.intervalId) return;
-            this.currentTime = Date.now();
+
+            this.syncWithServer();
             this.intervalId = setInterval(() => {
-                this.currentTime = Date.now();
+                this.currentTime = Date.now() + this.serverOffset;
                 this.notifyListeners();
             }, this.tickInterval);
+
+            // Visibility/Focus recovery
+            if (!this._visibilityHandler) {
+                this._visibilityHandler = () => {
+                    if (document.visibilityState === 'visible') {
+                        this.syncWithServer();
+                    }
+                };
+                document.addEventListener('visibilitychange', this._visibilityHandler);
+                window.addEventListener('focus', this._visibilityHandler);
+            }
         },
 
-        destroy() {
+        stop() {
             if (this.intervalId) {
                 clearInterval(this.intervalId);
                 this.intervalId = null;
             }
+        },
+
+        destroy() {
+            this.stop();
             this.listeners.clear();
+            if (this._visibilityHandler) {
+                document.removeEventListener('visibilitychange', this._visibilityHandler);
+                window.removeEventListener('focus', this._visibilityHandler);
+                this._visibilityHandler = null;
+            }
         },
 
         getTime() {
@@ -37,19 +84,41 @@
         },
 
         subscribe(callback) {
-            this.init();
             this.listeners.add(callback);
-            return () => this.listeners.delete(callback);
+            if (this.listeners.size === 1) {
+                this.init();
+            }
+            // Trigger immediately with current time
+            callback(this.currentTime);
+            return () => {
+                this.listeners.delete(callback);
+                if (this.listeners.size === 0) {
+                    this.stop();
+                }
+            };
         },
 
         notifyListeners() {
-            this.listeners.forEach(cb => cb(this.currentTime));
+            this.listeners.forEach(cb => {
+                try {
+                    cb(this.currentTime);
+                } catch (e) {
+                    console.error('TimerManager listener error:', e);
+                }
+            });
         }
     };
 
     // ============================================
-    // SVG ICON HELPERS (Replaces Lucide React)
+    // UTILITY HELPERS
     // ============================================
+    const escapeHtml = (str) => {
+        if (str === null || str === undefined) return '';
+        const div = document.createElement('div');
+        div.textContent = str;
+        return div.innerHTML;
+    };
+
     const Icons = {
         Clock: (size = 18) => `
             <svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}"
@@ -64,19 +133,25 @@
     // ============================================
     // COUNTDOWN CLASS
     // ============================================
+    const CountdownRegistry = new WeakMap();
+
     class Countdown {
         constructor(options = {}) {
             // Props with defaults
             this.targetDate = options.targetDate || new Date();
+            this.startAt = options.startAt || null;
+            this.onStart = options.onStart || null;
             this.onEnd = options.onEnd || null;
             this.className = options.className || '';
             this.showIcon = options.showIcon !== false;
             this.compact = options.compact === true;
             this.endLabel = options.endLabel !== undefined ? options.endLabel : 'Ended';
+            this.upcomingLabel = options.upcomingLabel || 'Starts in';
 
             // Internal state
             this.container = null;
             this.timeLeft = null;
+            this.hasStartedCalled = false;
             this.hasEndedCalled = false;
             this.targetTimestamp = null;
             this.unsubscribe = null;
@@ -154,6 +229,22 @@
         update() {
             if (!this.container || !this.mounted) return;
 
+            const now = TimerManager.getTime();
+
+            // Handle Start Window
+            if (this.startAt) {
+                const startTs = new Date(this.startAt).getTime();
+                if (now < startTs) {
+                    this.renderUpcoming(startTs - now);
+                    return;
+                } else if (!this.hasStartedCalled) {
+                    this.hasStartedCalled = true;
+                    if (typeof this.onStart === 'function') {
+                        try { this.onStart(); } catch (e) { console.error('Countdown onStart error:', e); }
+                    }
+                }
+            }
+
             this.timeLeft = this.calculateTimeLeft();
 
             // Handle ended state
@@ -166,7 +257,7 @@
                 this.container.innerHTML = `
                     <span class="countdown-ended ${this.className}">
                         ${this.showIcon ? Icons.Clock(12) : ''}
-                        <span class="countdown-label">${this.escapeHtml(this.endLabel)}</span>
+                        <span class="countdown-label">${escapeHtml(this.endLabel)}</span>
                     </span>
                 `;
 
@@ -174,7 +265,7 @@
                 if (!this.hasEndedCalled) {
                     this.hasEndedCalled = true;
                     if (typeof this.onEnd === 'function') {
-                        this.onEnd();
+                        try { this.onEnd(); } catch (e) { console.error('Countdown onEnd error:', e); }
                     }
                 }
                 return;
@@ -184,6 +275,24 @@
 
             // Render countdown
             this.render();
+        }
+
+        renderUpcoming(diff) {
+            const minutes = Math.floor((diff / 1000 / 60) % 60);
+            const hours = Math.floor((diff / (1000 * 60 * 60)) % 24);
+            const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+
+            let timeStr = '';
+            if (days > 0) timeStr = `${days}d ${hours}h`;
+            else if (hours > 0) timeStr = `${hours}h ${minutes}m`;
+            else timeStr = `${minutes}m`;
+
+            this.container.innerHTML = `
+                <div class="countdown-upcoming inline-flex items-center gap-1 ${this.className}">
+                    ${this.showIcon ? Icons.Clock(12) : ''}
+                    <span class="small-text">${escapeHtml(this.upcomingLabel)} ${timeStr}</span>
+                </div>
+            `;
         }
 
         // Render the countdown UI
@@ -284,25 +393,34 @@
             this.mounted = false;
         }
 
-        // HTML escape utility
-        escapeHtml(str) {
-            if (str === null || str === undefined) return '';
-            const div = document.createElement('div');
-            div.textContent = str;
-            return div.innerHTML;
-        }
     }
 
     // ============================================
     // STATIC HELPER: Create countdown instances
     // ============================================
     Countdown.create = function(selector, options) {
-        return new Countdown({ ...options, selector });
+        const el = typeof selector === 'string' ? document.querySelector(selector) : selector;
+        if (!el) return null;
+
+        if (CountdownRegistry.has(el)) {
+            CountdownRegistry.get(el).destroy();
+        }
+
+        const instance = new Countdown({ ...options, selector: el });
+        CountdownRegistry.set(el, instance);
+        return instance;
     };
 
     Countdown.createAll = function(selector, options) {
         const elements = document.querySelectorAll(selector);
-        return Array.from(elements).map(el => new Countdown({ ...options, selector: el }));
+        return Array.from(elements).map(el => {
+            if (CountdownRegistry.has(el)) {
+                CountdownRegistry.get(el).destroy();
+            }
+            const instance = new Countdown({ ...options, selector: el });
+            CountdownRegistry.set(el, instance);
+            return instance;
+        });
     };
 
     // ============================================

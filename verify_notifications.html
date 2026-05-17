@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Notification Verification</title>
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<link rel="stylesheet" href="css/base.css">
+<link rel="stylesheet" href="css/layout.css">
+<link rel="stylesheet" href="css/components.css">
+<style>
+    body { padding: 50px; background: #f5f7fa; }
+    .header-mock { display: flex; justify-content: flex-end; padding: 20px; background: white; border-bottom: 1px solid #eee; }
+</style>
+</head>
+<body>
+    <div class="header-mock">
+        <div class="notif-bell-container">
+            <div id="notifBell" style="cursor:pointer;font-size:24px">🔔</div>
+            <div id="unreadCount" class="unread-count">3</div>
+            <div id="notifList" class="notif-list active"></div>
+        </div>
+    </div>
+
+    <script>
+        // Mock dependencies
+        window.escapeHtml = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
+        window.SupabaseDB = {
+            getNotifications: () => Promise.resolve([
+                {id: '1', title: 'New Assignment', message: 'Your math assignment has been published. Please check the portal.', created_at: new Date().toISOString(), is_read: false},
+                {id: '2', title: '📢 Global Broadcast', message: 'Welcome to the new dashboard! We hope you like the changes.', created_at: new Date().toISOString(), is_read: false, is_broadcast: true},
+                {id: '3', title: 'Old News', message: 'This is an old read notification.', created_at: new Date(Date.now() - 86400000).toISOString(), is_read: true}
+            ]),
+            getBroadcasts: () => Promise.resolve([]),
+            getEnrollments: () => Promise.resolve([]),
+            markNotificationsAsRead: () => Promise.resolve(),
+            invalidateCache: () => {}
+        };
+
+        window.SessionManager = {
+            getCurrentUser: () => Promise.resolve({email: 'test@example.com', role: 'student'})
+        };
+
+        window.UI = {
+            showNotification: (msg) => console.log("Toast:", msg)
+        };
+    </script>
+    <script src="js/core.js"></script>
+    <script>
+        // Manually trigger UI update
+        NotificationManager.updateUI();
+
+        // Ensure bell toggle works
+        NotificationManager.initPolling();
+    </script>
+</body>
+</html>
