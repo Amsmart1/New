@@ -147,6 +147,8 @@
             this.compact = options.compact === true;
             this.endLabel = options.endLabel !== undefined ? options.endLabel : 'Ended';
             this.upcomingLabel = options.upcomingLabel || 'Starts in';
+            this.headless = options.headless === true;
+            this.onTick = options.onTick || null;
 
             // Internal state
             this.container = null;
@@ -196,11 +198,13 @@
 
         // Initialize the countdown
         mount(selector) {
-            this.container = typeof selector === 'string'
-                ? document.querySelector(selector)
-                : selector;
+            if (selector) {
+                this.container = typeof selector === 'string'
+                    ? document.querySelector(selector)
+                    : selector;
+            }
 
-            if (!this.container) {
+            if (!this.container && !this.headless) {
                 console.error(`Countdown: Element not found for selector: ${selector}`);
                 return this;
             }
@@ -227,7 +231,7 @@
 
         // Update the display
         update() {
-            if (!this.container || !this.mounted) return;
+            if (!this.mounted) return;
 
             const now = TimerManager.getTime();
 
@@ -235,7 +239,7 @@
             if (this.startAt) {
                 const startTs = new Date(this.startAt).getTime();
                 if (now < startTs) {
-                    this.renderUpcoming(startTs - now);
+                    if (this.container) this.renderUpcoming(startTs - now);
                     return;
                 } else if (!this.hasStartedCalled) {
                     this.hasStartedCalled = true;
@@ -247,19 +251,25 @@
 
             this.timeLeft = this.calculateTimeLeft();
 
+            // Handle Tick callback
+            if (this.timeLeft && typeof this.onTick === 'function') {
+                try { this.onTick(this.timeLeft); } catch (e) { console.error('Countdown onTick error:', e); }
+            }
+
             // Handle ended state
             if (this.timeLeft && this.timeLeft.total <= 0) {
-                if (this.endLabel === null) {
-                    this.container.innerHTML = '';
-                    return;
+                if (this.container) {
+                    if (this.endLabel === null) {
+                        this.container.innerHTML = '';
+                    } else {
+                        this.container.innerHTML = `
+                            <span class="countdown-ended ${this.className}">
+                                ${this.showIcon ? Icons.Clock(12) : ''}
+                                <span class="countdown-label">${escapeHtml(this.endLabel)}</span>
+                            </span>
+                        `;
+                    }
                 }
-
-                this.container.innerHTML = `
-                    <span class="countdown-ended ${this.className}">
-                        ${this.showIcon ? Icons.Clock(12) : ''}
-                        <span class="countdown-label">${escapeHtml(this.endLabel)}</span>
-                    </span>
-                `;
 
                 // Trigger onEnd callback once
                 if (!this.hasEndedCalled) {
@@ -274,7 +284,7 @@
             if (!this.timeLeft) return;
 
             // Render countdown
-            this.render();
+            if (this.container) this.render();
         }
 
         renderUpcoming(diff) {
@@ -400,14 +410,15 @@
     // ============================================
     Countdown.create = function(selector, options) {
         const el = typeof selector === 'string' ? document.querySelector(selector) : selector;
-        if (!el) return null;
 
-        if (CountdownRegistry.has(el)) {
+        if (el && CountdownRegistry.has(el)) {
             CountdownRegistry.get(el).destroy();
         }
 
         const instance = new Countdown({ ...options, selector: el });
-        CountdownRegistry.set(el, instance);
+        if (el) {
+            CountdownRegistry.set(el, instance);
+        }
         return instance;
     };
 

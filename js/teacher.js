@@ -263,19 +263,12 @@ async function renderAssignments() {
 
   try {
     const user = await SessionManager.getCurrentUser();
-    const [assignments, mySubmissions, courses] = await Promise.all([
+    const [assignments, courses] = await Promise.all([
       SupabaseDB.getAssignments(user.email),
-      SupabaseDB.getSubmissions(null, null, user.email),
       SupabaseDB.getCourses(user.email)
     ]);
-    const totalSubmissions = mySubmissions.length;
 
   content.innerHTML = `
-    <div class="stats-grid">
-      <div class="stat-card"><h4>Total Assignments</h4><div class="value">${assignments.length}</div></div>
-      <div class="stat-card"><h4>Published</h4><div class="value">${assignments.filter(a => a.status === 'published').length}</div></div>
-      <div class="stat-card"><h4>Total Submissions</h4><div class="value">${totalSubmissions}</div></div>
-    </div>
     <div class="card flex-between">
       <h2 class="m-0">My Assignments</h2>
       <button class="button w-auto" onclick="showAssignmentForm()">+ Create Assignment</button>
@@ -305,7 +298,7 @@ async function renderAssignments() {
 
     document.querySelectorAll('.assign-countdown').forEach(el => {
         const target = parseInt(el.dataset.target);
-        const c = new Countdown({
+        const c = Countdown.create(el, {
             targetDate: target,
             headless: true,
             onEnd: () => renderAssignments(),
@@ -316,7 +309,6 @@ async function renderAssignments() {
                 el.textContent = 'Expires in: ' + d + h + 'h ' + m + 'm';
             }
         });
-        c.mount();
         activeCountdowns.push(c);
     });
 
@@ -1087,7 +1079,7 @@ async function renderLiveClasses() {
 
     document.querySelectorAll('.live-sch-countdown').forEach(el => {
         const target = parseInt(el.dataset.target);
-        const c = new Countdown({
+        const c = Countdown.create(el, {
             targetDate: target,
             headless: true,
             onEnd: () => renderLiveClasses(),
@@ -1099,7 +1091,6 @@ async function renderLiveClasses() {
                 el.textContent = d + h + ':' + m + ':' + s;
             }
         });
-        c.mount();
         activeCountdowns.push(c);
     });
 
@@ -1241,13 +1232,10 @@ let jitsiAPI = null;
 let liveClassTimer = null;
 
 function startLiveClassTimer(id, endAt) {
-    if (liveClassTimer instanceof Countdown) liveClassTimer.destroy();
-    else if (liveClassTimer) clearInterval(liveClassTimer);
-
     window._warnedEnd = false;
     const endTime = new Date(endAt).getTime();
 
-    liveClassTimer = new Countdown({
+    liveClassTimer = Countdown.create(null, {
         targetDate: endTime,
         headless: true,
         onEnd: () => {
@@ -1264,8 +1252,6 @@ function startLiveClassTimer(id, endAt) {
             }
         }
     });
-
-    liveClassTimer.mount();
 }
 
 async function handleStartLiveClass(id, roomName, meetingUrl) {
@@ -1550,7 +1536,7 @@ async function renderQuizzes() {
 
     document.querySelectorAll('.quiz-sch-countdown').forEach(el => {
         const target = parseInt(el.dataset.target);
-        const c = new Countdown({
+        const c = Countdown.create(el, {
             targetDate: target,
             headless: true,
             onEnd: () => renderQuizzes(),
@@ -1561,7 +1547,6 @@ async function renderQuizzes() {
                 el.textContent = d + h + 'h ' + m + 'm';
             }
         });
-        c.mount();
         activeCountdowns.push(c);
     });
 
