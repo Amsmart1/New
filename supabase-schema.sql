@@ -208,7 +208,8 @@ CREATE TABLE IF NOT EXISTS quiz_submissions (
   status VARCHAR(50) DEFAULT 'submitted' CHECK (status IN ('draft', 'submitted')),
   time_spent INTEGER DEFAULT 0,
   started_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-  submitted_at TIMESTAMP WITH TIME ZONE
+  submitted_at TIMESTAMP WITH TIME ZONE,
+  question_scores JSONB DEFAULT '{}'::jsonb
 );
 
 CREATE TABLE IF NOT EXISTS materials (

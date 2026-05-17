@@ -711,6 +711,7 @@ async function gradeSubmission(assignmentId, studentEmail) {
       ` : ''}
 
       <form id="gradingForm">
+        ${(assignment.questions || []).length > 0 ? `
         <div class="mt-20">
           <h4 class="m-0">Submitted Answers & Individual Scoring:</h4>
           <div class="mt-15">
@@ -734,11 +735,12 @@ async function gradeSubmission(assignmentId, studentEmail) {
             }).join('')}
           </div>
         </div>
+        ` : ''}
         <div class="mt-20 grid-2">
           <div>
             <label>Raw Score (0-${assignment.points_possible}):</label>
-            <input type="number" id="grade" min="0" max="${assignment.points_possible}" value="${submission.grade || ''}" required readonly style="background:#f0f0f0">
-            <p class="tiny mt-5">Computed from individual question scores.</p>
+            <input type="number" id="grade" min="0" max="${assignment.points_possible}" value="${submission.grade || ''}" required ${(assignment.questions || []).length > 0 ? 'readonly style="background:#f0f0f0"' : ''}>
+            <p class="tiny mt-5">${(assignment.questions || []).length > 0 ? 'Computed from individual question scores.' : 'Enter raw score earned.'}</p>
           </div>
           <div>
             <label>Final Adjusted Grade (%):</label>
@@ -778,7 +780,12 @@ async function gradeSubmission(assignmentId, studentEmail) {
       input.addEventListener('input', updateRawFromQuestions);
   });
   rawInput.addEventListener('input', updateFinal);
-  updateFinal();
+
+  if ((assignment.questions || []).length > 0) {
+      updateRawFromQuestions();
+  } else {
+      updateFinal();
+  }
 
   document.getElementById('gradingForm').addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -1800,6 +1807,7 @@ async function gradeQuizSubmission(submissionId, quizId) {
         <div>
           ${quiz.questions.map((q, idx) => {
             const studentAnswer = submission.answers[idx] || 'No Answer';
+            const existingScore = submission.question_scores?.[idx];
             const isAutoGraded = q.type !== 'short';
             const isCorrect = isAutoGraded && studentAnswer.toString().toLowerCase() === q.correct.toString().toLowerCase();
             const statusColor = isAutoGraded ? (isCorrect ? 'var(--ok)' : 'var(--danger)') : 'var(--warn)';
@@ -1823,7 +1831,7 @@ async function gradeQuizSubmission(submissionId, quizId) {
                 ${!isAutoGraded ? `
                   <div class="mt-10 flex-center-y gap-10">
                     <label class="small m-0">Points Awarded (0-${q.points}):</label>
-                    <input type="number" class="q-manual-points w-auto m-0 p-5" data-q-idx="${idx}" min="0" max="${q.points}" value="${isCorrect ? q.points : 0}" style="width:80px">
+                    <input type="number" class="q-manual-points w-auto m-0 p-5" data-q-idx="${idx}" min="0" max="${q.points}" value="${existingScore !== undefined ? existingScore : (isCorrect ? q.points : 0)}" style="width:80px">
                   </div>
                 ` : ''}
               </div>
@@ -1832,7 +1840,7 @@ async function gradeQuizSubmission(submissionId, quizId) {
         </div>
         <div class="mt-20 pt-20" style="border-top:1px solid var(--border)">
           <div class="bold mb-10">Calculated Final Score (%)</div>
-          <input type="number" id="finalQuizScore" min="0" max="100" value="${submission.score || 0}" class="w-auto" style="width:100px" readonly style="background:#f0f0f0">
+          <input type="number" id="finalQuizScore" min="0" max="100" value="${submission.score || 0}" class="w-auto" readonly style="width:100px; background:#f0f0f0">
           <p class="small mt-5">Computed from individual question points.</p>
           <button type="submit" class="button w-auto px-40 mt-15">Save Grade</button>
         </div>
@@ -1901,6 +1909,7 @@ async function gradeQuizSubmission(submissionId, quizId) {
         ...submission,
         score: finalScore,
         total_points: totalPossible,
+        question_scores: manualScores.reduce((acc, curr) => { acc[curr.idx] = curr.points; return acc; }, {}),
         updated_at: new Date().toISOString()
       };
 

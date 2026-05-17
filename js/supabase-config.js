@@ -723,7 +723,8 @@ class SupabaseDB {
             status: submission.status,
             time_spent: submission.time_spent,
             started_at: submission.started_at,
-            submitted_at: submission.submitted_at
+            submitted_at: submission.submitted_at,
+            question_scores: submission.question_scores
         };
 
         const { data, error } = await supabaseClient
