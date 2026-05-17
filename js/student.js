@@ -418,7 +418,6 @@ async function showAssignmentForm(assignmentId) {
   if (!formWrap) return;
   formWrap.classList.remove('hidden');
   formWrap.style.display = 'block'; // Ensure it shows even if it was hidden via style
-  const now = new Date();
   const dueDate = new Date(a.due_date);
   const isLate = now > dueDate;
 
@@ -788,7 +787,7 @@ async function renderAnalytics() {
 
   container.innerHTML = `
     <h2 class="m-0">Performance Analytics</h2>
-    <div class="grid mt-20 mb-20" style="grid-template-columns: 1.5fr 1fr">
+    <div class="grid-2 mt-20 mb-20">
       <div class="card">
         <h3 class="m-0">Grade Trends</h3>
         <div class="mt-15" style="height: 200px">
