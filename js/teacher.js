@@ -716,7 +716,6 @@ async function gradeSubmission(assignmentId, studentEmail) {
         </div>
       ` : ''}
 
-      <p class="small mt-5"><strong>Student:</strong> ${escapeHtml(studentEmail)}</p>
       <form id="gradingForm">
         <div class="mt-20">
           <h4 class="m-0">Submitted Answers & Individual Scoring:</h4>
