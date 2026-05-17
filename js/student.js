@@ -61,7 +61,6 @@ async function renderCourses() {
       SupabaseDB.getCourses(null, 'published'),
       SupabaseDB.getEnrollments(user.email)
     ]);
-    updateHeaderStats().catch(e => console.warn('Header stats error:', e));
 
   container.innerHTML = `
     <div class="flex-between mb-20">
@@ -134,7 +133,6 @@ async function renderMyCourses() {
     SupabaseDB.getEnrolledCourses(user.email),
     SupabaseDB.getEnrollments(user.email)
   ]);
-  updateHeaderStats().catch(e => console.warn('Header stats error:', e));
 
   const container = document.getElementById('pageContent');
   if (!container) return;
@@ -269,7 +267,6 @@ async function renderAssignments(){
       SupabaseDB.getAssignments(null, null, enrolledCourseIds),
       SupabaseDB.getSubmissions(null, user.email)
     ]);
-    updateHeaderStats().catch(e => console.warn('Header stats error:', e));
 
   const now = Date.now();
 
@@ -359,7 +356,7 @@ async function renderAssignments(){
   // Initialize countdowns
   document.querySelectorAll('.assign-open-countdown').forEach(el => {
       const target = parseInt(el.dataset.target);
-      const c = new Countdown({
+      const c = Countdown.create(el, {
           targetDate: target,
           headless: true,
           onEnd: () => renderAssignments(),
@@ -369,13 +366,12 @@ async function renderAssignments(){
               el.textContent = 'Opens in ' + d + h + 'h';
           }
       });
-      c.mount();
       activeCountdowns.push(c);
   });
 
   document.querySelectorAll('.assign-due-countdown').forEach(el => {
       const target = parseInt(el.dataset.target);
-      const c = new Countdown({
+      const c = Countdown.create(el, {
           targetDate: target,
           headless: true,
           onEnd: () => renderAssignments(),
@@ -386,7 +382,6 @@ async function renderAssignments(){
               el.textContent = 'Due in: ' + d + h + 'h ' + m + 'm';
           }
       });
-      c.mount();
       activeCountdowns.push(c);
   });
 
@@ -623,7 +618,7 @@ async function renderDashboardOverview() {
 
   document.querySelectorAll('.dashboard-assign-countdown').forEach(el => {
       const target = parseInt(el.dataset.target);
-      const c = new Countdown({
+      const c = Countdown.create(el, {
           targetDate: target,
           headless: true,
           onEnd: () => renderDashboardOverview(),
@@ -634,7 +629,6 @@ async function renderDashboardOverview() {
               el.textContent = 'Due in: ' + d + h + 'h ' + m + 'm';
           }
       });
-      c.mount();
       activeCountdowns.push(c);
   });
 }
@@ -1178,7 +1172,7 @@ async function renderLiveClasses() {
 
     document.querySelectorAll('.live-countdown').forEach(el => {
         const target = parseInt(el.dataset.target);
-        const c = new Countdown({
+        const c = Countdown.create(el, {
             targetDate: target,
             headless: true,
             onEnd: () => renderLiveClasses(),
@@ -1190,7 +1184,6 @@ async function renderLiveClasses() {
                 el.textContent = d + h + ':' + m + ':' + s;
             }
         });
-        c.mount();
         activeCountdowns.push(c);
     });
 
@@ -1410,7 +1403,6 @@ async function renderQuizzes() {
     SupabaseDB.getQuizSubmissions(null, user.email),
     SupabaseDB.getEnrolledCourses(user.email)
   ]);
-  updateHeaderStats().catch(e => console.warn('Header stats error:', e));
 
   const container = document.getElementById('pageContent');
   if (!container) return;
@@ -1492,7 +1484,7 @@ async function renderQuizzes() {
   // Initialize countdowns
   document.querySelectorAll('.quiz-countdown').forEach(el => {
       const target = parseInt(el.dataset.target);
-      const c = new Countdown({
+      const c = Countdown.create(el, {
           targetDate: target,
           headless: true,
           onEnd: () => renderQuizzes(),
@@ -1504,7 +1496,6 @@ async function renderQuizzes() {
               el.textContent = d + h + ':' + m + ':' + s;
           }
       });
-      c.mount();
       activeCountdowns.push(c);
   });
 }
@@ -1639,11 +1630,7 @@ async function startQuiz(quizId) {
   if (quiz.time_limit > 0) {
     const endTime = new Date(currentSubmission.started_at).getTime() + (quiz.time_limit * 60 * 1000);
 
-    if (quizTimer instanceof Countdown) {
-        quizTimer.destroy();
-    }
-
-    quizTimer = new Countdown({
+    quizTimer = Countdown.create(null, {
         targetDate: endTime,
         headless: true,
         onEnd: () => {
@@ -1659,8 +1646,6 @@ async function startQuiz(quizId) {
             }
         }
     });
-
-    quizTimer.mount();
 
   } else {
     const timerDisplay = document.getElementById('quizTimerDisplay');

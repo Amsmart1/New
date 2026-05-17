@@ -268,15 +268,19 @@ const NotificationManager = {
                 return true;
             });
 
-            // 3. Mark broadcasts as "read" locally using localStorage
+            // 3. Filter out cleared broadcasts
+            const clearedBroadcasts = JSON.parse(localStorage.getItem(`cleared_broadcasts_${user.email}`) || '[]');
+            const activeBroadcasts = relevantBroadcasts.filter(b => !clearedBroadcasts.includes(b.id));
+
+            // 4. Mark broadcasts as "read" locally using localStorage
             const readBroadcasts = JSON.parse(localStorage.getItem(`read_broadcasts_${user.email}`) || '[]');
-            const mappedBroadcasts = relevantBroadcasts.map(b => ({
+            const mappedBroadcasts = activeBroadcasts.map(b => ({
                 ...b,
                 is_read: readBroadcasts.includes(b.id),
                 is_broadcast: true
             }));
 
-            // 4. Combine and sort
+            // 5. Combine and sort
             return [...personal, ...mappedBroadcasts].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
         } catch (e) {
             console.warn('Failed to fetch notifications:', e);
@@ -343,7 +347,7 @@ const NotificationManager = {
     },
 
     async clearAll() {
-        if (!confirm('Are you sure you want to clear all notification history? Broadcasts will only be hidden.')) return;
+        if (!confirm('Are you sure you want to clear all notification history? Broadcasts will also be hidden.')) return;
 
         const user = await SessionManager.getCurrentUser();
         if (!user) return;
@@ -351,12 +355,11 @@ const NotificationManager = {
         try {
             const notifications = await this.fetchNotifications();
 
-            // Mark all broadcasts as read (effectively hiding them if they are filtered by is_read elsewhere,
-            // but here we just follow the "Mark All as Read" logic for broadcasts)
+            // Clear broadcasts by saving their IDs to cleared_broadcasts
             const broadcastIds = notifications.filter(n => n.is_broadcast).map(n => n.id);
-            const readBroadcasts = JSON.parse(localStorage.getItem(`read_broadcasts_${user.email}`) || '[]');
-            const updatedRead = [...new Set([...readBroadcasts, ...broadcastIds])];
-            localStorage.setItem(`read_broadcasts_${user.email}`, JSON.stringify(updatedRead));
+            const clearedBroadcasts = JSON.parse(localStorage.getItem(`cleared_broadcasts_${user.email}`) || '[]');
+            const updatedCleared = [...new Set([...clearedBroadcasts, ...broadcastIds])];
+            localStorage.setItem(`cleared_broadcasts_${user.email}`, JSON.stringify(updatedCleared));
 
             // Actually delete personal notifications for this user using SupabaseDB
             await SupabaseDB.deleteNotifications(user.email);
@@ -398,7 +401,10 @@ const NotificationManager = {
 
             list.innerHTML = `
                 <div style="padding:12px; border-bottom:1px solid #eee; display:flex; justify-content:space-between; align-items:center; background:#fafafa; position:sticky; top:0; z-index:10">
-                    <strong style="font-size:14px">Notifications</strong>
+                    <div class="flex-center-y gap-10">
+                        <button class="button secondary tiny" style="width:24px; height:24px; padding:0; margin:0; display:flex; align-items:center; justify-content:center; border-radius:50%" onclick="document.getElementById('notifList').classList.remove('active'); event.stopPropagation();">✕</button>
+                        <strong style="font-size:14px">Notifications</strong>
+                    </div>
                     <div class="flex gap-5">
                         <button class="button secondary tiny" style="width:auto; margin:0" onclick="NotificationManager.markAllAsRead(); event.stopPropagation();">Mark Read</button>
                         <button class="button danger tiny" style="width:auto; margin:0; background:#fee2e2; color:#b91c1c" onclick="NotificationManager.clearAll(); event.stopPropagation();">Clear All</button>

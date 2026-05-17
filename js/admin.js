@@ -462,7 +462,6 @@ async function approveReset(email) {
       if (await SupabaseDB.saveUser(user)) {
         alert(`Reset request approved. Temporary password: ${tempPassword}\n\nPLEASE COPY THIS NOW. IT WILL NOT BE SHOWN AGAIN.`);
         renderResets();
-        updateSidebarBadges();
       }
     }
   } catch (e) {
@@ -481,7 +480,6 @@ async function denyReset(email) {
         if (await SupabaseDB.saveUser(user)) {
           alert('Reset request denied');
           renderResets();
-          updateSidebarBadges();
         }
       }
     } catch (e) {
@@ -1078,11 +1076,18 @@ document.addEventListener('DOMContentLoaded', async () => {
     NotificationManager.initRealtimeSubscriptions(user.email, 'admin', () => {
         const activeEl = document.activeElement;
         const isTyping = activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA' || activeEl.tagName === 'SELECT');
-        if (!isTyping && document.querySelector('[data-page="dashboard"].active')) renderDashboard();
+        if (!isTyping && document.querySelector('[data-page="dashboard"].active')) {
+            renderDashboard();
+            updateSidebarBadges();
+        }
     });
     renderDashboard();
     updateSidebarBadges();
-    setInterval(updateSidebarBadges, 60000);
+    setInterval(() => {
+        if (document.querySelector('[data-page="dashboard"].active')) {
+            updateSidebarBadges();
+        }
+    }, 60000);
     setInterval(updateMaintBanner, 30000);
     updateMaintBanner();
     const logoutBtn = document.getElementById('logoutBtn');
