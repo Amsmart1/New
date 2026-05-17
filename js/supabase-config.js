@@ -284,7 +284,10 @@ class SupabaseDB {
     // Submission operations
     static async getSubmissions(assignmentId = null, studentEmail = null, teacherEmail = null) {
         return this._request(async () => {
-            let query = supabaseClient.from('submissions').select('*, assignments(*)');
+            let selectStr = '*, assignments(*)';
+            if (teacherEmail) selectStr = '*, assignments!inner(*)';
+
+            let query = supabaseClient.from('submissions').select(selectStr);
             if (assignmentId) query = query.eq('assignment_id', assignmentId);
             if (studentEmail) query = query.eq('student_email', studentEmail);
             if (teacherEmail) query = query.eq('assignments.teacher_email', teacherEmail);

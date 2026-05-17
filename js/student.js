@@ -271,12 +271,7 @@ async function renderAssignments(){
     ]);
     updateHeaderStats().catch(e => console.warn('Header stats error:', e));
 
-  // From inline: filter active assignments
   const now = Date.now();
-  const activeAssigns = assigns.filter(a => {
-      const dueDate = new Date(a.due_date).getTime();
-      return dueDate > now && a.status === 'published';
-  });
 
   if (!container) return;
   container.innerHTML = `
@@ -306,15 +301,15 @@ async function renderAssignments(){
   mine.forEach(a => {
     if (a.status !== 'published') return;
 
+    const submission = submissions.find(s => s.assignment_id === a.id);
     const startAt = a.start_at ? new Date(a.start_at).getTime() : 0;
     const isUpcoming = startAt > now;
 
     // Check if it's past due and late submissions are NOT allowed
     const dueDate = new Date(a.due_date);
     const isPastDue = dueDate.getTime() < now;
-    if (isPastDue && !a.allow_late_submissions) return;
+    if (isPastDue && !a.allow_late_submissions && !submission) return;
 
-    const submission = submissions.find(s => s.assignment_id === a.id);
     const course = courses.find(c => c.id === a.course_id);
     const isOverdue = dueDate.getTime() < now && !submission;
 
@@ -412,6 +407,13 @@ async function showAssignmentForm(assignmentId) {
     SupabaseDB.getSubmission(assignmentId, user.email)
   ]);
 
+  const now = new Date();
+  const startAt = a.start_at ? new Date(a.start_at) : null;
+  if (startAt && now < startAt) {
+      alert('This assignment is not open for submission yet.');
+      return;
+  }
+
   const formWrap = document.getElementById('assignmentForm');
   if (!formWrap) return;
   formWrap.classList.remove('hidden');
@@ -494,7 +496,7 @@ async function viewFeedback(assignmentId) {
   ]);
 
   const now = Date.now();
-  if (a.start_at && new Date(a.start_at).getTime() > now) {
+  if (assignment.start_at && new Date(assignment.start_at).getTime() > now) {
       alert('This assignment is not available yet.');
       return;
   }
@@ -758,7 +760,34 @@ async function renderGrades() {
   if (!container) return;
 
   container.innerHTML = `
-    <h2 class="m-0">My Grades & Analytics</h2>
+    <h2 class="m-0">My Grades</h2>
+    <div class="card p-0 mt-20" style="overflow-x:auto">
+      <table>
+        <thead><tr><th>Assignment</th><th>Date</th><th>Grade</th><th>Feedback</th></tr></thead>
+        <tbody>
+          ${graded.map(s => {
+            const a = assigns.find(x => x.id === s.assignment_id);
+            return `<tr><td><strong class="bold">${escapeHtml(a?.title || 'Unknown')}</strong></td><td class="small">${new Date(s.submitted_at).toLocaleDateString()}</td><td><span class="badge ${s.final_grade >= 70 ? 'badge-active' : 'badge-inactive'}">${s.final_grade}%</span></td><td>${escapeHtml(s.feedback || '-')}</td></tr>`;
+          }).join('') || '<tr><td colspan="4" class="empty">No graded assignments yet.</td></tr>'}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+async function renderAnalytics() {
+  clearActiveCountdowns();
+  const user = await SessionManager.getCurrentUser();
+  const [submissions, assigns] = await Promise.all([
+    SupabaseDB.getSubmissions(null, user.email),
+    SupabaseDB.getAssignments()
+  ]);
+  const graded = submissions.filter(s => s.status === 'graded').sort((a,b) => new Date(a.submitted_at) - new Date(b.submitted_at));
+  const container = document.getElementById('pageContent');
+  if (!container) return;
+
+  container.innerHTML = `
+    <h2 class="m-0">Performance Analytics</h2>
     <div class="grid mt-20 mb-20" style="grid-template-columns: 1.5fr 1fr">
       <div class="card">
         <h3 class="m-0">Grade Trends</h3>
@@ -770,17 +799,6 @@ async function renderGrades() {
         <h3 class="m-0">Performance Summary</h3>
         <div id="gradeStats" class="mt-15"></div>
       </div>
-    </div>
-    <div class="card p-0" style="overflow-x:auto">
-      <table>
-        <thead><tr><th>Assignment</th><th>Date</th><th>Grade</th><th>Feedback</th></tr></thead>
-        <tbody>
-          ${graded.map(s => {
-            const a = assigns.find(x => x.id === s.assignment_id);
-            return `<tr><td><strong class="bold">${escapeHtml(a?.title || 'Unknown')}</strong></td><td class="small">${new Date(s.submitted_at).toLocaleDateString()}</td><td><span class="badge ${s.final_grade >= 70 ? 'badge-active' : 'badge-inactive'}">${s.final_grade}%</span></td><td>${escapeHtml(s.feedback || '-')}</td></tr>`;
-          }).join('') || '<tr><td colspan="4" class="empty">No graded assignments yet.</td></tr>'}
-        </tbody>
-      </table>
     </div>
   `;
 
@@ -1017,6 +1035,7 @@ window.renderQuizzes = renderQuizzes;
 window.renderDashboardOverview = renderDashboardOverview;
 window.renderProgress = renderProgress;
 window.renderGrades = renderGrades;
+window.renderAnalytics = renderAnalytics;
 window.renderCalendar = renderCalendar;
 window.renderMaterials = renderMaterials;
 window.renderDiscussions = renderDiscussions;
@@ -1895,6 +1914,7 @@ function initNav() {
         else if(page === 'dashboard') renderDashboardOverview();
         else if(page === 'progress') renderProgress();
         else if(page === 'grades') renderGrades();
+        else if(page === 'analytics') renderAnalytics();
         else if(page === 'calendar') renderCalendar();
         else if(page === 'materials') renderMaterials();
         else if(page === 'discussions') renderDiscussions();
