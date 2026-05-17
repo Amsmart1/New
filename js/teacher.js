@@ -682,7 +682,9 @@ async function gradeSubmission(assignmentId, studentEmail) {
     let lateDays = 0;
     let latePenalty = 0;
     if (subDate > dueDate) {
-        lateDays = Math.ceil((subDate - dueDate) / (1000 * 60 * 60 * 24));
+        // Fix: Use Math.floor to ensure a full 24-hour period passes before another day of penalty is added.
+        // This prevents a few minutes late from being charged as a full day.
+        lateDays = Math.floor((subDate - dueDate) / (1000 * 60 * 60 * 24));
         latePenalty = lateDays * (assignment.late_penalty_per_day || 0);
     }
 
@@ -735,12 +737,13 @@ async function gradeSubmission(assignmentId, studentEmail) {
         <div class="mt-20 grid-2">
           <div>
             <label>Raw Score (0-${assignment.points_possible}):</label>
-            <input type="number" id="grade" min="0" max="${assignment.points_possible}" value="${submission.grade || ''}" required>
+            <input type="number" id="grade" min="0" max="${assignment.points_possible}" value="${submission.grade || ''}" required readonly style="background:#f0f0f0">
+            <p class="tiny mt-5">Computed from individual question scores.</p>
           </div>
           <div>
             <label>Final Adjusted Grade (%):</label>
             <input type="number" id="finalGrade" min="0" max="100" value="${submission.final_grade || ''}" readonly style="background:#f0f0f0">
-            <p class="tiny mt-5">Auto-calculated based on penalty.</p>
+            <p class="tiny mt-5">Auto-calculated (Raw Score % - Penalty).</p>
           </div>
         </div>
         <div class="mt-10">
@@ -1828,24 +1831,23 @@ async function gradeQuizSubmission(submissionId, quizId) {
           }).join('')}
         </div>
         <div class="mt-20 pt-20" style="border-top:1px solid var(--border)">
-          <div class="bold mb-10">Final Score Override (%)</div>
-          <input type="number" id="finalQuizScore" min="0" max="100" value="${submission.score || 0}" class="w-auto" style="width:100px">
-          <p class="small mt-5">Note: Use this to manually adjust the final percentage score.</p>
+          <div class="bold mb-10">Calculated Final Score (%)</div>
+          <input type="number" id="finalQuizScore" min="0" max="100" value="${submission.score || 0}" class="w-auto" style="width:100px" readonly style="background:#f0f0f0">
+          <p class="small mt-5">Computed from individual question points.</p>
           <button type="submit" class="button w-auto px-40 mt-15">Save Grade</button>
         </div>
       </form>
     </div>
   `;
 
-  document.getElementById('quizGradingForm').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    try {
+  const quizFinalScoreInput = document.getElementById('finalQuizScore');
+
+  const updateQuizFinal = () => {
       const manualScores = Array.from(document.querySelectorAll('.q-manual-points')).map(input => ({
         idx: parseInt(input.dataset.qIdx),
         points: parseInt(input.value) || 0
       }));
 
-      // Calculate total points
       let earnedPoints = 0;
       let totalPossible = 0;
       quiz.questions.forEach((q, idx) => {
@@ -1855,14 +1857,45 @@ async function gradeQuizSubmission(submissionId, quizId) {
           earnedPoints += manual.points;
         } else {
           const studentAnswer = submission.answers[idx] || '';
-          if (studentAnswer.toString().toLowerCase() === q.correct.toString().toLowerCase()) {
+          if (studentAnswer && studentAnswer.toString().toLowerCase() === q.correct.toString().toLowerCase()) {
             earnedPoints += q.points;
           }
         }
       });
+      const percent = totalPossible > 0 ? Math.round((earnedPoints / totalPossible) * 100) : 0;
+      quizFinalScoreInput.value = percent;
+  };
 
-      const autoPercentage = Math.round((earnedPoints / totalPossible) * 100);
-      const finalScore = parseInt(document.getElementById('finalQuizScore').value);
+  document.querySelectorAll('.q-manual-points').forEach(input => {
+      input.addEventListener('input', updateQuizFinal);
+  });
+  updateQuizFinal();
+
+  document.getElementById('quizGradingForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    try {
+      const finalScore = parseInt(quizFinalScoreInput.value);
+
+      // Re-calculate total points for data integrity
+      let earnedPoints = 0;
+      let totalPossible = 0;
+      const manualScores = Array.from(document.querySelectorAll('.q-manual-points')).map(input => ({
+        idx: parseInt(input.dataset.qIdx),
+        points: parseInt(input.value) || 0
+      }));
+
+      quiz.questions.forEach((q, idx) => {
+        totalPossible += q.points;
+        const manual = manualScores.find(m => m.idx === idx);
+        if (manual) {
+          earnedPoints += manual.points;
+        } else {
+          const studentAnswer = submission.answers[idx] || '';
+          if (studentAnswer && studentAnswer.toString().toLowerCase() === q.correct.toString().toLowerCase()) {
+            earnedPoints += q.points;
+          }
+        }
+      });
 
       const updatedSubmission = {
         ...submission,

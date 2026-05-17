@@ -471,6 +471,65 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+-- Server-side time validation for submissions and quiz attempts
+CREATE OR REPLACE FUNCTION validate_submission_time() RETURNS TRIGGER AS $$
+DECLARE
+  v_start_at TIMESTAMP WITH TIME ZONE;
+  v_due_date TIMESTAMP WITH TIME ZONE;
+  v_allow_late BOOLEAN;
+BEGIN
+  SELECT start_at, due_date, allow_late_submissions INTO v_start_at, v_due_date, v_allow_late
+  FROM assignments WHERE id = NEW.assignment_id;
+
+  IF v_start_at IS NOT NULL AND NEW.submitted_at < v_start_at THEN
+    RAISE EXCEPTION 'Assignment not yet open for submissions';
+  END IF;
+
+  IF NOT v_allow_late AND NEW.submitted_at > v_due_date THEN
+    RAISE EXCEPTION 'Late submissions not allowed for this assignment';
+  END IF;
+
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS tr_validate_submission_time ON submissions;
+CREATE TRIGGER tr_validate_submission_time BEFORE INSERT OR UPDATE ON submissions FOR EACH ROW EXECUTE PROCEDURE validate_submission_time();
+
+CREATE OR REPLACE FUNCTION validate_quiz_submission_time() RETURNS TRIGGER AS $$
+DECLARE
+  v_start_at TIMESTAMP WITH TIME ZONE;
+  v_end_at TIMESTAMP WITH TIME ZONE;
+  v_time_limit INTEGER;
+BEGIN
+  SELECT start_at, end_at, time_limit INTO v_start_at, v_end_at, v_time_limit
+  FROM quizzes WHERE id = NEW.quiz_id;
+
+  -- Validate start_at for both draft and submitted
+  IF v_start_at IS NOT NULL AND NEW.started_at < v_start_at THEN
+    RAISE EXCEPTION 'Quiz not yet open for attempts';
+  END IF;
+
+  -- If status is 'submitted', check end_at
+  IF NEW.status = 'submitted' AND v_end_at IS NOT NULL AND NEW.submitted_at > v_end_at THEN
+    RAISE EXCEPTION 'Quiz has already ended';
+  END IF;
+
+  -- Check time limit if it exists
+  IF NEW.status = 'submitted' AND v_time_limit > 0 THEN
+    -- Allow a 60-second buffer for network latency and auto-submit delays
+    IF NEW.submitted_at > (NEW.started_at + (v_time_limit * INTERVAL '1 minute') + INTERVAL '60 seconds') THEN
+        RAISE EXCEPTION 'Quiz time limit exceeded';
+    END IF;
+  END IF;
+
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS tr_validate_quiz_submission_time ON quiz_submissions;
+CREATE TRIGGER tr_validate_quiz_submission_time BEFORE INSERT OR UPDATE ON quiz_submissions FOR EACH ROW EXECUTE PROCEDURE validate_quiz_submission_time();
+
 -- Trigger: Notify students when live class starts (Using Broadcast)
 -- Triggers for Notifications
 CREATE OR REPLACE FUNCTION tr_notify_live_class() RETURNS TRIGGER AS $$
