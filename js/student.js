@@ -348,7 +348,7 @@ async function renderAssignments(){
             `<button class="button small w-auto ${isOverdue ? 'danger' : ''}" onclick="showAssignmentForm('${a.id}')">${isOverdue ? 'Submit Late' : 'Submit'}</button>` :
             (submission.status === 'submitted' || submission.status === 'draft' ?
               `<button class="button secondary small w-auto" onclick="showAssignmentForm('${a.id}')">View/Edit</button>` :
-              `<button class="button small w-auto success" onclick="viewFeedback('${a.id}')" style="background:var(--ok)">Feedback</button>`)
+              `<span class="badge badge-active">GRADED</span>`)
           }
         </div>
       </td>
@@ -766,7 +766,7 @@ async function renderGrades() {
         <tbody>
           ${graded.map(s => {
             const a = assigns.find(x => x.id === s.assignment_id);
-            return `<tr><td><strong class="bold">${escapeHtml(a?.title || 'Unknown')}</strong></td><td class="small">${new Date(s.submitted_at).toLocaleDateString()}</td><td><span class="badge ${s.final_grade >= 70 ? 'badge-active' : 'badge-inactive'}">${s.final_grade}%</span></td><td>${escapeHtml(s.feedback || '-')}</td></tr>`;
+            return `<tr><td><strong class="bold">${escapeHtml(a?.title || 'Unknown')}</strong></td><td class="small">${new Date(s.submitted_at).toLocaleDateString()}</td><td><span class="badge ${s.final_grade >= 70 ? 'badge-active' : 'badge-inactive'}">${s.final_grade}%</span></td><td><div class="flex gap-5">${escapeHtml(s.feedback || '-')} ${a ? `<button class="button tiny w-auto success" onclick="viewFeedback('${a.id}')" style="background:var(--ok); margin-left:10px">View Details</button>` : ''}</div></td></tr>`;
           }).join('') || '<tr><td colspan="4" class="empty">No graded assignments yet.</td></tr>'}
         </tbody>
       </table>

@@ -10,6 +10,7 @@ if (!window.supabase) {
 }
 const { createClient } = window.supabase || { createClient: () => ({ from: () => ({ select: () => ({ eq: () => ({ single: () => ({}) }) }) }) }) };
 const supabaseClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+window.supabaseClient = supabaseClient;
 
 const _stats = {
     totalRequests: 0,
@@ -830,6 +831,15 @@ class SupabaseDB {
         }
 
         const { error } = await query;
+        if (error) throw error;
+        _cache.invalidate(`notifications_${userEmail}`);
+    }
+
+    static async deleteNotifications(userEmail) {
+        const { error } = await supabaseClient
+            .from('notifications')
+            .delete()
+            .eq('user_email', userEmail);
         if (error) throw error;
         _cache.invalidate(`notifications_${userEmail}`);
     }

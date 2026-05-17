@@ -358,15 +358,8 @@ const NotificationManager = {
             const updatedRead = [...new Set([...readBroadcasts, ...broadcastIds])];
             localStorage.setItem(`read_broadcasts_${user.email}`, JSON.stringify(updatedRead));
 
-            // Actually delete personal notifications for this user
-            const { error } = await window.supabaseClient
-                .from('notifications')
-                .delete()
-                .eq('user_email', user.email);
-
-            if (error) throw error;
-
-            SupabaseDB.invalidateCache(`notifications_${user.email}`);
+            // Actually delete personal notifications for this user using SupabaseDB
+            await SupabaseDB.deleteNotifications(user.email);
             this.updateUI();
             UI.showNotification('Notifications cleared', 'info');
         } catch (e) {
@@ -411,10 +404,20 @@ const NotificationManager = {
                         <button class="button danger tiny" style="width:auto; margin:0; background:#fee2e2; color:#b91c1c" onclick="NotificationManager.clearAll(); event.stopPropagation();">Clear All</button>
                     </div>
                 </div>
-                <div class="notif-items-container" style="max-height:350px; overflow-y:auto">
+                <div class="notif-items-container" style="max-height:350px; overflow-y:auto; scroll-behavior: smooth;">
                     ${notifications.length === 0 ? '<div style="padding:40px 20px; text-align:center; color:#999"><div style="font-size:32px; margin-bottom:10px">🔔</div>No notifications yet</div>' : itemsHtml}
                 </div>
             `;
+
+            // Ensure the view scrolls to the last message if they are plenty
+            const container = list.querySelector('.notif-items-container');
+            if (container && notifications.length > 0) {
+                container.style.paddingBottom = '20px';
+                // Use a small timeout to ensure the DOM is rendered before scrolling
+                setTimeout(() => {
+                    container.scrollTop = container.scrollHeight;
+                }, 100);
+            }
             } catch (e) {
                 console.warn('Error updating notif list:', e);
                 list.innerHTML = '<div style="padding:10px">Could not load notifications.</div>';
