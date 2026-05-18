@@ -602,6 +602,86 @@ RETURNS TIMESTAMP WITH TIME ZONE AS $$
 $$ LANGUAGE sql STABLE;
 
 -- Insert default maintenance record
+-- Server-Side Enforcement (PostgreSQL Triggers)
+
+-- 1. validate_submission_time() for the submissions table
+CREATE OR REPLACE FUNCTION validate_submission_time()
+RETURNS TRIGGER AS $$
+DECLARE
+    v_start_at TIMESTAMP WITH TIME ZONE;
+    v_due_date TIMESTAMP WITH TIME ZONE;
+    v_allow_late BOOLEAN;
+BEGIN
+    SELECT start_at, due_date, allow_late_submissions
+    INTO v_start_at, v_due_date, v_allow_late
+    FROM assignments
+    WHERE id = NEW.assignment_id;
+
+    -- Only validate when status is being changed to 'submitted'
+    -- Using TG_OP to safely check for INSERT vs UPDATE
+    IF (NEW.status = 'submitted' AND (TG_OP = 'INSERT' OR (TG_OP = 'UPDATE' AND OLD.status != 'submitted'))) THEN
+        -- Check start_at (no early submissions)
+        IF v_start_at IS NOT NULL AND NOW() < v_start_at THEN
+            RAISE EXCEPTION 'Assignment is not open for submission yet.';
+        END IF;
+
+        -- Check due_date if allow_late_submissions is FALSE (no late submissions)
+        IF v_due_date IS NOT NULL AND v_allow_late = FALSE AND NOW() > v_due_date THEN
+            RAISE EXCEPTION 'Late submissions are not allowed for this assignment.';
+        END IF;
+    END IF;
+
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS tr_validate_submission_time ON submissions;
+CREATE TRIGGER tr_validate_submission_time
+BEFORE INSERT OR UPDATE ON submissions
+FOR EACH ROW EXECUTE PROCEDURE validate_submission_time();
+
+-- 2. validate_quiz_submission_time() for the quiz_submissions table
+CREATE OR REPLACE FUNCTION validate_quiz_submission_time()
+RETURNS TRIGGER AS $$
+DECLARE
+    v_start_at TIMESTAMP WITH TIME ZONE;
+    v_end_at TIMESTAMP WITH TIME ZONE;
+    v_time_limit INTEGER;
+BEGIN
+    SELECT start_at, end_at, time_limit
+    INTO v_start_at, v_end_at, v_time_limit
+    FROM quizzes
+    WHERE id = NEW.quiz_id;
+
+    -- Only validate when status is being changed to 'submitted'
+    -- Using TG_OP to safely check for INSERT vs UPDATE, ensuring teacher grading isn't blocked
+    IF (NEW.status = 'submitted' AND (TG_OP = 'INSERT' OR (TG_OP = 'UPDATE' AND OLD.status != 'submitted'))) THEN
+        -- Check start_at (no early attempts/submissions)
+        IF v_start_at IS NOT NULL AND NEW.started_at < v_start_at THEN
+             RAISE EXCEPTION 'Quiz was started before the allowed window.';
+        END IF;
+
+        -- Check end_at (no submissions after quiz closes)
+        IF v_end_at IS NOT NULL AND NOW() > (v_end_at + INTERVAL '1 minute') THEN
+            RAISE EXCEPTION 'Quiz has already closed.';
+        END IF;
+
+        -- Check time_limit (if time_limit > 0, ensure submitted_at - started_at does not exceed it)
+        -- We allow a 1-minute grace period for network latency
+        IF v_time_limit > 0 AND NEW.submitted_at > (NEW.started_at + (v_time_limit * INTERVAL '1 minute') + INTERVAL '1 minute') THEN
+            RAISE EXCEPTION 'Quiz time limit exceeded.';
+        END IF;
+    END IF;
+
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS tr_validate_quiz_submission_time ON quiz_submissions;
+CREATE TRIGGER tr_validate_quiz_submission_time
+BEFORE INSERT OR UPDATE ON quiz_submissions
+FOR EACH ROW EXECUTE PROCEDURE validate_quiz_submission_time();
+
 -- Insert default maintenance record idempotently
 INSERT INTO maintenance (enabled, schedules)
 SELECT false, '[]'::jsonb

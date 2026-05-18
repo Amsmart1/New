@@ -682,7 +682,7 @@ async function gradeSubmission(assignmentId, studentEmail) {
     let lateDays = 0;
     let latePenalty = 0;
     if (subDate > dueDate) {
-        lateDays = Math.ceil((subDate - dueDate) / (1000 * 60 * 60 * 24));
+        lateDays = Math.floor((subDate - dueDate) / (1000 * 60 * 60 * 24));
         latePenalty = lateDays * (assignment.late_penalty_per_day || 0);
     }
 
@@ -735,7 +735,7 @@ async function gradeSubmission(assignmentId, studentEmail) {
         <div class="mt-20 grid-2">
           <div>
             <label>Raw Score (0-${assignment.points_possible}):</label>
-            <input type="number" id="grade" min="0" max="${assignment.points_possible}" value="${submission.grade || ''}" required>
+            <input type="number" id="grade" min="0" max="${assignment.points_possible}" value="${submission.grade || ''}" required readonly style="background:#f0f0f0">
           </div>
           <div>
             <label>Final Adjusted Grade (%):</label>
@@ -773,6 +773,8 @@ async function gradeSubmission(assignmentId, studentEmail) {
 
   document.querySelectorAll('.q-score-input').forEach(input => {
       input.addEventListener('input', updateRawFromQuestions);
+      // Also listen for change to handle blur/manual entry
+      input.addEventListener('change', updateRawFromQuestions);
   });
   rawInput.addEventListener('input', updateFinal);
   updateFinal();
@@ -1828,14 +1830,47 @@ async function gradeQuizSubmission(submissionId, quizId) {
           }).join('')}
         </div>
         <div class="mt-20 pt-20" style="border-top:1px solid var(--border)">
-          <div class="bold mb-10">Final Score Override (%)</div>
-          <input type="number" id="finalQuizScore" min="0" max="100" value="${submission.score || 0}" class="w-auto" style="width:100px">
-          <p class="small mt-5">Note: Use this to manually adjust the final percentage score.</p>
+          <div class="bold mb-10">Final Score</div>
+          <input type="number" id="finalQuizScore" min="0" max="100" value="${submission.score || 0}" class="w-auto" style="width:100px; background:#f0f0f0" readonly>
+          <p class="small mt-5">Note: Calculated from question scores.</p>
           <button type="submit" class="button w-auto px-40 mt-15">Save Grade</button>
         </div>
       </form>
     </div>
   `;
+
+  const finalScoreInput = document.getElementById('finalQuizScore');
+
+  const updateQuizFinalScore = () => {
+    const manualScores = Array.from(document.querySelectorAll('.q-manual-points')).map(input => ({
+      idx: parseInt(input.dataset.qIdx),
+      points: parseInt(input.value) || 0
+    }));
+
+    let earnedPoints = 0;
+    let totalPossible = 0;
+    quiz.questions.forEach((q, idx) => {
+      totalPossible += q.points;
+      const manual = manualScores.find(m => m.idx === idx);
+      if (manual) {
+        earnedPoints += manual.points;
+      } else {
+        const studentAnswer = submission.answers[idx] || '';
+        if (studentAnswer.toString().toLowerCase() === q.correct.toString().toLowerCase()) {
+          earnedPoints += q.points;
+        }
+      }
+    });
+
+    const percentage = totalPossible > 0 ? Math.round((earnedPoints / totalPossible) * 100) : 0;
+    finalScoreInput.value = percentage;
+  };
+
+  document.querySelectorAll('.q-manual-points').forEach(input => {
+    input.addEventListener('input', updateQuizFinalScore);
+  });
+
+  updateQuizFinalScore();
 
   document.getElementById('quizGradingForm').addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -1861,8 +1896,7 @@ async function gradeQuizSubmission(submissionId, quizId) {
         }
       });
 
-      const autoPercentage = Math.round((earnedPoints / totalPossible) * 100);
-      const finalScore = parseInt(document.getElementById('finalQuizScore').value);
+      const finalScore = parseInt(finalScoreInput.value);
 
       const updatedSubmission = {
         ...submission,
