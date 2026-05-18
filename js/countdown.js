@@ -135,14 +135,17 @@
         constructor(options = {}) {
             // Props with defaults
             this.targetDate = options.targetDate || new Date();
+            this.startTime = options.startTime || null;
             this.startAt = options.startAt || null;
             this.onStart = options.onStart || null;
             this.onEnd = options.onEnd || null;
             this.className = options.className || '';
             this.showIcon = options.showIcon !== false;
+            this.showProgress = options.showProgress === true;
             this.compact = options.compact === true;
             this.endLabel = options.endLabel !== undefined ? options.endLabel : 'Ended';
             this.upcomingLabel = options.upcomingLabel || 'Starts in';
+            this.label = options.label || '';
             this.headless = options.headless === true;
             this.onTick = options.onTick || null;
 
@@ -176,10 +179,20 @@
         calculateTimeLeft() {
             if (!this.targetTimestamp) return null;
 
-            const difference = this.targetTimestamp - TimerManager.getTime();
+            const now = TimerManager.getTime();
+            const difference = this.targetTimestamp - now;
 
             if (difference <= 0) {
-                return { days: 0, hours: 0, minutes: 0, seconds: 0, total: 0, isSoon: false };
+                return { days: 0, hours: 0, minutes: 0, seconds: 0, total: 0, isSoon: false, progress: 0 };
+            }
+
+            let progress = null;
+            if (this.startTime) {
+                const startTs = new Date(this.startTime).getTime();
+                const totalDuration = this.targetTimestamp - startTs;
+                if (totalDuration > 0) {
+                    progress = Math.max(0, Math.min(100, (difference / totalDuration) * 100));
+                }
             }
 
             return {
@@ -188,7 +201,8 @@
                 minutes: Math.floor((difference / 1000 / 60) % 60),
                 seconds: Math.floor((difference / 1000) % 60),
                 total: difference,
-                isSoon: difference > 0 && difference < 60 * 60 * 1000 // Less than 1 hour
+                isSoon: difference > 0 && difference < 60 * 60 * 1000, // Less than 1 hour
+                progress: progress
             };
         }
 
@@ -303,7 +317,7 @@
 
         // Render the countdown UI
         render() {
-            const { days, hours, minutes, seconds, isSoon } = this.timeLeft;
+            const { days, hours, minutes, seconds, isSoon, progress } = this.timeLeft;
             const iconSize = this.compact ? 14 : 18;
 
             const timeClasses = [
@@ -315,10 +329,25 @@
                 this.className
             ].filter(Boolean).join(' ');
 
+            let progressHtml = '';
+            if (this.showProgress && progress !== null) {
+                let stateClass = 'progress-ok';
+                if (progress < 25) stateClass = 'progress-critical';
+                else if (progress < 50) stateClass = 'progress-warn';
+
+                progressHtml = `
+                    <div class="countdown-progress-container mt-5">
+                        <div class="countdown-progress-fill ${stateClass}" style="width: ${progress}%"></div>
+                    </div>
+                `;
+            }
+
             let html = `
-                <div class="${timeClasses}">
-                    ${this.showIcon ? Icons.Clock(iconSize) : ''}
-                    <div class="countdown-values flex gap-1 font-mono font-bold text-sm md:text-base">
+                <div class="countdown-wrapper">
+                    ${this.label ? `<div class="countdown-label small bold mb-5">${escapeHtml(this.label)}</div>` : ''}
+                    <div class="${timeClasses}">
+                        ${this.showIcon ? Icons.Clock(iconSize) : ''}
+                        <div class="countdown-values flex gap-1 font-mono font-bold text-sm md:text-base">
             `;
 
             // Days (only show if > 0)
@@ -358,7 +387,9 @@
             `;
 
             html += `
+                        </div>
                     </div>
+                    ${progressHtml}
                 </div>
             `;
 
