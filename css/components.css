@@ -403,3 +403,35 @@ label {
     background: var(--purple);
     transition: width 0.3s;
 }
+
+/* Countdown Enhancements */
+.countdown-wrapper {
+    display: flex;
+    flex-direction: column;
+}
+
+.countdown-progress-container {
+    height: 6px;
+    background: #edf2f7;
+    border-radius: 3px;
+    overflow: hidden;
+    width: 100%;
+}
+
+.countdown-progress-fill {
+    height: 100%;
+    width: 0;
+    transition: width 0.3s ease, background-color 0.3s ease;
+}
+
+.progress-ok { background: var(--ok); }
+.progress-warn { background: var(--warn); }
+.progress-critical { background: var(--danger); }
+
+.countdown-soon {
+    color: var(--danger);
+}
+
+.countdown-unit span {
+    line-height: 1;
+}

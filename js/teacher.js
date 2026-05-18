@@ -3,6 +3,10 @@ let activeCountdowns = [];
 function clearActiveCountdowns() {
     activeCountdowns.forEach(c => c.destroy());
     activeCountdowns = [];
+    if (liveClassTimer instanceof Countdown) {
+        liveClassTimer.destroy();
+        liveClassTimer = null;
+    }
 }
 
 async function renderDashboard() {
@@ -282,9 +286,9 @@ async function renderAssignments() {
           <p class="small"><strong>Course:</strong> ${escapeHtml(course?.title || 'None')}</p>
           <p class="small">${escapeHtml(a.description || '')}</p>
           <div class="mt-10">
-            <p class="small m-0">Due: ${new Date(a.due_date).toLocaleString()}</p>
+            <p class="small m-0 mb-5">Due: ${new Date(a.due_date).toLocaleString()}</p>
             ${new Date(a.due_date) > new Date() ? `
-                <div class="bold purple-text tiny assign-countdown" data-target="${new Date(a.due_date).getTime()}"></div>
+                <div class="assign-countdown" data-target="${new Date(a.due_date).getTime()}" data-start="${a.start_at || a.created_at || now}"></div>
             ` : '<div class="danger-text bold tiny">Past Due</div>'}
           </div>
           <div class="flex gap-10 mt-15">
@@ -298,16 +302,14 @@ async function renderAssignments() {
 
     document.querySelectorAll('.assign-countdown').forEach(el => {
         const target = parseInt(el.dataset.target);
+        const start = el.dataset.start;
         const c = Countdown.create(el, {
             targetDate: target,
-            headless: true,
-            onEnd: () => renderAssignments(),
-            onTick: (time) => {
-                const d = time.days > 0 ? time.days + 'd ' : '';
-                const h = String(time.hours).padStart(2, '0');
-                const m = String(time.minutes).padStart(2, '0');
-                el.textContent = 'Expires in: ' + d + h + 'h ' + m + 'm';
-            }
+            startTime: start,
+            showProgress: true,
+            compact: true,
+            label: 'Expires in:',
+            onEnd: () => renderAssignments()
         });
         activeCountdowns.push(c);
     });
@@ -1056,13 +1058,11 @@ async function renderLiveClasses() {
                 </div>
                 <span class="badge ${isLive ? 'badge-active' : ''}">${liveClass.status.toUpperCase()}</span>
               </div>
-              <div class="mt-10 mb-10 p-5 border-radius-sm" style="background:var(--bg)">
+              <div class="mt-10 mb-10 p-10 border-radius-sm" style="background:var(--bg)">
                   ${isUpcoming ? `
-                    <div class="tiny bold">Starts In:</div>
-                    <div class="bold small purple-text live-sch-countdown" data-target="${startAt}"></div>
+                    <div class="live-sch-countdown" data-target="${startAt}" data-start="${liveClass.created_at || now}" data-label="Starts In:"></div>
                   ` : isLive ? `
-                    <div class="tiny bold">Ends In:</div>
-                    <div class="bold small danger-text live-sch-countdown" data-target="${endAt}"></div>
+                    <div class="live-sch-countdown" data-target="${endAt}" data-start="${startAt}" data-label="Ends In:"></div>
                   ` : '<div class="tiny text-muted">Session Finished</div>'}
               </div>
               <div class="flex gap-10 mt-15">
@@ -1083,17 +1083,14 @@ async function renderLiveClasses() {
 
     document.querySelectorAll('.live-sch-countdown').forEach(el => {
         const target = parseInt(el.dataset.target);
+        const start = el.dataset.start;
+        const label = el.dataset.label;
         const c = Countdown.create(el, {
             targetDate: target,
-            headless: true,
-            onEnd: () => renderLiveClasses(),
-            onTick: (time) => {
-                const d = time.days > 0 ? time.days + 'd ' : '';
-                const h = String(time.hours).padStart(2, '0');
-                const m = String(time.minutes).padStart(2, '0');
-                const s = String(time.seconds).padStart(2, '0');
-                el.textContent = d + h + ':' + m + ':' + s;
-            }
+            startTime: start,
+            showProgress: true,
+            label: label,
+            onEnd: () => renderLiveClasses()
         });
         activeCountdowns.push(c);
     });
@@ -1380,8 +1377,13 @@ async function startTeacherLiveClass(id, roomName) {
     container.classList.add('hidden');
     if (modControls) modControls.classList.add('hidden');
     if (stopBtn) stopBtn.classList.add('hidden');
-    if (liveClassTimer instanceof Countdown) liveClassTimer.destroy();
-    else if (liveClassTimer) clearInterval(liveClassTimer);
+    if (liveClassTimer instanceof Countdown) {
+        liveClassTimer.destroy();
+        liveClassTimer = null;
+    } else if (liveClassTimer) {
+        clearInterval(liveClassTimer);
+        liveClassTimer = null;
+    }
 
     // Only set status back to scheduled if the teacher didn't stop the class manually
     try {
@@ -1406,6 +1408,14 @@ async function startTeacherLiveClass(id, roomName) {
 
 async function stopLiveClass(id) {
     if (confirm('Are you sure you want to stop the class? This will disconnect all participants.')) {
+        if (liveClassTimer instanceof Countdown) {
+            liveClassTimer.destroy();
+            liveClassTimer = null;
+        } else if (liveClassTimer) {
+            clearInterval(liveClassTimer);
+            liveClassTimer = null;
+        }
+
         try {
             const liveClass = await SupabaseDB.getLiveClass(id);
             if (liveClass) {
@@ -1518,13 +1528,11 @@ async function renderQuizzes() {
           <p class="small">Status: ${q.status}</p>
           <p class="small">Questions: ${q.questions?.length || 0}</p>
           ${q.start_at || q.end_at ? `
-            <div class="mt-10 mb-10 p-5 border-radius-sm" style="background:var(--bg)">
+            <div class="mt-10 mb-10 p-10 border-radius-sm" style="background:var(--bg)">
                 ${q.start_at && new Date(q.start_at) > new Date() ? `
-                    <div class="tiny bold">Starts In:</div>
-                    <div class="bold small purple-text quiz-sch-countdown" data-target="${new Date(q.start_at).getTime()}"></div>
+                    <div class="quiz-sch-countdown" data-target="${new Date(q.start_at).getTime()}" data-start="${q.created_at || now}" data-label="Starts In:"></div>
                 ` : q.end_at && new Date(q.end_at) > new Date() ? `
-                    <div class="tiny bold">Ends In:</div>
-                    <div class="bold small danger-text quiz-sch-countdown" data-target="${new Date(q.end_at).getTime()}"></div>
+                    <div class="quiz-sch-countdown" data-target="${new Date(q.end_at).getTime()}" data-start="${q.start_at || q.created_at || now}" data-label="Ends In:"></div>
                 ` : q.end_at ? '<div class="tiny danger-text bold">Expired</div>' : ''}
             </div>
           ` : ''}
@@ -1540,16 +1548,14 @@ async function renderQuizzes() {
 
     document.querySelectorAll('.quiz-sch-countdown').forEach(el => {
         const target = parseInt(el.dataset.target);
+        const start = el.dataset.start;
+        const label = el.dataset.label;
         const c = Countdown.create(el, {
             targetDate: target,
-            headless: true,
-            onEnd: () => renderQuizzes(),
-            onTick: (time) => {
-                const d = time.days > 0 ? time.days + 'd ' : '';
-                const h = String(time.hours).padStart(2, '0');
-                const m = String(time.minutes).padStart(2, '0');
-                el.textContent = d + h + 'h ' + m + 'm';
-            }
+            startTime: start,
+            showProgress: true,
+            label: label,
+            onEnd: () => renderQuizzes()
         });
         activeCountdowns.push(c);
     });

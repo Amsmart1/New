@@ -3,6 +3,10 @@ let activeCountdowns = [];
 function clearActiveCountdowns() {
     activeCountdowns.forEach(c => c.destroy());
     activeCountdowns = [];
+    if (quizTimer instanceof Countdown) {
+        quizTimer.destroy();
+        quizTimer = null;
+    }
 }
 
 async function updateHeaderStats() {
@@ -316,6 +320,8 @@ async function renderAssignments(){
       statusHtml = `<span class="badge ${badgeClass}">${submission.status.toUpperCase()}</span>`;
     } else if (isOverdue) {
       statusHtml = `<span class="badge badge-inactive">OVERDUE</span>`;
+    } else if (isUpcoming) {
+      statusHtml = `<div class="assign-open-countdown" data-target="${startAt}" data-start="${a.created_at || now}"></div>`;
     } else {
       statusHtml = `<span class="badge" style="background:#edf2f7; color:#4a5568">PENDING</span>`;
     }
@@ -330,9 +336,9 @@ async function renderAssignments(){
       <td>
         <div class="${isOverdue ? 'danger-text' : ''}">${dueDate.toLocaleDateString()}</div>
         ${isOverdue ? '<div class="small danger-text">(Overdue)</div>' : ''}
-        ${!isOverdue && !submission ? `<div class="tiny text-muted assign-due-countdown" data-target="${dueDate.getTime()}"></div>` : ''}
+        ${!isOverdue && !submission && !isUpcoming ? `<div class="assign-due-countdown" data-target="${dueDate.getTime()}" data-start="${startAt || a.created_at || now}"></div>` : ''}
       </td>
-      <td>${isUpcoming ? '<span class="badge badge-warn">UPCOMING</span>' : statusHtml}</td>
+      <td>${statusHtml}</td>
       <td>${submission?.grade !== undefined && submission?.grade !== null ? `
           <div class="success-text bold">${submission.final_grade}%</div>
           <div class="tiny text-muted">${submission.grade} / ${a.points_possible}</div>
@@ -340,7 +346,7 @@ async function renderAssignments(){
       <td>
         <div class="flex gap-5">
           ${isUpcoming ? `
-              <div class="small bold purple-text assign-open-countdown" data-target="${startAt}"></div>
+              <span class="badge badge-warn">UPCOMING</span>
             ` : !submission ?
             `<button class="button small w-auto ${isOverdue ? 'danger' : ''}" onclick="showAssignmentForm('${a.id}')">${isOverdue ? 'Submit Late' : 'Submit'}</button>` :
             (submission.status === 'submitted' || submission.status === 'draft' ?
@@ -356,31 +362,28 @@ async function renderAssignments(){
   // Initialize countdowns
   document.querySelectorAll('.assign-open-countdown').forEach(el => {
       const target = parseInt(el.dataset.target);
+      const start = el.dataset.start;
       const c = Countdown.create(el, {
           targetDate: target,
-          headless: true,
-          onEnd: () => renderAssignments(),
-          onTick: (time) => {
-              const d = time.days > 0 ? time.days + 'd ' : '';
-              const h = String(time.hours).padStart(2, '0');
-              el.textContent = 'Opens in ' + d + h + 'h';
-          }
+          startTime: start,
+          showProgress: true,
+          compact: true,
+          label: 'Opens in:',
+          onEnd: () => renderAssignments()
       });
       activeCountdowns.push(c);
   });
 
   document.querySelectorAll('.assign-due-countdown').forEach(el => {
       const target = parseInt(el.dataset.target);
+      const start = el.dataset.start;
       const c = Countdown.create(el, {
           targetDate: target,
-          headless: true,
-          onEnd: () => renderAssignments(),
-          onTick: (time) => {
-              const d = time.days > 0 ? time.days + 'd ' : '';
-              const h = String(time.hours).padStart(2, '0');
-              const m = String(time.minutes).padStart(2, '0');
-              el.textContent = 'Due in: ' + d + h + 'h ' + m + 'm';
-          }
+          startTime: start,
+          showProgress: true,
+          compact: true,
+          label: 'Due in:',
+          onEnd: () => renderAssignments()
       });
       activeCountdowns.push(c);
   });
@@ -601,13 +604,13 @@ async function renderDashboardOverview() {
         <h3>Upcoming Assignments</h3>
         <div class="mt-15">
           ${pendingAssignments.slice(0, 5).map(a => `
-            <div class="flex-between list-item">
-              <div>
+            <div class="flex-between list-item" style="align-items: flex-start">
+              <div style="flex: 1">
                 <div class="bold">${escapeHtml(a.title)}</div>
-                <div class="tiny text-muted">Due: ${new Date(a.due_date).toLocaleDateString()}</div>
-                <div class="tiny purple-text bold dashboard-assign-countdown" data-target="${new Date(a.due_date).getTime()}"></div>
+                <div class="tiny text-muted mb-5">Due: ${new Date(a.due_date).toLocaleDateString()}</div>
+                <div class="dashboard-assign-countdown" data-target="${new Date(a.due_date).getTime()}" data-start="${a.start_at || a.created_at || now}"></div>
               </div>
-              <button class="button small w-auto" onclick="showAssignmentForm('${a.id}')">Submit</button>
+              <button class="button small w-auto mt-10" style="width: 80px" onclick="showAssignmentForm('${a.id}')">Submit</button>
             </div>
           `).join('') || '<p class="small">No pending assignments! Good job.</p>'}
           ${pendingAssignments.length > 5 ? `<button class="button secondary small w-100 mt-10" onclick="renderAssignments()">View All Assignments</button>` : ''}
@@ -618,16 +621,14 @@ async function renderDashboardOverview() {
 
   document.querySelectorAll('.dashboard-assign-countdown').forEach(el => {
       const target = parseInt(el.dataset.target);
+      const start = el.dataset.start;
       const c = Countdown.create(el, {
           targetDate: target,
-          headless: true,
-          onEnd: () => renderDashboardOverview(),
-          onTick: (time) => {
-              const d = time.days > 0 ? time.days + 'd ' : '';
-              const h = String(time.hours).padStart(2, '0');
-              const m = String(time.minutes).padStart(2, '0');
-              el.textContent = 'Due in: ' + d + h + 'h ' + m + 'm';
-          }
+          startTime: start,
+          showProgress: true,
+          compact: true,
+          label: 'Due in:',
+          onEnd: () => renderDashboardOverview()
       });
       activeCountdowns.push(c);
   });
@@ -1155,11 +1156,10 @@ async function renderLiveClasses() {
                 ${isLive ?
                   `<button class="button w-auto" onclick="handleJoinLiveClass('${liveClass.id}', '${liveClass.room_name}', '${escapeAttr(liveClass.meeting_url || '')}')">Join Now</button>` :
                   isUpcoming ? `
-                    <div class="mb-10 p-5 border-radius-sm text-center" style="background:var(--bg); border:1px solid var(--border)">
-                        <div class="tiny bold text-muted">Starts In:</div>
-                        <div class="bold small purple-text live-countdown" data-target="${startAt}"></div>
+                    <div class="mb-10 p-10 border-radius-sm" style="background:var(--bg); border:1px solid var(--border)">
+                        <div class="live-countdown" data-target="${startAt}" data-start="${liveClass.created_at || now}"></div>
                     </div>
-                    <button class="button secondary w-auto" disabled>Not Started</button>
+                    <button class="button secondary w-auto mt-10" disabled>Not Started</button>
                   ` : `<button class="button secondary w-auto" disabled>Not Started</button>`
                 }
               </div>
@@ -1172,17 +1172,13 @@ async function renderLiveClasses() {
 
     document.querySelectorAll('.live-countdown').forEach(el => {
         const target = parseInt(el.dataset.target);
+        const start = el.dataset.start;
         const c = Countdown.create(el, {
             targetDate: target,
-            headless: true,
-            onEnd: () => renderLiveClasses(),
-            onTick: (time) => {
-                const d = time.days > 0 ? time.days + 'd ' : '';
-                const h = String(time.hours).padStart(2, '0');
-                const m = String(time.minutes).padStart(2, '0');
-                const s = String(time.seconds).padStart(2, '0');
-                el.textContent = d + h + ':' + m + ':' + s;
-            }
+            startTime: start,
+            showProgress: true,
+            label: 'Starts in:',
+            onEnd: () => renderLiveClasses()
         });
         activeCountdowns.push(c);
     });
@@ -1457,17 +1453,15 @@ async function renderQuizzes() {
 
             <div class="mt-20">
                 ${isUpcoming ? `
-                    <div class="p-10 border-radius-sm text-center" style="background:var(--bg); border:1px solid var(--border)">
-                        <div class="small bold text-muted mb-5">Available In:</div>
-                        <div class="bold purple-text quiz-countdown" data-target="${startAt}"></div>
+                    <div class="p-10 border-radius-sm" style="background:var(--bg); border:1px solid var(--border)">
+                        <div class="quiz-countdown" data-target="${startAt}" data-start="${q.created_at || now}" data-label="Available In:"></div>
                     </div>
                 ` : isExpired ? `
                     <div class="badge badge-inactive w-100 text-center">Quiz Ended on ${new Date(endAt).toLocaleString()}</div>
                 ` : canAttempt ? `
                     ${endAt !== Infinity ? `
-                        <div class="mb-10 p-5 border-radius-sm text-center" style="background:#fffcf0; border:1px solid #ffeeba">
-                            <div class="tiny bold text-muted">Ends In:</div>
-                            <div class="bold small danger-text quiz-countdown" data-target="${endAt}"></div>
+                        <div class="mb-10 p-10 border-radius-sm" style="background:#fffcf0; border:1px solid #ffeeba">
+                            <div class="quiz-countdown" data-target="${endAt}" data-start="${startAt}" data-label="Ends In:"></div>
                         </div>
                     ` : ''}
                     <button class="button w-auto small px-20" onclick="startQuiz('${q.id}')">${draft ? 'Resume Attempt' : 'Start New Attempt'}</button>
@@ -1484,17 +1478,14 @@ async function renderQuizzes() {
   // Initialize countdowns
   document.querySelectorAll('.quiz-countdown').forEach(el => {
       const target = parseInt(el.dataset.target);
+      const start = el.dataset.start;
+      const label = el.dataset.label;
       const c = Countdown.create(el, {
           targetDate: target,
-          headless: true,
-          onEnd: () => renderQuizzes(),
-          onTick: (time) => {
-              const d = time.days > 0 ? time.days + 'd ' : '';
-              const h = String(time.hours).padStart(2, '0');
-              const m = String(time.minutes).padStart(2, '0');
-              const s = String(time.seconds).padStart(2, '0');
-              el.textContent = d + h + ':' + m + ':' + s;
-          }
+          startTime: start,
+          showProgress: true,
+          label: label,
+          onEnd: () => renderQuizzes()
       });
       activeCountdowns.push(c);
   });
@@ -1628,22 +1619,17 @@ async function startQuiz(quizId) {
 
   // Start Timer
   if (quiz.time_limit > 0) {
-    const endTime = new Date(currentSubmission.started_at).getTime() + (quiz.time_limit * 60 * 1000);
+    const startTs = new Date(currentSubmission.started_at).getTime();
+    const endTime = startTs + (quiz.time_limit * 60 * 1000);
 
-    quizTimer = Countdown.create(null, {
+    quizTimer = Countdown.create('#quizTimerDisplay', {
         targetDate: endTime,
-        headless: true,
+        startTime: startTs,
+        showProgress: true,
+        label: 'Time Remaining:',
         onEnd: () => {
             alert('Time is up! Submitting your quiz automatically.');
             submitQuiz();
-        },
-        onTick: (time) => {
-            const m = Math.floor(time.total / 60000);
-            const s = Math.floor((time.total % 60000) / 1000);
-            const display = document.getElementById('quizTimerDisplay');
-            if (display) {
-                display.textContent = `Time Remaining: ${m}:${s.toString().padStart(2, '0')}`;
-            }
         }
     });
 
@@ -1684,9 +1670,17 @@ function getQuizAnswers() {
 async function submitQuiz() {
   const btn = document.getElementById('submitQuizBtn');
   if (btn) btn.disabled = true;
-  if (quizTimer instanceof Countdown) quizTimer.destroy();
-  else if (quizTimer) clearInterval(quizTimer);
-  if (quizDebounceTimer) clearTimeout(quizDebounceTimer);
+  if (quizTimer instanceof Countdown) {
+    quizTimer.destroy();
+    quizTimer = null;
+  } else if (quizTimer) {
+    clearInterval(quizTimer);
+    quizTimer = null;
+  }
+  if (quizDebounceTimer) {
+    clearTimeout(quizDebounceTimer);
+    quizDebounceTimer = null;
+  }
   const user = await SessionManager.getCurrentUser();
   const answers = getQuizAnswers();
   
