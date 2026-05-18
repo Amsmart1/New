@@ -682,7 +682,7 @@ async function gradeSubmission(assignmentId, studentEmail) {
     let lateDays = 0;
     let latePenalty = 0;
     if (subDate > dueDate) {
-        lateDays = Math.ceil((subDate - dueDate) / (1000 * 60 * 60 * 24));
+        lateDays = Math.floor((subDate - dueDate) / (1000 * 60 * 60 * 24));
         latePenalty = lateDays * (assignment.late_penalty_per_day || 0);
     }
 
@@ -735,17 +735,17 @@ async function gradeSubmission(assignmentId, studentEmail) {
         <div class="mt-20 grid-2">
           <div>
             <label>Raw Score (0-${assignment.points_possible}):</label>
-            <input type="number" id="grade" min="0" max="${assignment.points_possible}" value="${submission.grade || ''}" required>
+            <input type="number" id="grade" min="0" max="${assignment.points_possible}" value="${submission.grade ?? ''}" required readonly style="background:#f0f0f0">
           </div>
           <div>
             <label>Final Adjusted Grade (%):</label>
-            <input type="number" id="finalGrade" min="0" max="100" value="${submission.final_grade || ''}" readonly style="background:#f0f0f0">
+            <input type="number" id="finalGrade" min="0" max="100" value="${submission.final_grade ?? ''}" readonly style="background:#f0f0f0">
             <p class="tiny mt-5">Auto-calculated based on penalty.</p>
           </div>
         </div>
         <div class="mt-10">
           <label>Feedback:</label>
-          <textarea id="feedback" rows="4" placeholder="Enter feedback for student..."></textarea>
+          <textarea id="feedback" rows="4" placeholder="Enter feedback for student...">${escapeHtml(submission.feedback || '')}</textarea>
         </div>
         <div class="flex gap-10 mt-20">
           <button type="submit" class="button w-auto px-40">Submit Grade</button>
@@ -773,9 +773,13 @@ async function gradeSubmission(assignmentId, studentEmail) {
 
   document.querySelectorAll('.q-score-input').forEach(input => {
       input.addEventListener('input', updateRawFromQuestions);
+      input.addEventListener('change', updateRawFromQuestions);
+      input.addEventListener('keyup', updateRawFromQuestions);
   });
   rawInput.addEventListener('input', updateFinal);
-  updateFinal();
+
+  // Force an initial update
+  updateRawFromQuestions();
 
   document.getElementById('gradingForm').addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -792,8 +796,8 @@ async function gradeSubmission(assignmentId, studentEmail) {
 
       const updatedSubmission = {
         ...submission,
-        grade: parseInt(rawInput.value),
-        final_grade: parseInt(finalInput.value),
+        grade: parseInt(rawInput.value) || 0,
+        final_grade: parseInt(finalInput.value) || 0,
         question_scores: questionScores,
         question_feedback: questionFeedback,
         late_penalty_applied: latePenalty,
@@ -1808,6 +1812,9 @@ async function gradeQuizSubmission(submissionId, quizId) {
               correctDisplay = q.options[q.correct] !== undefined ? q.options[q.correct] : q.correct;
             }
 
+            const manualScore = submission.analytics?.manual_scores?.[idx];
+            const currentPoints = manualScore !== undefined ? manualScore : (isCorrect ? q.points : 0);
+
             return `
               <div class="question" style="border-left: 5px solid ${statusColor}">
                 <div class="bold">Q${idx + 1}: ${escapeHtml(q.text)} (${q.points} pts)</div>
@@ -1820,7 +1827,7 @@ async function gradeQuizSubmission(submissionId, quizId) {
                 ${!isAutoGraded ? `
                   <div class="mt-10 flex-center-y gap-10">
                     <label class="small m-0">Points Awarded (0-${q.points}):</label>
-                    <input type="number" class="q-manual-points w-auto m-0 p-5" data-q-idx="${idx}" min="0" max="${q.points}" value="${isCorrect ? q.points : 0}" style="width:80px">
+                    <input type="number" class="q-manual-points w-auto m-0 p-5" data-q-idx="${idx}" min="0" max="${q.points}" value="${currentPoints}" style="width:80px">
                   </div>
                 ` : ''}
               </div>
@@ -1828,46 +1835,77 @@ async function gradeQuizSubmission(submissionId, quizId) {
           }).join('')}
         </div>
         <div class="mt-20 pt-20" style="border-top:1px solid var(--border)">
-          <div class="bold mb-10">Final Score Override (%)</div>
-          <input type="number" id="finalQuizScore" min="0" max="100" value="${submission.score || 0}" class="w-auto" style="width:100px">
-          <p class="small mt-5">Note: Use this to manually adjust the final percentage score.</p>
+          <div class="bold mb-10">Final Score</div>
+          <input type="number" id="finalQuizScore" min="0" max="100" value="${submission.score || 0}" class="w-auto" style="width:100px; background:#f0f0f0" readonly>
+          <p class="small mt-5">Note: Calculated from question scores.</p>
           <button type="submit" class="button w-auto px-40 mt-15">Save Grade</button>
         </div>
       </form>
     </div>
   `;
 
+  const finalScoreInput = document.getElementById('finalQuizScore');
+
+  const updateQuizFinalScore = () => {
+    const manualScores = Array.from(document.querySelectorAll('.q-manual-points')).map(input => ({
+      idx: parseInt(input.dataset.qIdx),
+      points: parseInt(input.value) || 0
+    }));
+
+    let earnedPoints = 0;
+    let totalPossible = 0;
+    quiz.questions.forEach((q, idx) => {
+      totalPossible += q.points;
+      const manual = manualScores.find(m => m.idx === idx);
+      if (manual) {
+        earnedPoints += manual.points;
+      } else {
+        const studentAnswer = submission.answers[idx] || '';
+        if (studentAnswer.toString().toLowerCase() === q.correct.toString().toLowerCase()) {
+          earnedPoints += q.points;
+        }
+      }
+    });
+
+    const percentage = totalPossible > 0 ? Math.round((earnedPoints / totalPossible) * 100) : 0;
+    finalScoreInput.value = percentage;
+  };
+
+  document.querySelectorAll('.q-manual-points').forEach(input => {
+    input.addEventListener('input', updateQuizFinalScore);
+    input.addEventListener('change', updateQuizFinalScore);
+    input.addEventListener('keyup', updateQuizFinalScore);
+  });
+
+  updateQuizFinalScore();
+
   document.getElementById('quizGradingForm').addEventListener('submit', async (e) => {
     e.preventDefault();
     try {
-      const manualScores = Array.from(document.querySelectorAll('.q-manual-points')).map(input => ({
-        idx: parseInt(input.dataset.qIdx),
-        points: parseInt(input.value) || 0
-      }));
-
-      // Calculate total points
-      let earnedPoints = 0;
-      let totalPossible = 0;
-      quiz.questions.forEach((q, idx) => {
-        totalPossible += q.points;
-        const manual = manualScores.find(m => m.idx === idx);
-        if (manual) {
-          earnedPoints += manual.points;
-        } else {
-          const studentAnswer = submission.answers[idx] || '';
-          if (studentAnswer.toString().toLowerCase() === q.correct.toString().toLowerCase()) {
-            earnedPoints += q.points;
-          }
-        }
+      const manualScoresMap = {};
+      const manualScoresList = Array.from(document.querySelectorAll('.q-manual-points')).map(input => {
+        const idx = parseInt(input.dataset.qIdx);
+        const pts = parseInt(input.value) || 0;
+        manualScoresMap[idx] = pts;
+        return { idx, points: pts };
       });
 
-      const autoPercentage = Math.round((earnedPoints / totalPossible) * 100);
-      const finalScore = parseInt(document.getElementById('finalQuizScore').value);
+      // Calculate total points
+      let totalPossible = 0;
+      quiz.questions.forEach((q) => {
+        totalPossible += q.points;
+      });
+
+      const finalScore = parseInt(finalScoreInput.value) || 0;
 
       const updatedSubmission = {
         ...submission,
         score: finalScore,
         total_points: totalPossible,
+        analytics: {
+            ...submission.analytics,
+            manual_scores: manualScoresMap
+        },
         updated_at: new Date().toISOString()
       };
 
