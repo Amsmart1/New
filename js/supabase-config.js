@@ -313,7 +313,6 @@ class SupabaseDB {
     static async saveSubmission(submission) {
         // Sanitize payload
         const payload = {
-            id: submission.id,
             assignment_id: submission.assignment_id,
             student_email: submission.student_email,
             submitted_at: submission.submitted_at,
@@ -330,6 +329,7 @@ class SupabaseDB {
             status: submission.status,
             updated_at: new Date().toISOString()
         };
+        if (submission.id) payload.id = submission.id;
 
         const { data, error } = await supabaseClient
             .from('submissions')
@@ -390,6 +390,54 @@ class SupabaseDB {
     }
 
     static async deleteEnrollment(courseId, studentEmail) {
+        // Thorough cleanup: Delete all related student history for this course
+        try {
+            const [assignments, quizzes] = await Promise.all([
+                this.getAssignments(null, courseId),
+                this.getQuizzes(courseId)
+            ]);
+
+            const assignIds = assignments.map(a => a.id);
+            const quizIds = quizzes.map(q => q.id);
+
+            // Delete submissions
+            if (assignIds.length > 0) {
+                await supabaseClient
+                    .from('submissions')
+                    .delete()
+                    .eq('student_email', studentEmail)
+                    .in('assignment_id', assignIds);
+            }
+
+            // Delete quiz submissions
+            if (quizIds.length > 0) {
+                await supabaseClient
+                    .from('quiz_submissions')
+                    .delete()
+                    .eq('student_email', studentEmail)
+                    .in('quiz_id', quizIds);
+            }
+
+            // Delete study sessions
+            await supabaseClient
+                .from('study_sessions')
+                .delete()
+                .match({ course_id: courseId, user_email: studentEmail });
+
+            // Delete attendance
+            const liveClasses = await this.getLiveClasses(courseId);
+            const classIds = liveClasses.map(lc => lc.id);
+            if (classIds.length > 0) {
+                await supabaseClient
+                    .from('attendance')
+                    .delete()
+                    .eq('student_email', studentEmail)
+                    .in('live_class_id', classIds);
+            }
+        } catch (e) {
+            console.warn('History cleanup during unenrollment partially failed:', e);
+        }
+
         const { error } = await supabaseClient
             .from('enrollments')
             .delete()
@@ -497,7 +545,6 @@ class SupabaseDB {
     static async saveCourse(course) {
         // Sanitize payload to avoid 400 error from extra fields
         const payload = {
-            id: course.id,
             title: course.title,
             description: course.description,
             teacher_email: course.teacher_email,
@@ -507,6 +554,7 @@ class SupabaseDB {
             metadata: course.metadata,
             updated_at: new Date().toISOString()
         };
+        if (course.id) payload.id = course.id;
         if (course.created_at) payload.created_at = course.created_at;
 
         const { data, error } = await supabaseClient
@@ -541,7 +589,6 @@ class SupabaseDB {
 
     static async saveLesson(lesson) {
         const payload = {
-            id: lesson.id,
             course_id: lesson.course_id,
             title: lesson.title,
             content: lesson.content,
@@ -549,6 +596,7 @@ class SupabaseDB {
             order_index: lesson.order_index,
             updated_at: new Date().toISOString()
         };
+        if (lesson.id) payload.id = lesson.id;
         if (lesson.created_at) payload.created_at = lesson.created_at;
 
         const { data, error } = await supabaseClient
@@ -580,7 +628,6 @@ class SupabaseDB {
 
     static async saveMaterial(material) {
         const payload = {
-            id: material.id,
             course_id: material.course_id,
             teacher_email: material.teacher_email,
             title: material.title,
@@ -589,6 +636,7 @@ class SupabaseDB {
             file_type: material.file_type,
             created_at: material.created_at || new Date().toISOString()
         };
+        if (material.id) payload.id = material.id;
         const { data, error } = await supabaseClient
             .from('materials')
             .upsert(payload, { onConflict: 'id' })
@@ -618,7 +666,6 @@ class SupabaseDB {
 
     static async saveDiscussion(discussion) {
         const payload = {
-            id: discussion.id,
             course_id: discussion.course_id,
             user_email: discussion.user_email,
             parent_id: discussion.parent_id,
@@ -626,6 +673,7 @@ class SupabaseDB {
             content: discussion.content,
             updated_at: new Date().toISOString()
         };
+        if (discussion.id) payload.id = discussion.id;
         if (discussion.created_at) payload.created_at = discussion.created_at;
 
         const { data, error } = await supabaseClient
@@ -666,7 +714,6 @@ class SupabaseDB {
     static async saveQuiz(quiz) {
         // Sanitize payload to avoid 400 error from extra fields
         const payload = {
-            id: quiz.id,
             course_id: quiz.course_id,
             teacher_email: quiz.teacher_email,
             title: quiz.title,
@@ -681,6 +728,7 @@ class SupabaseDB {
             status: quiz.status,
             updated_at: new Date().toISOString()
         };
+        if (quiz.id) payload.id = quiz.id;
         if (quiz.created_at) payload.created_at = quiz.created_at;
 
         const { data, error } = await supabaseClient
@@ -713,7 +761,6 @@ class SupabaseDB {
     static async saveQuizSubmission(submission) {
         // Sanitize payload to avoid 400 error from extra fields
         const payload = {
-            id: submission.id,
             quiz_id: submission.quiz_id,
             student_email: submission.student_email,
             score: submission.score,
@@ -725,6 +772,7 @@ class SupabaseDB {
             started_at: submission.started_at,
             submitted_at: submission.submitted_at
         };
+        if (submission.id) payload.id = submission.id;
 
         const { data, error } = await supabaseClient
             .from('quiz_submissions')
@@ -799,7 +847,6 @@ class SupabaseDB {
 
     static async saveBroadcast(broadcast) {
         const payload = {
-            id: broadcast.id,
             course_id: broadcast.course_id,
             target_role: broadcast.target_role,
             title: broadcast.title,
@@ -809,6 +856,7 @@ class SupabaseDB {
             expires_at: broadcast.expires_at,
             created_at: broadcast.created_at || new Date().toISOString()
         };
+        if (broadcast.id) payload.id = broadcast.id;
         const { data, error } = await supabaseClient
             .from('broadcasts')
             .upsert(payload, { onConflict: 'id' })
@@ -851,13 +899,13 @@ class SupabaseDB {
     // Certificate operations
     static async issueCertificate(certificate) {
         const payload = {
-            id: certificate.id,
             course_id: certificate.course_id,
             student_email: certificate.student_email,
             issued_at: certificate.issued_at,
             certificate_url: certificate.certificate_url,
             metadata: certificate.metadata
         };
+        if (certificate.id) payload.id = certificate.id;
         const { data, error } = await supabaseClient
             .from('certificates')
             .upsert(payload, { onConflict: 'id' })
@@ -888,7 +936,6 @@ class SupabaseDB {
 
     static async savePlannerItem(item) {
         const payload = {
-            id: item.id,
             user_email: item.user_email,
             title: item.title,
             description: item.description,
@@ -897,6 +944,7 @@ class SupabaseDB {
             completed: item.completed,
             created_at: item.created_at || new Date().toISOString()
         };
+        if (item.id) payload.id = item.id;
         const { data, error } = await supabaseClient
             .from('planner')
             .upsert(payload, { onConflict: 'id' })
@@ -916,13 +964,13 @@ class SupabaseDB {
     // Study session operations
     static async saveStudySession(session) {
         const payload = {
-            id: session.id,
             user_email: session.user_email,
             course_id: session.course_id,
             duration: session.duration,
             started_at: session.started_at,
             ended_at: session.ended_at
         };
+        if (session.id) payload.id = session.id;
         const { data, error } = await supabaseClient
             .from('study_sessions')
             .upsert(payload, { onConflict: 'id' })
@@ -966,7 +1014,6 @@ class SupabaseDB {
     static async saveLiveClass(liveClass) {
         // Sanitize payload
         const payload = {
-            id: liveClass.id,
             course_id: liveClass.course_id,
             teacher_email: liveClass.teacher_email,
             title: liveClass.title,
@@ -981,6 +1028,7 @@ class SupabaseDB {
             status: liveClass.status,
             actual_end_at: liveClass.actual_end_at
         };
+        if (liveClass.id) payload.id = liveClass.id;
 
         const { data, error } = await supabaseClient
             .from('live_classes')
@@ -1000,7 +1048,6 @@ class SupabaseDB {
 
     static async saveAttendance(attendance) {
         const payload = {
-            id: attendance.id,
             live_class_id: attendance.live_class_id,
             student_email: attendance.student_email,
             join_time: attendance.join_time,
@@ -1009,6 +1056,7 @@ class SupabaseDB {
             is_present: attendance.is_present,
             created_at: attendance.created_at || new Date().toISOString()
         };
+        if (attendance.id) payload.id = attendance.id;
         const { data, error } = await supabaseClient
             .from('attendance')
             .upsert(payload, { onConflict: 'id' })
@@ -1043,13 +1091,13 @@ class SupabaseDB {
 
     static async saveMaintenance(maintenance) {
         const payload = {
-            id: maintenance.id,
             enabled: maintenance.enabled,
             manual_until: maintenance.manual_until,
             message: maintenance.message,
             schedules: maintenance.schedules,
             updated_at: new Date().toISOString()
         };
+        if (maintenance.id) payload.id = maintenance.id;
         if (maintenance.created_at) payload.created_at = maintenance.created_at;
 
         const { data, error } = await supabaseClient
@@ -1064,7 +1112,6 @@ class SupabaseDB {
     // Invite operations
     static async saveInvite(invite) {
         const payload = {
-            id: invite.id,
             token: invite.token,
             email: invite.email,
             role: invite.role,
@@ -1073,6 +1120,7 @@ class SupabaseDB {
             created_by: invite.created_by,
             created_at: invite.created_at || new Date().toISOString()
         };
+        if (invite.id) payload.id = invite.id;
         const { data, error } = await supabaseClient
             .from('invites')
             .upsert(payload, { onConflict: 'token' })

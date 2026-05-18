@@ -745,11 +745,19 @@ window.stopStudySession = stopStudySession;
 async function renderGrades() {
   clearActiveCountdowns();
   const user = await SessionManager.getCurrentUser();
+  const enrollments = await SupabaseDB.getEnrollments(user.email);
+  const enrolledCourseIds = enrollments.map(e => e.course_id);
+
   const [submissions, assigns] = await Promise.all([
     SupabaseDB.getSubmissions(null, user.email),
     SupabaseDB.getAssignments()
   ]);
-  const graded = submissions.filter(s => s.status === 'graded').sort((a,b) => new Date(a.submitted_at) - new Date(b.submitted_at));
+
+  // Filter graded submissions that belong to currently enrolled courses
+  const graded = submissions.filter(s => {
+    const a = assigns.find(x => x.id === s.assignment_id);
+    return s.status === 'graded' && a && enrolledCourseIds.includes(a.course_id);
+  }).sort((a,b) => new Date(a.submitted_at) - new Date(b.submitted_at));
   const container = document.getElementById('pageContent');
   if (!container) return;
 
@@ -772,11 +780,19 @@ async function renderGrades() {
 async function renderAnalytics() {
   clearActiveCountdowns();
   const user = await SessionManager.getCurrentUser();
+  const enrollments = await SupabaseDB.getEnrollments(user.email);
+  const enrolledCourseIds = enrollments.map(e => e.course_id);
+
   const [submissions, assigns] = await Promise.all([
     SupabaseDB.getSubmissions(null, user.email),
     SupabaseDB.getAssignments()
   ]);
-  const graded = submissions.filter(s => s.status === 'graded').sort((a,b) => new Date(a.submitted_at) - new Date(b.submitted_at));
+
+  // Filter graded submissions that belong to currently enrolled courses
+  const graded = submissions.filter(s => {
+    const a = assigns.find(x => x.id === s.assignment_id);
+    return s.status === 'graded' && a && enrolledCourseIds.includes(a.course_id);
+  }).sort((a,b) => new Date(a.submitted_at) - new Date(b.submitted_at));
   const container = document.getElementById('pageContent');
   if (!container) return;
 
@@ -1394,11 +1410,14 @@ async function renderQuizzes() {
   const enrollments = await SupabaseDB.getEnrollments(user.email);
   const enrolledCourseIds = enrollments.map(e => e.course_id);
 
-  const [quizzes, subs, courses] = await Promise.all([
+  const [quizzes, allSubs, courses] = await Promise.all([
     SupabaseDB.getQuizzes(null, null, enrolledCourseIds),
     SupabaseDB.getQuizSubmissions(null, user.email),
     SupabaseDB.getEnrolledCourses(user.email)
   ]);
+
+  // Only show submissions for quizzes that belong to enrolled courses
+  const subs = allSubs.filter(s => enrolledCourseIds.includes(s.quizzes?.course_id));
 
   const container = document.getElementById('pageContent');
   if (!container) return;
@@ -1703,15 +1722,22 @@ async function submitQuiz() {
   // Calculate time spent
   const timeSpent = currentSubmission ? Math.round((now - new Date(currentSubmission.started_at)) / 1000) : 0;
 
-  await SupabaseDB.saveQuizSubmission({
-    ...currentSubmission,
-    answers: answers,
-    score: percentage,
-    total_points: totalPoints,
-    status: 'submitted',
-    time_spent: timeSpent,
-    submitted_at: now.toISOString()
-  });
+  try {
+    await SupabaseDB.saveQuizSubmission({
+      ...currentSubmission,
+      answers: answers,
+      score: percentage,
+      total_points: totalPoints,
+      status: 'submitted',
+      time_spent: timeSpent,
+      submitted_at: now.toISOString()
+    });
+  } catch (err) {
+      console.error('Quiz submission failed:', err);
+      alert('Quiz Submission Failed: ' + (err.message || 'Unknown error'));
+      if (btn) btn.disabled = false;
+      return;
+  }
 
   const quizArea = document.getElementById('quizArea');
   if (quizArea) quizArea.style.display = 'none';
