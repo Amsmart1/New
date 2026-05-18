@@ -987,3 +987,5 @@ const IdleManager = {
 };
 
 window.IdleManager = IdleManager;
+window.initDashboard = initDashboard;
+window.updateMaintBanner = updateMaintBanner;

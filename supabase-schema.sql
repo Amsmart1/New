@@ -606,3 +606,73 @@ $$ LANGUAGE sql STABLE;
 INSERT INTO maintenance (enabled, schedules)
 SELECT false, '[]'::jsonb
 WHERE NOT EXISTS (SELECT 1 FROM maintenance);
+
+-- Server-Side Enforcement: Submission Window & Quiz Limits
+CREATE OR REPLACE FUNCTION validate_submission_time()
+RETURNS TRIGGER AS $$
+DECLARE
+  v_start_at TIMESTAMP WITH TIME ZONE;
+  v_due_date TIMESTAMP WITH TIME ZONE;
+  v_allow_late BOOLEAN;
+BEGIN
+  -- Only validate for student submissions (not when teacher is grading)
+  IF NEW.status = 'submitted' AND (OLD.status IS NULL OR OLD.status = 'draft') THEN
+    SELECT start_at, due_date, allow_late_submissions INTO v_start_at, v_due_date, v_allow_late
+    FROM assignments WHERE id = NEW.assignment_id;
+
+    IF v_start_at IS NOT NULL AND NOW() < v_start_at THEN
+      RAISE EXCEPTION 'Assignment is not open for submission yet.';
+    END IF;
+
+    IF v_allow_late = FALSE AND v_due_date IS NOT NULL AND NOW() > v_due_date THEN
+      RAISE EXCEPTION 'Late submissions are not allowed for this assignment.';
+    END IF;
+  END IF;
+
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS tr_validate_submission_time ON submissions;
+CREATE TRIGGER tr_validate_submission_time
+BEFORE INSERT OR UPDATE ON submissions
+FOR EACH ROW EXECUTE PROCEDURE validate_submission_time();
+
+CREATE OR REPLACE FUNCTION validate_quiz_submission_time()
+RETURNS TRIGGER AS $$
+DECLARE
+  v_start_at TIMESTAMP WITH TIME ZONE;
+  v_end_at TIMESTAMP WITH TIME ZONE;
+  v_time_limit INTEGER;
+BEGIN
+  -- Only validate when student is creating (draft) or submitting
+  -- Avoid validating when teacher is grading (OLD.status would be 'submitted')
+  IF (OLD.status IS NULL OR OLD.status = 'draft') AND (NEW.status = 'submitted' OR NEW.status = 'draft') THEN
+    SELECT start_at, end_at, time_limit INTO v_start_at, v_end_at, v_time_limit
+    FROM quizzes WHERE id = NEW.quiz_id;
+
+    IF v_start_at IS NOT NULL AND NOW() < v_start_at THEN
+      RAISE EXCEPTION 'Quiz is not available yet.';
+    END IF;
+
+    IF v_end_at IS NOT NULL AND NOW() > v_end_at THEN
+      RAISE EXCEPTION 'Quiz has already ended.';
+    END IF;
+
+    IF NEW.status = 'submitted' AND v_time_limit > 0 THEN
+      -- Verify time limit: submitted_at - started_at should be <= time_limit (in minutes)
+      -- We allow a 30-second buffer for network latency
+      IF EXTRACT(EPOCH FROM (NEW.submitted_at - NEW.started_at)) > (v_time_limit * 60 + 30) THEN
+        RAISE EXCEPTION 'Quiz time limit exceeded.';
+      END IF;
+    END IF;
+  END IF;
+
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS tr_validate_quiz_submission_time ON quiz_submissions;
+CREATE TRIGGER tr_validate_quiz_submission_time
+BEFORE INSERT OR UPDATE ON quiz_submissions
+FOR EACH ROW EXECUTE PROCEDURE validate_quiz_submission_time();
