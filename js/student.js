@@ -1449,7 +1449,7 @@ async function renderQuizzes() {
             <p class="small mt-5">${escapeHtml(q.description || '')}</p>
             <div class="flex-between mt-15 p-10" style="background:var(--bg); border-radius:6px">
                 <div class="text-center">
-                    <div class="bold">${attemptsUsed} / ${q.attempts_allowed}</div>
+                    <div class="bold" id="attempts-count-${q.id}">${attemptsUsed} / ${q.attempts_allowed}</div>
                     <div class="small">Attempts</div>
                 </div>
                 <div class="text-center">
@@ -1472,7 +1472,7 @@ async function renderQuizzes() {
                 </div>
             ` : ''}
 
-            <div class="mt-20">
+            <div class="mt-20" id="quiz-actions-${q.id}">
                 ${isUpcoming ? `
                     <div class="p-10 border-radius-sm" style="background:var(--bg); border:1px solid var(--border)">
                         <div class="quiz-countdown" data-target="${startAt}" data-start="${q.created_at ? new Date(q.created_at).getTime() : now}" data-label="Available In:"></div>
@@ -1485,7 +1485,7 @@ async function renderQuizzes() {
                             <div class="quiz-countdown" data-target="${endAt}" data-start="${startAt}" data-label="Ends In:"></div>
                         </div>
                     ` : ''}
-                    <button class="button w-auto small px-20" onclick="startQuiz('${q.id}')">${draft ? 'Resume Attempt' : 'Start New Attempt'}</button>
+                    <button class="button w-auto small px-20" id="quiz-btn-${q.id}" onclick="startQuiz('${q.id}')">${draft ? 'Resume Attempt' : 'Start New Attempt'}</button>
                 ` : '<div class="badge badge-inactive w-100 text-center">No Access / Attempts Used</div>'
                 }
             </div>
@@ -1517,6 +1517,13 @@ let currentQuiz = null;
 let currentSubmission = null;
 
 async function startQuiz(quizId) {
+  // Immediately disable start button to prevent double clicks
+  const listBtn = document.getElementById(`quiz-btn-${quizId}`);
+  if (listBtn) {
+      listBtn.disabled = true;
+      listBtn.textContent = 'Starting...';
+  }
+
   const user = await SessionManager.getCurrentUser();
   const quiz = await SupabaseDB.getQuiz(quizId);
 
@@ -1526,10 +1533,12 @@ async function startQuiz(quizId) {
 
   if (now < startAt) {
       alert('This quiz is not available yet.');
+      if (listBtn) { listBtn.disabled = false; listBtn.textContent = 'Start New Attempt'; }
       return;
   }
   if (now > endAt) {
       alert('This quiz has ended.');
+      if (listBtn) { listBtn.disabled = true; listBtn.textContent = 'Quiz Ended'; }
       return;
   }
 
@@ -1692,6 +1701,14 @@ function getQuizAnswers() {
 async function submitQuiz() {
   const btn = document.getElementById('submitQuizBtn');
   if (btn) btn.disabled = true;
+
+  const quizId = currentQuiz?.id;
+  const listBtn = quizId ? document.getElementById(`quiz-btn-${quizId}`) : null;
+  if (listBtn) {
+      listBtn.disabled = true;
+      listBtn.textContent = 'Refreshing...';
+  }
+
   if (quizTimer instanceof Countdown) {
     quizTimer.destroy();
     quizTimer = null;
@@ -1752,6 +1769,62 @@ async function submitQuiz() {
 
   // Update Progress
   if (currentQuiz) await SupabaseDB.updateCourseProgress(currentQuiz.course_id, user.email);
+
+  // High-Priority UI Refresh for this specific quiz
+  if (quizId) {
+      const attemptsDisplay = document.getElementById(`attempts-count-${quizId}`);
+      const actionsContainer = document.getElementById(`quiz-actions-${quizId}`);
+
+      if (attemptsDisplay || actionsContainer) {
+          try {
+              const [q, quizSubs] = await Promise.all([
+                  SupabaseDB.getQuiz(quizId),
+                  SupabaseDB.getQuizSubmissions(quizId, user.email)
+              ]);
+
+              const attemptsUsed = quizSubs.length;
+              if (attemptsDisplay) {
+                  attemptsDisplay.textContent = `${attemptsUsed} / ${q.attempts_allowed}`;
+              }
+
+              if (actionsContainer) {
+                  const draft = quizSubs.find(s => s.status === 'draft');
+                  const nowTs = Date.now();
+                  const startAt = q.start_at ? new Date(q.start_at).getTime() : 0;
+                  const endAt = q.end_at ? new Date(q.end_at).getTime() : Infinity;
+                  const isAvailable = nowTs >= startAt && nowTs <= endAt;
+                  const canAttempt = (attemptsUsed < q.attempts_allowed || !!draft) && isAvailable;
+
+                  if (canAttempt) {
+                      actionsContainer.innerHTML = `
+                          ${endAt !== Infinity ? `
+                              <div class="mb-10 p-10 border-radius-sm" style="background:#fffcf0; border:1px solid #ffeeba">
+                                  <div class="quiz-countdown" data-target="${endAt}" data-start="${startAt}" data-label="Ends In:"></div>
+                              </div>
+                          ` : ''}
+                          <button class="button w-auto small px-20" id="quiz-btn-${q.id}" onclick="startQuiz('${q.id}')">${draft ? 'Resume Attempt' : 'Start New Attempt'}</button>
+                      `;
+                      // Re-init countdown if added
+                      const el = actionsContainer.querySelector('.quiz-countdown');
+                      if (el) {
+                          Countdown.create(el, {
+                              targetDate: parseInt(el.dataset.target),
+                              startTime: el.dataset.start,
+                              showProgress: true,
+                              label: el.dataset.label,
+                              onEnd: () => renderQuizzes()
+                          });
+                      }
+                  } else {
+                      actionsContainer.innerHTML = '<div class="badge badge-inactive w-100 text-center">No Access / Attempts Used</div>';
+                  }
+              }
+          } catch (e) {
+              console.warn('High-priority refresh failed:', e);
+          }
+      }
+  }
+
   alert(`Quiz submitted! Your score: ${percentage}%`);
   currentQuiz = null;
   currentSubmission = null;
