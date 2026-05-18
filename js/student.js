@@ -321,7 +321,8 @@ async function renderAssignments(){
     } else if (isOverdue) {
       statusHtml = `<span class="badge badge-inactive">OVERDUE</span>`;
     } else if (isUpcoming) {
-      statusHtml = `<div class="assign-open-countdown" data-target="${startAt}" data-start="${a.created_at || now}"></div>`;
+      const createdAtTs = a.created_at ? new Date(a.created_at).getTime() : now;
+      statusHtml = `<div class="assign-open-countdown" data-target="${startAt}" data-start="${createdAtTs}"></div>`;
     } else {
       statusHtml = `<span class="badge" style="background:#edf2f7; color:#4a5568">PENDING</span>`;
     }
@@ -336,7 +337,7 @@ async function renderAssignments(){
       <td>
         <div class="${isOverdue ? 'danger-text' : ''}">${dueDate.toLocaleDateString()}</div>
         ${isOverdue ? '<div class="small danger-text">(Overdue)</div>' : ''}
-        ${!isOverdue && !submission && !isUpcoming ? `<div class="assign-due-countdown" data-target="${dueDate.getTime()}" data-start="${startAt || a.created_at || now}"></div>` : ''}
+        ${!isOverdue && !submission && !isUpcoming ? `<div class="assign-due-countdown" data-target="${dueDate.getTime()}" data-start="${startAt || (a.created_at ? new Date(a.created_at).getTime() : now)}"></div>` : ''}
       </td>
       <td>${statusHtml}</td>
       <td>${submission?.grade !== undefined && submission?.grade !== null ? `
@@ -608,7 +609,7 @@ async function renderDashboardOverview() {
               <div style="flex: 1">
                 <div class="bold">${escapeHtml(a.title)}</div>
                 <div class="tiny text-muted mb-5">Due: ${new Date(a.due_date).toLocaleDateString()}</div>
-                <div class="dashboard-assign-countdown" data-target="${new Date(a.due_date).getTime()}" data-start="${a.start_at || a.created_at || now}"></div>
+                <div class="dashboard-assign-countdown" data-target="${new Date(a.due_date).getTime()}" data-start="${a.start_at || (a.created_at ? new Date(a.created_at).getTime() : Date.now())}"></div>
               </div>
               <button class="button small w-auto mt-10" style="width: 80px" onclick="showAssignmentForm('${a.id}')">Submit</button>
             </div>
@@ -1159,6 +1160,7 @@ async function renderLiveClasses() {
           const startAt = new Date(liveClass.start_at).getTime();
           const isUpcoming = startAt > now;
 
+          const createdAtTs = liveClass.created_at ? new Date(liveClass.created_at).getTime() : now;
           return `
             <div class="card">
               <div class="flex-between" style="align-items:start">
@@ -1173,7 +1175,7 @@ async function renderLiveClasses() {
                   `<button class="button w-auto" onclick="handleJoinLiveClass('${liveClass.id}', '${liveClass.room_name}', '${escapeAttr(liveClass.meeting_url || '')}')">Join Now</button>` :
                   isUpcoming ? `
                     <div class="mb-10 p-10 border-radius-sm" style="background:var(--bg); border:1px solid var(--border)">
-                        <div class="live-countdown" data-target="${startAt}" data-start="${liveClass.created_at || now}"></div>
+                        <div class="live-countdown" data-target="${startAt}" data-start="${createdAtTs}"></div>
                     </div>
                     <button class="button secondary w-auto mt-10" disabled>Not Started</button>
                   ` : `<button class="button secondary w-auto" disabled>Not Started</button>`
@@ -1459,9 +1461,9 @@ async function renderQuizzes() {
             ${attemptsUsed > 0 ? `
                 <div class="mt-15">
                     <div class="bold small mb-5">Previous Attempts:</div>
-                    <div class="flex-column gap-5">
+                    <div class="flex-column gap-5 no-scrollbar" style="max-height: 150px; overflow-y: auto; padding-right: 2px;">
                         ${mySubs.map((s, i) => `
-                            <div class="flex-between p-5 small border-radius-sm" style="background:#fff; border:1px solid var(--border)">
+                            <div class="flex-between p-5 small border-radius-sm" style="background:#fff; border:1px solid var(--border); margin-bottom: 4px;">
                                 <span>#${attemptsUsed - i}: ${s.score}% (${Math.floor(s.time_spent / 60)}m)</span>
                                 <button class="button secondary tiny w-auto" onclick="viewQuizResults('${q.id}', '${s.id}')">View Details</button>
                             </div>
@@ -1473,7 +1475,7 @@ async function renderQuizzes() {
             <div class="mt-20">
                 ${isUpcoming ? `
                     <div class="p-10 border-radius-sm" style="background:var(--bg); border:1px solid var(--border)">
-                        <div class="quiz-countdown" data-target="${startAt}" data-start="${q.created_at || now}" data-label="Available In:"></div>
+                        <div class="quiz-countdown" data-target="${startAt}" data-start="${q.created_at ? new Date(q.created_at).getTime() : now}" data-label="Available In:"></div>
                     </div>
                 ` : isExpired ? `
                     <div class="badge badge-inactive w-100 text-center">Quiz Ended on ${new Date(endAt).toLocaleString()}</div>
@@ -1645,6 +1647,7 @@ async function startQuiz(quizId) {
         targetDate: endTime,
         startTime: startTs,
         showProgress: true,
+        compact: true,
         label: 'Time Remaining:',
         onEnd: () => {
             alert('Time is up! Submitting your quiz automatically.');

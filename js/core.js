@@ -73,15 +73,43 @@ const UI = {
         const backdrop = document.createElement('div');
         backdrop.className = 'modal-backdrop';
         backdrop.style.display = 'flex';
+
+        const ext = url.split('.').pop().toLowerCase().split('?')[0];
+        const isImage = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg'].includes(ext);
+        const isOffice = ['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx'].includes(ext);
+        const isCsv = ext === 'csv';
+
+        let viewerHtml = '';
+        if (isImage) {
+            viewerHtml = `<div style="flex:1; display:flex; align-items:center; justify-content:center; background:#f0f0f0; border-radius:8px; overflow:auto">
+                <img src="${escapeAttr(url)}" style="max-width:100%; max-height:100%; object-fit:contain">
+            </div>`;
+        } else if (isOffice || isCsv) {
+            // Office and CSV are best viewed via Google Docs viewer for in-app preview
+            const viewerUrl = `https://docs.google.com/viewer?url=${encodeURIComponent(url)}&embedded=true`;
+            viewerHtml = `<div style="flex:1; background:#f0f0f0; border-radius:8px; overflow:hidden; position:relative">
+                <iframe src="${viewerUrl}" style="width:100%; height:100%; border:none"></iframe>
+                <div class="absolute bottom-10 right-10 flex gap-5">
+                    <a href="${escapeAttr(url)}" target="_blank" class="button secondary small w-auto" style="background:rgba(255,255,255,0.9)">Download Original</a>
+                </div>
+            </div>`;
+        } else {
+            // Default to iframe for PDF and others
+            viewerHtml = `<div style="flex:1; background:#f0f0f0; border-radius:8px; overflow:hidden">
+                <iframe src="${escapeAttr(url)}" style="width:100%; height:100%; border:none"></iframe>
+            </div>`;
+        }
+
         backdrop.innerHTML = `
-            <div class="modal" style="width:90%; max-width:1000px; height:90vh; display:flex; flex-direction:column">
+            <div class="modal" style="width:95%; max-width:1200px; height:95vh; display:flex; flex-direction:column">
                 <div class="flex-between mb-10">
                     <h3 class="m-0">${escapeHtml(title)}</h3>
-                    <button class="button secondary w-auto small" onclick="this.closest('.modal-backdrop').remove()">Close</button>
+                    <div class="flex gap-10">
+                        <a href="${escapeAttr(url)}" download class="button secondary w-auto small">Download</a>
+                        <button class="button secondary w-auto small" onclick="this.closest('.modal-backdrop').remove()">Close</button>
+                    </div>
                 </div>
-                <div style="flex:1; background:#f0f0f0; border-radius:8px; overflow:hidden">
-                    <iframe src="${escapeAttr(url)}" style="width:100%; height:100%; border:none"></iframe>
-                </div>
+                ${viewerHtml}
             </div>
         `;
         document.body.appendChild(backdrop);

@@ -435,3 +435,15 @@ label {
 .countdown-unit span {
     line-height: 1;
 }
+
+.countdown-values {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+}
+
+.countdown-unit {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
