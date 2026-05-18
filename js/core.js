@@ -69,6 +69,17 @@ const UI = {
         }, 3000);
     },
 
+    showLoading(containerId = 'pageContent') {
+        const container = document.getElementById(containerId);
+        if (!container) return;
+        container.innerHTML = `
+            <div class="loading-state flex-center flex-column p-40">
+                <div class="loading-spinner mb-20"></div>
+                <div class="text-muted">Loading content...</div>
+            </div>
+        `;
+    },
+
     viewFile(url, title) {
         const backdrop = document.createElement('div');
         backdrop.className = 'modal-backdrop';

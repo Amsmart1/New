@@ -1,4 +1,9 @@
+function showLoading(containerId = 'pageContent') {
+    UI.showLoading(containerId);
+}
+
 async function renderDashboard() {
+  showLoading();
   NotificationManager.initPolling();
   SupabaseDB.deleteExpiredBroadcasts().catch(e => console.warn('Cleanup error:', e));
 
@@ -97,6 +102,7 @@ let allUsers = [];
 let filteredUsers = [];
 
 async function renderUsers() {
+  showLoading();
   const content = document.getElementById('pageContent');
   if (!content) return;
 
@@ -393,6 +399,7 @@ function saveAutoSetting(key, val) {
 }
 
 async function renderResets() {
+  showLoading();
   const content = document.getElementById('pageContent');
   if (!content) return;
 
@@ -489,6 +496,7 @@ async function denyReset(email) {
 }
 
 async function renderAnalytics() {
+  showLoading();
   const content = document.getElementById('pageContent');
   if (!content) return;
 
@@ -557,6 +565,7 @@ async function renderAnalytics() {
 }
 
 async function renderMaintenance() {
+  showLoading();
   const content = document.getElementById('pageContent');
   if (!content) return;
 
@@ -613,6 +622,7 @@ async function renderMaintenance() {
 }
 
 async function renderHealth() {
+  showLoading();
   const content = document.getElementById('pageContent');
   if (!content) return;
 
@@ -670,41 +680,52 @@ async function renderHealth() {
 }
 
 async function renderManagement() {
+  showLoading();
   const content = document.getElementById('pageContent');
   if (!content) return;
-  content.innerHTML = `
-    <section>
-      <h3>System Management</h3>
-      <div class="grid-2">
-        <div class="card">
-          <h4>Database Cleanup</h4>
-          <p class="small">Remove old logs, drafts, and unused records.</p>
-          <button class="button" style="width:auto; margin-top:10px" onclick="previewCleanup()">Preview Cleanup</button>
-        </div>
-        <div class="card">
-          <h4>System Backup</h4>
-          <p class="small">Export or Restore system data.</p>
-          <div class="flex gap-10" style="margin-top:10px">
-            <button class="button" onclick="exportBackup()">Export Backup</button>
-            <button class="button secondary" onclick="document.getElementById('importFile').click()">Import/Restore</button>
-            <input type="file" id="importFile" class="hidden" onchange="importBackup(event)">
+
+  try {
+    content.innerHTML = `
+      <section>
+        <h3>System Management</h3>
+        <div class="grid-2">
+          <div class="card">
+            <h4>Database Cleanup</h4>
+            <p class="small">Remove old logs, drafts, and unused records.</p>
+            <button class="button" style="width:auto; margin-top:10px" onclick="previewCleanup()">Preview Cleanup</button>
+          </div>
+          <div class="card">
+            <h4>System Backup</h4>
+            <p class="small">Export or Restore system data.</p>
+            <div class="flex gap-10" style="margin-top:10px">
+              <button class="button" onclick="exportBackup()">Export Backup</button>
+              <button class="button secondary" onclick="document.getElementById('importFile').click()">Import/Restore</button>
+              <input type="file" id="importFile" class="hidden" onchange="importBackup(event)">
+            </div>
+          </div>
+          <div class="card">
+            <h4>Automated Tasks</h4>
+            <p class="small">Configure scheduled system maintenance.</p>
+            <div class="flex" style="flex-direction:column; gap:8px; margin-top:10px">
+              <label class="small flex" style="align-items:center; gap:8px"><input type="checkbox" id="autoCleanupCheck" style="width:auto; margin:0" onchange="saveAutoSetting('autoCleanup', this.checked)"> Daily Auto-Cleanup</label>
+              <label class="small flex" style="align-items:center; gap:8px"><input type="checkbox" id="autoBackupCheck" style="width:auto; margin:0" onchange="saveAutoSetting('autoBackup', this.checked)"> Weekly Cloud Backup</label>
+            </div>
           </div>
         </div>
-        <div class="card">
-          <h4>Automated Tasks</h4>
-          <p class="small">Configure scheduled system maintenance.</p>
-          <div class="flex" style="flex-direction:column; gap:8px; margin-top:10px">
-            <label class="small flex" style="align-items:center; gap:8px"><input type="checkbox" id="autoCleanupCheck" style="width:auto; margin:0" onchange="saveAutoSetting('autoCleanup', this.checked)"> Daily Auto-Cleanup</label>
-            <label class="small flex" style="align-items:center; gap:8px"><input type="checkbox" id="autoBackupCheck" style="width:auto; margin:0" onchange="saveAutoSetting('autoBackup', this.checked)"> Weekly Cloud Backup</label>
-          </div>
-        </div>
-      </div>
-      <div id="mgt-area" style="margin-top:20px"></div>
-    </section>
-  `;
-  // Set initial states from localStorage
-  if (document.getElementById('autoCleanupCheck')) document.getElementById('autoCleanupCheck').checked = localStorage.getItem('autoCleanup') === 'true';
-  if (document.getElementById('autoBackupCheck')) document.getElementById('autoBackupCheck').checked = localStorage.getItem('autoBackup') === 'true';
+        <div id="mgt-area" style="margin-top:20px"></div>
+      </section>
+    `;
+    // Set initial states from localStorage
+    if (document.getElementById('autoCleanupCheck')) document.getElementById('autoCleanupCheck').checked = localStorage.getItem('autoCleanup') === 'true';
+    if (document.getElementById('autoBackupCheck')) document.getElementById('autoBackupCheck').checked = localStorage.getItem('autoBackup') === 'true';
+  } catch (error) {
+    console.error('Management error:', error);
+    content.innerHTML = `<div class="stat-card danger">
+      <h3>Error Loading Management</h3>
+      <div class="small danger-text">${escapeHtml(error.message)}</div>
+      <button class="button w-auto mt-10" onclick="renderManagement()">Retry</button>
+    </div>`;
+  }
 }
 
 async function previewCleanup() {
@@ -785,6 +806,7 @@ async function renderSettings() {
 }
 
 async function renderSystem() {
+  showLoading();
   const content = document.getElementById('pageContent');
   if (!content) return;
 
