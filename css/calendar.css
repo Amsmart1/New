@@ -93,7 +93,8 @@
 .calendar-grid {
     display: grid;
     grid-template-columns: repeat(7, 1fr);
-    gap: 12px;
+    grid-auto-rows: 1fr;
+    gap: 8px;
 }
 
 .calendar-day-label {
@@ -103,18 +104,22 @@
     color: var(--cal-muted);
     text-transform: uppercase;
     letter-spacing: 0.05em;
-    padding-bottom: 10px;
+    padding-bottom: 8px;
 }
 
 .calendar-cell {
     background: #fff;
-    border-radius: 16px;
-    min-height: 120px;
-    padding: 12px;
+    border-radius: 12px;
+    aspect-ratio: 1 / 1;
+    min-height: 0;
+    padding: 8px;
     border: 1px solid var(--cal-border);
     transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
     position: relative;
     cursor: pointer;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
 }
 
 .calendar-cell:hover:not(.empty-cell) {
@@ -254,7 +259,8 @@
     font-weight: 700;
     color: var(--purple);
     white-space: nowrap;
-    min-width: 65px;
+    width: 85px;
+    flex-shrink: 0;
 }
 
 .agenda-info {
@@ -307,14 +313,29 @@
 }
 
 @media (max-width: 768px) {
+    .calendar-container {
+        padding: 10px;
+    }
     .calendar-grid {
-        grid-template-columns: repeat(1, 1fr);
+        gap: 4px;
     }
     .calendar-cell {
-        min-height: auto;
+        padding: 4px;
+        border-radius: 8px;
+    }
+    .day-number {
+        font-size: 0.75rem;
+        width: 20px;
+        height: 20px;
     }
     .calendar-day-label {
-        display: none;
+        font-size: 0.6rem;
+        padding-bottom: 4px;
+    }
+    .calendar-event-mini {
+        font-size: 0.5rem;
+        padding: 2px 4px;
+        border-radius: 3px;
     }
 }
 
