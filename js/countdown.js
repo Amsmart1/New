@@ -164,11 +164,19 @@
             }
         }
 
-        // Parse target date to timestamp
+        // Parse date to timestamp
+        _parse(d) {
+            if (d === null || d === undefined || d === '') return null;
+            // Handle numeric strings (timestamps)
+            if (typeof d === 'string' && /^\d+$/.test(d)) return parseInt(d);
+            if (typeof d === 'number') return d;
+            const ts = new Date(d).getTime();
+            return isNaN(ts) ? null : ts;
+        }
+
         parseTargetDate() {
-            const date = new Date(this.targetDate);
-            const ts = date.getTime();
-            if (isNaN(ts)) {
+            const ts = this._parse(this.targetDate);
+            if (!ts) {
                 console.warn(`Countdown: Invalid targetDate provided: ${this.targetDate}`);
                 return null;
             }
@@ -183,15 +191,29 @@
             const difference = this.targetTimestamp - now;
 
             if (difference <= 0) {
-                return { days: 0, hours: 0, minutes: 0, seconds: 0, total: 0, isSoon: false, progress: 0 };
+                return { days: 0, hours: 0, minutes: 0, seconds: 0, total: 0, isSoon: false, progress: 100 };
             }
 
             let progress = null;
-            if (this.startTime) {
-                const startTs = new Date(this.startTime).getTime();
-                const totalDuration = this.targetTimestamp - startTs;
-                if (totalDuration > 0) {
-                    progress = Math.max(0, Math.min(100, (difference / totalDuration) * 100));
+            if (this.startTime !== null && this.startTime !== undefined) {
+                const startTs = this._parse(this.startTime);
+                const endTs = this.targetTimestamp;
+
+                // If we have a startAt and we're in the active phase, progress should be relative to startAt
+                let effectiveStart = startTs;
+                if (this.startAt) {
+                    const startAtTs = this._parse(this.startAt);
+                    if (startAtTs && now >= startAtTs) {
+                        effectiveStart = startAtTs;
+                    }
+                }
+
+                if (effectiveStart !== null) {
+                    const totalDuration = endTs - effectiveStart;
+                    if (totalDuration > 0) {
+                        const elapsed = now - effectiveStart;
+                        progress = Math.max(0, Math.min(100, (elapsed / totalDuration) * 100));
+                    }
                 }
             }
 
@@ -298,6 +320,7 @@
         }
 
         renderUpcoming(diff) {
+            const now = TimerManager.getTime();
             const minutes = Math.floor((diff / 1000 / 60) % 60);
             const hours = Math.floor((diff / (1000 * 60 * 60)) % 24);
             const days = Math.floor(diff / (1000 * 60 * 60 * 24));
@@ -307,10 +330,38 @@
             else if (hours > 0) timeStr = `${hours}h ${minutes}m`;
             else timeStr = `${minutes}m`;
 
+            let progressHtml = '';
+            if (this.showProgress && this.startTime !== null) {
+                // If targetDate is the start goal (Opens in), progress is startTime -> targetDate
+                // If startAt is provided, progress is startTime -> startAt
+                const goalTs = this._parse(this.startAt) || this.targetTimestamp;
+                const createdTs = this._parse(this.startTime);
+
+                if (goalTs !== null && createdTs !== null) {
+                    const totalWait = goalTs - createdTs;
+                    const elapsed = now - createdTs;
+                    if (totalWait > 0) {
+                        const progress = Math.max(0, Math.min(100, (elapsed / totalWait) * 100));
+                        let stateClass = 'progress-ok';
+                        if (progress > 75) stateClass = 'progress-critical';
+                        else if (progress > 50) stateClass = 'progress-warn';
+
+                        progressHtml = `
+                            <div class="countdown-progress-container mt-5">
+                                <div class="countdown-progress-fill ${stateClass}" style="width: ${progress}%"></div>
+                            </div>
+                        `;
+                    }
+                }
+            }
+
             this.container.innerHTML = `
-                <div class="countdown-upcoming inline-flex items-center gap-1 ${this.className}">
-                    ${this.showIcon ? Icons.Clock(12) : ''}
-                    <span class="small-text">${escapeHtml(this.upcomingLabel)} ${timeStr}</span>
+                <div class="countdown-upcoming-wrapper">
+                    <div class="countdown-upcoming inline-flex items-center gap-1 ${this.className}">
+                        ${this.showIcon ? Icons.Clock(12) : ''}
+                        <span class="small-text">${escapeHtml(this.upcomingLabel)} ${timeStr}</span>
+                    </div>
+                    ${progressHtml}
                 </div>
             `;
         }
@@ -332,8 +383,12 @@
             let progressHtml = '';
             if (this.showProgress && progress !== null) {
                 let stateClass = 'progress-ok';
-                if (progress < 25) stateClass = 'progress-critical';
-                else if (progress < 50) stateClass = 'progress-warn';
+                // URGENCE COLORS: Grow from 0 to 100.
+                // 0-50: OK (Green)
+                // 50-75: WARN (Yellow)
+                // 75-100: CRITICAL (Red)
+                if (progress > 75) stateClass = 'progress-critical';
+                else if (progress > 50) stateClass = 'progress-warn';
 
                 progressHtml = `
                     <div class="countdown-progress-container mt-5">
@@ -354,7 +409,7 @@
             if (days > 0) {
                 html += `
                     <div class="countdown-unit flex flex-col items-center">
-                        <span>${days}d</span>
+                        <span>${days}${this.compact ? 'd' : ''}</span>
                         ${!this.compact ? '<span class="text-[8px] uppercase tracking-tighter -mt-1 opacity-60">Days</span>' : ''}
                     </div>
                 `;
@@ -364,7 +419,7 @@
             if (days > 0 || hours > 0) {
                 html += `
                     <div class="countdown-unit flex flex-col items-center">
-                        <span>${hours.toString().padStart(2, '0')}h</span>
+                        <span>${hours.toString().padStart(2, '0')}${this.compact ? 'h' : ''}</span>
                         ${!this.compact ? '<span class="text-[8px] uppercase tracking-tighter -mt-1 opacity-60">Hrs</span>' : ''}
                     </div>
                 `;
@@ -373,7 +428,7 @@
             // Minutes (always show)
             html += `
                 <div class="countdown-unit flex flex-col items-center">
-                    <span>${minutes.toString().padStart(2, '0')}m</span>
+                    <span>${minutes.toString().padStart(2, '0')}${this.compact ? 'm' : ''}</span>
                     ${!this.compact ? '<span class="text-[8px] uppercase tracking-tighter -mt-1 opacity-60">Min</span>' : ''}
                 </div>
             `;
@@ -381,7 +436,7 @@
             // Seconds (always show)
             html += `
                 <div class="countdown-unit flex flex-col items-center">
-                    <span>${seconds.toString().padStart(2, '0')}s</span>
+                    <span>${seconds.toString().padStart(2, '0')}${this.compact ? 's' : ''}</span>
                     ${!this.compact ? '<span class="text-[8px] uppercase tracking-tighter -mt-1 opacity-60">Sec</span>' : ''}
                 </div>
             `;

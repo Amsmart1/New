@@ -288,7 +288,7 @@ async function renderAssignments() {
           <div class="mt-10">
             <p class="small m-0 mb-5">Due: ${new Date(a.due_date).toLocaleString()}</p>
             ${new Date(a.due_date) > new Date() ? `
-                <div class="assign-countdown" data-target="${new Date(a.due_date).getTime()}" data-start="${a.start_at || a.created_at || now}"></div>
+                <div class="assign-countdown" data-target="${new Date(a.due_date).getTime()}" data-start="${a.start_at || (a.created_at ? new Date(a.created_at).getTime() : Date.now())}"></div>
             ` : '<div class="danger-text bold tiny">Past Due</div>'}
           </div>
           <div class="flex gap-10 mt-15">
@@ -1060,7 +1060,7 @@ async function renderLiveClasses() {
               </div>
               <div class="mt-10 mb-10 p-10 border-radius-sm" style="background:var(--bg)">
                   ${isUpcoming ? `
-                    <div class="live-sch-countdown" data-target="${startAt}" data-start="${liveClass.created_at || now}" data-label="Starts In:"></div>
+                    <div class="live-sch-countdown" data-target="${startAt}" data-start="${liveClass.created_at ? new Date(liveClass.created_at).getTime() : now}" data-label="Starts In:"></div>
                   ` : isLive ? `
                     <div class="live-sch-countdown" data-target="${endAt}" data-start="${startAt}" data-label="Ends In:"></div>
                   ` : '<div class="tiny text-muted">Session Finished</div>'}
@@ -1530,9 +1530,9 @@ async function renderQuizzes() {
           ${q.start_at || q.end_at ? `
             <div class="mt-10 mb-10 p-10 border-radius-sm" style="background:var(--bg)">
                 ${q.start_at && new Date(q.start_at) > new Date() ? `
-                    <div class="quiz-sch-countdown" data-target="${new Date(q.start_at).getTime()}" data-start="${q.created_at || now}" data-label="Starts In:"></div>
+                    <div class="quiz-sch-countdown" data-target="${new Date(q.start_at).getTime()}" data-start="${q.created_at ? new Date(q.created_at).getTime() : now}" data-label="Starts In:"></div>
                 ` : q.end_at && new Date(q.end_at) > new Date() ? `
-                    <div class="quiz-sch-countdown" data-target="${new Date(q.end_at).getTime()}" data-start="${q.start_at || q.created_at || now}" data-label="Ends In:"></div>
+                    <div class="quiz-sch-countdown" data-target="${new Date(q.end_at).getTime()}" data-start="${q.start_at || (q.created_at ? new Date(q.created_at).getTime() : now)}" data-label="Ends In:"></div>
                 ` : q.end_at ? '<div class="tiny danger-text bold">Expired</div>' : ''}
             </div>
           ` : ''}

@@ -434,6 +434,12 @@ class SupabaseDB {
                     .eq('student_email', studentEmail)
                     .in('live_class_id', classIds);
             }
+
+            // Delete discussions
+            await supabaseClient
+                .from('discussions')
+                .delete()
+                .match({ course_id: courseId, user_email: studentEmail });
         } catch (e) {
             console.warn('History cleanup during unenrollment partially failed:', e);
         }
