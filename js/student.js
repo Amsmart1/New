@@ -1,5 +1,9 @@
 let activeCountdowns = [];
 
+function showLoading(containerId = 'pageContent') {
+    UI.showLoading(containerId);
+}
+
 function clearActiveCountdowns() {
     activeCountdowns.forEach(c => c.destroy());
     activeCountdowns = [];
@@ -55,6 +59,7 @@ async function _getDueSoonCount(email) {
 window._getDueSoonCount = _getDueSoonCount;
 
 async function renderCourses() {
+  showLoading();
   const container = document.getElementById('pageContent');
   if (!container) return;
   clearActiveCountdowns();
@@ -131,41 +136,51 @@ function filterCatalog() {
 }
 
 async function renderMyCourses() {
+  showLoading();
   clearActiveCountdowns();
-  const user = await SessionManager.getCurrentUser();
-  const [myCourses, enrollments] = await Promise.all([
-    SupabaseDB.getEnrolledCourses(user.email),
-    SupabaseDB.getEnrollments(user.email)
-  ]);
-
   const container = document.getElementById('pageContent');
   if (!container) return;
 
-  container.innerHTML = `
-    <h2 class="mb-20">My Enrolled Courses</h2>
-    <div class="grid" style="grid-template-columns: repeat(auto-fill, minmax(280px, 1fr))">
-      ${myCourses.map(c => {
-        const enrollment = enrollments.find(e => e.course_id === c.id);
-        const progress = enrollment?.progress || 0;
-        return `
-          <div class="card flex-column gap-10">
-            <div style="width:100%; height:120px; background:linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius:6px; display:flex; align-items:center; justify-content:center; color:white; font-size:40px">📖</div>
-            <h3 class="m-0">${escapeHtml(c.title)}</h3>
-            <div class="small-text color-dim">By: ${escapeHtml(c.created_by || 'Unknown Teacher')}</div>
-            <div class="progress-container" style="background:#eee; height:8px; border-radius:4px; overflow:hidden">
-              <div class="progress-bar" style="background:var(--ok); height:100%; width:${progress}%"></div>
+  try {
+    const user = await SessionManager.getCurrentUser();
+    const [myCourses, enrollments] = await Promise.all([
+      SupabaseDB.getEnrolledCourses(user.email),
+      SupabaseDB.getEnrollments(user.email)
+    ]);
+
+    container.innerHTML = `
+      <h2 class="mb-20">My Enrolled Courses</h2>
+      <div class="grid" style="grid-template-columns: repeat(auto-fill, minmax(280px, 1fr))">
+        ${myCourses.map(c => {
+          const enrollment = enrollments.find(e => e.course_id === c.id);
+          const progress = enrollment?.progress || 0;
+          return `
+            <div class="card flex-column gap-10">
+              <div style="width:100%; height:120px; background:linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius:6px; display:flex; align-items:center; justify-content:center; color:white; font-size:40px">📖</div>
+              <h3 class="m-0">${escapeHtml(c.title)}</h3>
+              <div class="small-text color-dim">By: ${escapeHtml(c.created_by || 'Unknown Teacher')}</div>
+              <div class="progress-container" style="background:#eee; height:8px; border-radius:4px; overflow:hidden">
+                <div class="progress-bar" style="background:var(--ok); height:100%; width:${progress}%"></div>
+              </div>
+              <div class="flex-between">
+                <span class="tiny text-muted">${progress}% Complete</span>
+                ${enrollment?.completed ? '<span class="badge badge-active tiny">Completed</span>' : ''}
+              </div>
+              <p class="small" style="flex:1">${escapeHtml(c.description || '').substring(0, 80)}...</p>
+              <button class="button w-auto small" onclick="viewCourse('${escapeAttr(c.id)}', true)">Open Course</button>
             </div>
-            <div class="flex-between">
-              <span class="tiny text-muted">${progress}% Complete</span>
-              ${enrollment?.completed ? '<span class="badge badge-active tiny">Completed</span>' : ''}
-            </div>
-            <p class="small" style="flex:1">${escapeHtml(c.description || '').substring(0, 80)}...</p>
-            <button class="button w-auto small" onclick="viewCourse('${escapeAttr(c.id)}', true)">Open Course</button>
-          </div>
-        `;
-      }).join('') || '<div class="empty" style="grid-column:1/-1">You haven\'t enrolled in any courses yet. Visit the Catalog to find some!</div>'}
-    </div>
-  `;
+          `;
+        }).join('') || '<div class="empty" style="grid-column:1/-1">You haven\'t enrolled in any courses yet. Visit the Catalog to find some!</div>'}
+      </div>
+    `;
+  } catch (error) {
+    console.error('My Courses error:', error);
+    container.innerHTML = `<div class="stat-card danger">
+      <h3>Error Loading Your Courses</h3>
+      <div class="small danger-text">${escapeHtml(error.message)}</div>
+      <button class="button w-auto mt-10" onclick="renderMyCourses()">Retry</button>
+    </div>`;
+  }
 }
 async function enroll(courseId) {
   try {
@@ -255,6 +270,7 @@ async function stopAndNavigateToViewCourse(courseId, fromMyCourses) {
 }
 window.stopAndNavigateToViewCourse = stopAndNavigateToViewCourse;
 async function renderAssignments(){
+  showLoading();
   const container = document.getElementById('pageContent');
   if (!container) return;
   clearActiveCountdowns();
@@ -562,90 +578,103 @@ async function viewFeedback(assignmentId) {
 }
 
 async function renderDashboardOverview() {
+  showLoading();
   NotificationManager.initPolling();
   clearActiveCountdowns();
-  const user = await SessionManager.getCurrentUser();
-
-  const [enrollments, gradedCount] = await Promise.all([
-    SupabaseDB.getEnrollments(user.email),
-    SupabaseDB.getCount('submissions', q => q.eq('student_email', user.email).eq('status', 'graded'))
-  ]);
-
-  const enrolledCourseIds = enrollments.map(e => e.course_id);
-
-  const [assigns, submissions] = await Promise.all([
-      SupabaseDB.getAssignments(null, null, enrolledCourseIds),
-      SupabaseDB.getSubmissions(null, user.email)
-  ]);
-
-  updateHeaderStats().catch(e => console.warn('Header stats error:', e));
   const container = document.getElementById('pageContent');
   if (!container) return;
 
-  const pendingAssignments = assigns.filter(a =>
-    a.status === 'published' &&
-    !submissions.some(s => s.assignment_id === a.id) &&
-    new Date(a.due_date) > new Date()
-  ).sort((a, b) => new Date(a.due_date) - new Date(b.due_date));
+  try {
+    const user = await SessionManager.getCurrentUser();
 
-  container.innerHTML = `
-    <h2>Welcome Back, ${escapeHtml(user.full_name)}!</h2>
-    <div class="stats-grid">
-      <div class="stat-card"><h4>Enrolled Courses</h4><div class="value">${escapeHtml(enrollments.length)}</div></div>
-      <div class="stat-card"><h4>Completed Assignments</h4><div class="value">${escapeHtml(gradedCount)}</div></div>
-    </div>
+    const [enrollments, gradedCount] = await Promise.all([
+      SupabaseDB.getEnrollments(user.email),
+      SupabaseDB.getCount('submissions', q => q.eq('student_email', user.email).eq('status', 'graded'))
+    ]);
 
-    <div class="grid-2">
-      <div class="card">
-        <h3>Recent Activity</h3>
-        <p class="small">You have ${escapeHtml(enrollments.length)} active courses. Check your assignments to stay on track!</p>
+    const enrolledCourseIds = enrollments.map(e => e.course_id);
+
+    const [assigns, submissions] = await Promise.all([
+        SupabaseDB.getAssignments(null, null, enrolledCourseIds),
+        SupabaseDB.getSubmissions(null, user.email)
+    ]);
+
+    updateHeaderStats().catch(e => console.warn('Header stats error:', e));
+
+    const pendingAssignments = assigns.filter(a =>
+      a.status === 'published' &&
+      !submissions.some(s => s.assignment_id === a.id) &&
+      new Date(a.due_date) > new Date()
+    ).sort((a, b) => new Date(a.due_date) - new Date(b.due_date));
+
+    container.innerHTML = `
+      <h2>Welcome Back, ${escapeHtml(user.full_name)}!</h2>
+      <div class="stats-grid">
+        <div class="stat-card"><h4>Enrolled Courses</h4><div class="value">${escapeHtml(enrollments.length)}</div></div>
+        <div class="stat-card"><h4>Completed Assignments</h4><div class="value">${escapeHtml(gradedCount)}</div></div>
       </div>
 
-      <div class="card">
-        <h3>Upcoming Assignments</h3>
-        <div class="mt-15">
-          ${pendingAssignments.slice(0, 5).map(a => `
-            <div class="flex-between list-item" style="align-items: flex-start">
-              <div style="flex: 1">
-                <div class="bold">${escapeHtml(a.title)}</div>
-                <div class="tiny text-muted mb-5">Due: ${new Date(a.due_date).toLocaleDateString()}</div>
-                <div class="dashboard-assign-countdown" data-target="${new Date(a.due_date).getTime()}" data-start="${a.start_at || (a.created_at ? new Date(a.created_at).getTime() : Date.now())}"></div>
+      <div class="grid-2">
+        <div class="card">
+          <h3>Recent Activity</h3>
+          <p class="small">You have ${escapeHtml(enrollments.length)} active courses. Check your assignments to stay on track!</p>
+        </div>
+
+        <div class="card">
+          <h3>Upcoming Assignments</h3>
+          <div class="mt-15">
+            ${pendingAssignments.slice(0, 5).map(a => `
+              <div class="flex-between list-item" style="align-items: flex-start">
+                <div style="flex: 1">
+                  <div class="bold">${escapeHtml(a.title)}</div>
+                  <div class="tiny text-muted mb-5">Due: ${new Date(a.due_date).toLocaleDateString()}</div>
+                  <div class="dashboard-assign-countdown" data-target="${new Date(a.due_date).getTime()}" data-start="${a.start_at || (a.created_at ? new Date(a.created_at).getTime() : Date.now())}"></div>
+                </div>
+                <button class="button small w-auto mt-10" style="width: 80px" onclick="showAssignmentForm('${a.id}')">Submit</button>
               </div>
-              <button class="button small w-auto mt-10" style="width: 80px" onclick="showAssignmentForm('${a.id}')">Submit</button>
-            </div>
-          `).join('') || '<p class="small">No pending assignments! Good job.</p>'}
-          ${pendingAssignments.length > 5 ? `<button class="button secondary small w-100 mt-10" onclick="renderAssignments()">View All Assignments</button>` : ''}
+            `).join('') || '<p class="small">No pending assignments! Good job.</p>'}
+            ${pendingAssignments.length > 5 ? `<button class="button secondary small w-100 mt-10" onclick="renderAssignments()">View All Assignments</button>` : ''}
+          </div>
         </div>
       </div>
-    </div>
-  `;
+    `;
 
-  document.querySelectorAll('.dashboard-assign-countdown').forEach(el => {
-      const target = parseInt(el.dataset.target);
-      const start = el.dataset.start;
-      const c = Countdown.create(el, {
-          targetDate: target,
-          startTime: start,
-          showProgress: true,
-          compact: true,
-          label: 'Due in:',
-          onEnd: () => renderDashboardOverview()
-      });
-      activeCountdowns.push(c);
-  });
+    document.querySelectorAll('.dashboard-assign-countdown').forEach(el => {
+        const target = parseInt(el.dataset.target);
+        const start = el.dataset.start;
+        const c = Countdown.create(el, {
+            targetDate: target,
+            startTime: start,
+            showProgress: true,
+            compact: true,
+            label: 'Due in:',
+            onEnd: () => renderDashboardOverview()
+        });
+        activeCountdowns.push(c);
+    });
+  } catch (error) {
+    console.error('Dashboard error:', error);
+    container.innerHTML = `<div class="stat-card danger">
+      <h3>Error Loading Dashboard</h3>
+      <div class="small danger-text">${escapeHtml(error.message)}</div>
+      <button class="button w-auto mt-10" onclick="renderDashboardOverview()">Retry</button>
+    </div>`;
+  }
 }
 
 async function renderProgress() {
+  showLoading();
   clearActiveCountdowns();
-  const user = await SessionManager.getCurrentUser();
-  const [sessions, enrollments, courses] = await Promise.all([
-    SupabaseDB.getStudySessions(user.email),
-    SupabaseDB.getEnrollments(user.email),
-    SupabaseDB.getCourses()
-  ]);
-
   const container = document.getElementById('pageContent');
   if (!container) return;
+
+  try {
+    const user = await SessionManager.getCurrentUser();
+    const [sessions, enrollments, courses] = await Promise.all([
+      SupabaseDB.getStudySessions(user.email),
+      SupabaseDB.getEnrollments(user.email),
+      SupabaseDB.getCourses()
+    ]);
 
   const totalSeconds = sessions.reduce((acc, s) => acc + s.duration, 0);
   const h = Math.floor(totalSeconds / 3600);
@@ -680,6 +709,10 @@ async function renderProgress() {
       </div>
     </div>
   `;
+  } catch (e) {
+    console.error('Progress render error:', e);
+    container.innerHTML = `<div class="empty">Error loading progress.</div>`;
+  }
 }
 
 let studyInterval = null;
@@ -744,118 +777,141 @@ window.startStudySession = startStudySession;
 window.stopStudySession = stopStudySession;
 
 async function renderGrades() {
+  showLoading();
   clearActiveCountdowns();
-  const user = await SessionManager.getCurrentUser();
-  const enrollments = await SupabaseDB.getEnrollments(user.email);
-  const enrolledCourseIds = enrollments.map(e => e.course_id);
-
-  const [submissions, assigns] = await Promise.all([
-    SupabaseDB.getSubmissions(null, user.email),
-    SupabaseDB.getAssignments()
-  ]);
-
-  // Filter graded submissions that belong to currently enrolled courses
-  const graded = submissions.filter(s => {
-    const a = assigns.find(x => x.id === s.assignment_id);
-    return s.status === 'graded' && a && enrolledCourseIds.includes(a.course_id);
-  }).sort((a,b) => new Date(a.submitted_at) - new Date(b.submitted_at));
   const container = document.getElementById('pageContent');
   if (!container) return;
 
-  container.innerHTML = `
-    <h2 class="m-0">My Grades</h2>
-    <div class="card p-0 mt-20" style="overflow-x:auto">
-      <table>
-        <thead><tr><th>Assignment</th><th>Date</th><th>Grade</th><th>Feedback</th></tr></thead>
-        <tbody>
-          ${graded.map(s => {
-            const a = assigns.find(x => x.id === s.assignment_id);
-            return `<tr><td><strong class="bold">${escapeHtml(a?.title || 'Unknown')}</strong></td><td class="small">${new Date(s.submitted_at).toLocaleDateString()}</td><td><span class="badge ${s.final_grade >= 70 ? 'badge-active' : 'badge-inactive'}">${s.final_grade}%</span></td><td><div class="flex gap-5">${escapeHtml(s.feedback || '-')} ${a ? `<button class="button tiny w-auto success" onclick="viewFeedback('${a.id}')" style="background:var(--ok); margin-left:10px">View Details</button>` : ''}</div></td></tr>`;
-          }).join('') || '<tr><td colspan="4" class="empty">No graded assignments yet.</td></tr>'}
-        </tbody>
-      </table>
-    </div>
-  `;
+  try {
+    const user = await SessionManager.getCurrentUser();
+    const enrollments = await SupabaseDB.getEnrollments(user.email);
+    const enrolledCourseIds = enrollments.map(e => e.course_id);
+
+    const [submissions, assigns] = await Promise.all([
+      SupabaseDB.getSubmissions(null, user.email),
+      SupabaseDB.getAssignments()
+    ]);
+
+    // Filter graded submissions that belong to currently enrolled courses
+    const graded = submissions.filter(s => {
+      const a = assigns.find(x => x.id === s.assignment_id);
+      return s.status === 'graded' && a && enrolledCourseIds.includes(a.course_id);
+    }).sort((a,b) => new Date(a.submitted_at) - new Date(b.submitted_at));
+
+    container.innerHTML = `
+      <h2 class="m-0">My Grades</h2>
+      <div class="card p-0 mt-20" style="overflow-x:auto">
+        <table>
+          <thead><tr><th>Assignment</th><th>Date</th><th>Grade</th><th>Feedback</th></tr></thead>
+          <tbody>
+            ${graded.map(s => {
+              const a = assigns.find(x => x.id === s.assignment_id);
+              return `<tr><td><strong class="bold">${escapeHtml(a?.title || 'Unknown')}</strong></td><td class="small">${new Date(s.submitted_at).toLocaleDateString()}</td><td><span class="badge ${s.final_grade >= 70 ? 'badge-active' : 'badge-inactive'}">${s.final_grade}%</span></td><td><div class="flex gap-5">${escapeHtml(s.feedback || '-')} ${a ? `<button class="button tiny w-auto success" onclick="viewFeedback('${a.id}')" style="background:var(--ok); margin-left:10px">View Details</button>` : ''}</div></td></tr>`;
+            }).join('') || '<tr><td colspan="4" class="empty">No graded assignments yet.</td></tr>'}
+          </tbody>
+        </table>
+      </div>
+    `;
+  } catch (error) {
+    console.error('Grades error:', error);
+    container.innerHTML = `<div class="stat-card danger">
+      <h3>Error Loading Grades</h3>
+      <div class="small danger-text">${escapeHtml(error.message)}</div>
+      <button class="button w-auto mt-10" onclick="renderGrades()">Retry</button>
+    </div>`;
+  }
 }
 
 async function renderAnalytics() {
+  showLoading();
   clearActiveCountdowns();
-  const user = await SessionManager.getCurrentUser();
-  const enrollments = await SupabaseDB.getEnrollments(user.email);
-  const enrolledCourseIds = enrollments.map(e => e.course_id);
-
-  const [submissions, assigns] = await Promise.all([
-    SupabaseDB.getSubmissions(null, user.email),
-    SupabaseDB.getAssignments()
-  ]);
-
-  // Filter graded submissions that belong to currently enrolled courses
-  const graded = submissions.filter(s => {
-    const a = assigns.find(x => x.id === s.assignment_id);
-    return s.status === 'graded' && a && enrolledCourseIds.includes(a.course_id);
-  }).sort((a,b) => new Date(a.submitted_at) - new Date(b.submitted_at));
   const container = document.getElementById('pageContent');
   if (!container) return;
 
-  container.innerHTML = `
-    <h2 class="m-0">Performance Analytics</h2>
-    <div class="grid-2 mt-20 mb-20">
-      <div class="card">
-        <h3 class="m-0">Grade Trends</h3>
-        <div class="mt-15" style="height: 200px">
-            <canvas id="gradeChart"></canvas>
+  try {
+    const user = await SessionManager.getCurrentUser();
+    const enrollments = await SupabaseDB.getEnrollments(user.email);
+    const enrolledCourseIds = enrollments.map(e => e.course_id);
+
+    const [submissions, assigns] = await Promise.all([
+      SupabaseDB.getSubmissions(null, user.email),
+      SupabaseDB.getAssignments()
+    ]);
+
+    // Filter graded submissions that belong to currently enrolled courses
+    const graded = submissions.filter(s => {
+      const a = assigns.find(x => x.id === s.assignment_id);
+      return s.status === 'graded' && a && enrolledCourseIds.includes(a.course_id);
+    }).sort((a,b) => new Date(a.submitted_at) - new Date(b.submitted_at));
+
+    container.innerHTML = `
+      <h2 class="m-0">Performance Analytics</h2>
+      <div class="grid-2 mt-20 mb-20">
+        <div class="card">
+          <h3 class="m-0">Grade Trends</h3>
+          <div class="mt-15" style="height: 200px">
+              <canvas id="gradeChart"></canvas>
+          </div>
         </div>
-      </div>
-      <div class="card">
-        <h3 class="m-0">Performance Summary</h3>
-        <div id="gradeStats" class="mt-15"></div>
-      </div>
-    </div>
-  `;
-
-  if (graded.length > 0) {
-    const ctx = document.getElementById('gradeChart').getContext('2d');
-    new Chart(ctx, {
-      type: 'line',
-      data: {
-        labels: graded.map(s => {
-          const a = assigns.find(x => x.id === s.assignment_id);
-          return a ? a.title.substring(0, 10) + '...' : 'Assignment';
-        }),
-        datasets: [{
-          label: 'Grade %',
-          data: graded.map(s => s.final_grade),
-          borderColor: '#5b2ea6',
-          backgroundColor: 'rgba(91, 46, 166, 0.1)',
-          tension: 0.3,
-          fill: true
-        }]
-      },
-      options: {
-        scales: { y: { min: 0, max: 100 } },
-        responsive: true,
-        maintainAspectRatio: false
-      }
-    });
-
-    const avg = Math.round(graded.reduce((acc, s) => acc + s.final_grade, 0) / graded.length);
-    document.getElementById('gradeStats').innerHTML = `
-      <div class="flex-center flex-column p-20">
-        <div class="bold" style="font-size:48px; color:var(--purple)">${avg}%</div>
-        <p class="small">Overall Average Score</p>
-        <div class="flex-between w-auto gap-20 mt-15">
-          <div class="text-center"><div class="bold">${graded.length}</div><div class="small">Graded</div></div>
-          <div class="text-center"><div class="bold">${Math.max(...graded.map(s => s.final_grade))}%</div><div class="small">Highest</div></div>
+        <div class="card">
+          <h3 class="m-0">Performance Summary</h3>
+          <div id="gradeStats" class="mt-15"></div>
         </div>
       </div>
     `;
-  } else {
-    document.getElementById('gradeStats').innerHTML = '<div class="empty">No data to display summary.</div>';
+
+    if (graded.length > 0) {
+      const ctx = document.getElementById('gradeChart').getContext('2d');
+      new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: graded.map(s => {
+            const a = assigns.find(x => x.id === s.assignment_id);
+            return a ? a.title.substring(0, 10) + '...' : 'Assignment';
+          }),
+          datasets: [{
+            label: 'Grade %',
+            data: graded.map(s => s.final_grade),
+            borderColor: '#5b2ea6',
+            backgroundColor: 'rgba(91, 46, 166, 0.1)',
+            tension: 0.3,
+            fill: true
+          }]
+        },
+        options: {
+          scales: { y: { min: 0, max: 100 } },
+          responsive: true,
+          maintainAspectRatio: false
+        }
+      });
+
+      const avg = Math.round(graded.reduce((acc, s) => acc + s.final_grade, 0) / graded.length);
+      document.getElementById('gradeStats').innerHTML = `
+        <div class="flex-center flex-column p-20">
+          <div class="bold" style="font-size:48px; color:var(--purple)">${avg}%</div>
+          <p class="small">Overall Average Score</p>
+          <div class="flex-between w-auto gap-20 mt-15">
+            <div class="text-center"><div class="bold">${graded.length}</div><div class="small">Graded</div></div>
+            <div class="text-center"><div class="bold">${Math.max(...graded.map(s => s.final_grade))}%</div><div class="small">Highest</div></div>
+          </div>
+        </div>
+      `;
+    } else {
+      document.getElementById('gradeStats').innerHTML = '<div class="empty">No data to display summary.</div>';
+    }
+  } catch (error) {
+    console.error('Analytics error:', error);
+    container.innerHTML = `<div class="stat-card danger">
+      <h3>Error Loading Analytics</h3>
+      <div class="small danger-text">${escapeHtml(error.message)}</div>
+      <button class="button w-auto mt-10" onclick="renderAnalytics()">Retry</button>
+    </div>`;
   }
 }
 
 
 async function renderMaterials() {
+  showLoading();
   const content = document.getElementById('pageContent');
   if (!content) return;
   clearActiveCountdowns();
@@ -901,13 +957,17 @@ async function renderMaterials() {
 }
 
 async function renderDiscussions() {
+  showLoading();
   clearActiveCountdowns();
-  const user = await SessionManager.getCurrentUser();
-  const enrollments = await SupabaseDB.getEnrollments(user.email);
-  const courses = await SupabaseDB.getCourses();
-  const myCourses = courses.filter(c => enrollments.some(e => e.course_id === c.id));
   const container = document.getElementById('pageContent');
   if (!container) return;
+
+  try {
+    const user = await SessionManager.getCurrentUser();
+    const enrollments = await SupabaseDB.getEnrollments(user.email);
+    const courses = await SupabaseDB.getCourses();
+    const myCourses = courses.filter(c => enrollments.some(e => e.course_id === c.id));
+
   container.innerHTML = `
     <h2 class="m-0">Discussions</h2>
     <div class="grid mt-20">
@@ -919,6 +979,10 @@ async function renderDiscussions() {
       `).join('') || '<div class="empty">Enroll in a course to join discussions.</div>'}
     </div>
   `;
+  } catch (e) {
+    console.error('Discussions render error:', e);
+    container.innerHTML = `<div class="empty">Error loading discussions.</div>`;
+  }
 }
 
 async function viewStudentDiscussions(courseId) {
@@ -1070,11 +1134,15 @@ window.filterCatalog = filterCatalog;
 window.viewStudentDiscussions = viewStudentDiscussions;
 
 async function renderCertificates() {
+  showLoading();
   clearActiveCountdowns();
-  const user = await SessionManager.getCurrentUser();
-  const certs = await SupabaseDB.getCertificates(user.email);
   const container = document.getElementById('pageContent');
   if (!container) return;
+
+  try {
+    const user = await SessionManager.getCurrentUser();
+    const certs = await SupabaseDB.getCertificates(user.email);
+
   container.innerHTML = `
     <h2 class="m-0">My Certificates</h2>
     <div class="grid mt-20">
@@ -1088,14 +1156,22 @@ async function renderCertificates() {
       `).join('') || '<div class="empty">No certificates earned yet. Finish a course to get one!</div>'}
     </div>
   `;
+  } catch (e) {
+    console.error('Certificates render error:', e);
+    container.innerHTML = `<div class="empty">Error loading certificates.</div>`;
+  }
 }
 
 async function renderPlanner() {
+  showLoading();
   clearActiveCountdowns();
-  const user = await SessionManager.getCurrentUser();
-  const items = await SupabaseDB.getPlannerItems(user.email);
   const container = document.getElementById('pageContent');
   if (!container) return;
+
+  try {
+    const user = await SessionManager.getCurrentUser();
+    const items = await SupabaseDB.getPlannerItems(user.email);
+
   container.innerHTML = `
     <h2 class="m-0">Study Planner</h2>
     <div class="card mt-20">
@@ -1114,6 +1190,10 @@ async function renderPlanner() {
       </div>
     </div>
   `;
+  } catch (e) {
+    console.error('Planner render error:', e);
+    container.innerHTML = `<div class="empty">Error loading planner.</div>`;
+  }
 }
 
 async function addPlannerItem() {
@@ -1407,109 +1487,120 @@ async function renderSettings() {
 }
 
 async function renderQuizzes() {
+  showLoading();
   clearActiveCountdowns();
-  const user = await SessionManager.getCurrentUser();
-  const enrollments = await SupabaseDB.getEnrollments(user.email);
-  const enrolledCourseIds = enrollments.map(e => e.course_id);
-
-  const [quizzes, allSubs, courses] = await Promise.all([
-    SupabaseDB.getQuizzes(null, null, enrolledCourseIds),
-    SupabaseDB.getQuizSubmissions(null, user.email),
-    SupabaseDB.getEnrolledCourses(user.email)
-  ]);
-
-  // Only show submissions for quizzes that belong to enrolled courses
-  const subs = allSubs.filter(s => enrolledCourseIds.includes(s.quizzes?.course_id));
-
   const container = document.getElementById('pageContent');
   if (!container) return;
-  const now = Date.now();
-  container.innerHTML = `
-    <h2 class="m-0">My Quizzes</h2>
-    <div class="grid mt-20">
-      ${quizzes.map(q => {
-        const mySubs = subs.filter(s => s.quiz_id === q.id && s.status === 'submitted').sort((a,b) => new Date(b.submitted_at) - new Date(a.submitted_at));
-        const draft = subs.find(s => s.quiz_id === q.id && s.status === 'draft');
-        const bestScore = mySubs.length ? Math.max(...mySubs.map(s => s.score || 0)) : '-';
-        const attemptsUsed = subs.filter(s => s.quiz_id === q.id).length;
 
-        const startAt = q.start_at ? new Date(q.start_at).getTime() : 0;
-        const endAt = q.end_at ? new Date(q.end_at).getTime() : Infinity;
-        const isUpcoming = startAt > now;
-        const isExpired = endAt < now;
-        const isAvailable = now >= startAt && now <= endAt;
+  try {
+    const user = await SessionManager.getCurrentUser();
+    const enrollments = await SupabaseDB.getEnrollments(user.email);
+    const enrolledCourseIds = enrollments.map(e => e.course_id);
 
-        const canAttempt = (attemptsUsed < q.attempts_allowed || !!draft) && isAvailable;
+    const [quizzes, allSubs, courses] = await Promise.all([
+      SupabaseDB.getQuizzes(null, null, enrolledCourseIds),
+      SupabaseDB.getQuizSubmissions(null, user.email),
+      SupabaseDB.getEnrolledCourses(user.email)
+    ]);
 
-        const course = courses.find(c => c.id === q.course_id);
-        return `
-          <div class="card">
-            <h3 class="m-0">${escapeHtml(q.title)}</h3>
-            <p class="small"><strong>Course:</strong> ${escapeHtml(course?.title || 'Unknown')}</p>
-            <p class="small mt-5">${escapeHtml(q.description || '')}</p>
-            <div class="flex-between mt-15 p-10" style="background:var(--bg); border-radius:6px">
-                <div class="text-center">
-                    <div class="bold" id="attempts-count-${q.id}">${attemptsUsed} / ${q.attempts_allowed}</div>
-                    <div class="small">Attempts</div>
-                </div>
-                <div class="text-center">
-                    <div class="bold" style="color:var(--purple)">${bestScore !== '-' ? bestScore + '%' : '-'}</div>
-                    <div class="small">Best Score</div>
-                </div>
+    // Only show submissions for quizzes that belong to enrolled courses
+    const subs = allSubs.filter(s => enrolledCourseIds.includes(s.quizzes?.course_id));
+
+    const now = Date.now();
+    container.innerHTML = `
+      <h2 class="m-0">My Quizzes</h2>
+      <div class="grid mt-20">
+        ${quizzes.map(q => {
+          const mySubs = subs.filter(s => s.quiz_id === q.id && s.status === 'submitted').sort((a,b) => new Date(b.submitted_at) - new Date(a.submitted_at));
+          const draft = subs.find(s => s.quiz_id === q.id && s.status === 'draft');
+          const bestScore = mySubs.length ? Math.max(...mySubs.map(s => s.score || 0)) : '-';
+          const attemptsUsed = subs.filter(s => s.quiz_id === q.id).length;
+
+          const startAt = q.start_at ? new Date(q.start_at).getTime() : 0;
+          const endAt = q.end_at ? new Date(q.end_at).getTime() : Infinity;
+          const isUpcoming = startAt > now;
+          const isExpired = endAt < now;
+          const isAvailable = now >= startAt && now <= endAt;
+
+          const canAttempt = (attemptsUsed < q.attempts_allowed || !!draft) && isAvailable;
+
+          const course = courses.find(c => c.id === q.course_id);
+          return `
+            <div class="card">
+              <h3 class="m-0">${escapeHtml(q.title)}</h3>
+              <p class="small"><strong>Course:</strong> ${escapeHtml(course?.title || 'Unknown')}</p>
+              <p class="small mt-5">${escapeHtml(q.description || '')}</p>
+              <div class="flex-between mt-15 p-10" style="background:var(--bg); border-radius:6px">
+                  <div class="text-center">
+                      <div class="bold" id="attempts-count-${q.id}">${attemptsUsed} / ${q.attempts_allowed}</div>
+                      <div class="small">Attempts</div>
+                  </div>
+                  <div class="text-center">
+                      <div class="bold" style="color:var(--purple)">${bestScore !== '-' ? bestScore + '%' : '-'}</div>
+                      <div class="small">Best Score</div>
+                  </div>
+              </div>
+
+              ${attemptsUsed > 0 ? `
+                  <div class="mt-15">
+                      <div class="bold small mb-5">Previous Attempts:</div>
+                      <div class="flex-column gap-5 no-scrollbar" style="max-height: 150px; overflow-y: auto; padding-right: 2px;">
+                          ${mySubs.map((s, i) => `
+                              <div class="flex-between p-5 small border-radius-sm" style="background:#fff; border:1px solid var(--border); margin-bottom: 4px;">
+                                  <span>#${attemptsUsed - i}: ${s.score}% (${Math.floor(s.time_spent / 60)}m)</span>
+                                  <button class="button secondary tiny w-auto" onclick="viewQuizResults('${q.id}', '${s.id}')">View Details</button>
+                              </div>
+                          `).join('')}
+                      </div>
+                  </div>
+              ` : ''}
+
+              <div class="mt-20" id="quiz-actions-${q.id}">
+                  ${isUpcoming ? `
+                      <div class="p-10 border-radius-sm" style="background:var(--bg); border:1px solid var(--border)">
+                          <div class="quiz-countdown" data-target="${startAt}" data-start="${q.created_at ? new Date(q.created_at).getTime() : now}" data-label="Available In:"></div>
+                      </div>
+                  ` : isExpired ? `
+                      <div class="badge badge-inactive w-100 text-center">Quiz Ended on ${new Date(endAt).toLocaleString()}</div>
+                  ` : canAttempt ? `
+                      ${endAt !== Infinity ? `
+                          <div class="mb-10 p-10 border-radius-sm" style="background:#fffcf0; border:1px solid #ffeeba">
+                              <div class="quiz-countdown" data-target="${endAt}" data-start="${startAt}" data-label="Ends In:"></div>
+                          </div>
+                      ` : ''}
+                      <button class="button w-auto small px-20" id="quiz-btn-${q.id}" onclick="startQuiz('${q.id}')">${draft ? 'Resume Attempt' : 'Start New Attempt'}</button>
+                  ` : '<div class="badge badge-inactive w-100 text-center">No Access / Attempts Used</div>'
+                  }
+              </div>
             </div>
+          `;
+        }).join('') || '<div class="empty">No quizzes available for your courses.</div>'}
+      </div>
+      <div id="quizArea" class="hidden mt-20"></div>
+    `;
 
-            ${attemptsUsed > 0 ? `
-                <div class="mt-15">
-                    <div class="bold small mb-5">Previous Attempts:</div>
-                    <div class="flex-column gap-5 no-scrollbar" style="max-height: 150px; overflow-y: auto; padding-right: 2px;">
-                        ${mySubs.map((s, i) => `
-                            <div class="flex-between p-5 small border-radius-sm" style="background:#fff; border:1px solid var(--border); margin-bottom: 4px;">
-                                <span>#${attemptsUsed - i}: ${s.score}% (${Math.floor(s.time_spent / 60)}m)</span>
-                                <button class="button secondary tiny w-auto" onclick="viewQuizResults('${q.id}', '${s.id}')">View Details</button>
-                            </div>
-                        `).join('')}
-                    </div>
-                </div>
-            ` : ''}
-
-            <div class="mt-20" id="quiz-actions-${q.id}">
-                ${isUpcoming ? `
-                    <div class="p-10 border-radius-sm" style="background:var(--bg); border:1px solid var(--border)">
-                        <div class="quiz-countdown" data-target="${startAt}" data-start="${q.created_at ? new Date(q.created_at).getTime() : now}" data-label="Available In:"></div>
-                    </div>
-                ` : isExpired ? `
-                    <div class="badge badge-inactive w-100 text-center">Quiz Ended on ${new Date(endAt).toLocaleString()}</div>
-                ` : canAttempt ? `
-                    ${endAt !== Infinity ? `
-                        <div class="mb-10 p-10 border-radius-sm" style="background:#fffcf0; border:1px solid #ffeeba">
-                            <div class="quiz-countdown" data-target="${endAt}" data-start="${startAt}" data-label="Ends In:"></div>
-                        </div>
-                    ` : ''}
-                    <button class="button w-auto small px-20" id="quiz-btn-${q.id}" onclick="startQuiz('${q.id}')">${draft ? 'Resume Attempt' : 'Start New Attempt'}</button>
-                ` : '<div class="badge badge-inactive w-100 text-center">No Access / Attempts Used</div>'
-                }
-            </div>
-          </div>
-        `;
-      }).join('') || '<div class="empty">No quizzes available for your courses.</div>'}
-    </div>
-    <div id="quizArea" class="hidden mt-20"></div>
-  `;
-
-  // Initialize countdowns
-  document.querySelectorAll('.quiz-countdown').forEach(el => {
-      const target = parseInt(el.dataset.target);
-      const start = el.dataset.start;
-      const label = el.dataset.label;
-      const c = Countdown.create(el, {
-          targetDate: target,
-          startTime: start,
-          showProgress: true,
-          label: label,
-          onEnd: () => renderQuizzes()
-      });
-      activeCountdowns.push(c);
-  });
+    // Initialize countdowns
+    document.querySelectorAll('.quiz-countdown').forEach(el => {
+        const target = parseInt(el.dataset.target);
+        const start = el.dataset.start;
+        const label = el.dataset.label;
+        const c = Countdown.create(el, {
+            targetDate: target,
+            startTime: start,
+            showProgress: true,
+            label: label,
+            onEnd: () => renderQuizzes()
+        });
+        activeCountdowns.push(c);
+    });
+  } catch (error) {
+    console.error('Quizzes error:', error);
+    container.innerHTML = `<div class="stat-card danger">
+      <h3>Error Loading Quizzes</h3>
+      <div class="small danger-text">${escapeHtml(error.message)}</div>
+      <button class="button w-auto mt-10" onclick="renderQuizzes()">Retry</button>
+    </div>`;
+  }
 }
 
 let quizTimer = null;

@@ -179,6 +179,24 @@ class SupabaseDB {
     }
 
     static async deleteUser(email) {
+        try {
+            // Cleanup files before deleting user record
+            const [certs, submissions] = await Promise.all([
+                this.getCertificates(email),
+                this.getSubmissions(null, email)
+            ]);
+
+            for (const cert of certs) {
+                if (cert.certificate_url) await this.deleteFileByUrl(cert.certificate_url);
+            }
+
+            for (const sub of submissions) {
+                await this.deleteSubmission(sub.assignment_id, email);
+            }
+        } catch (e) {
+            console.warn('User file cleanup partially failed:', e);
+        }
+
         const { error } = await supabaseClient
             .from('users')
             .delete()
@@ -275,6 +293,25 @@ class SupabaseDB {
     }
 
     static async deleteAssignment(id) {
+        try {
+            const [assignment, submissions] = await Promise.all([
+                this.getAssignment(id),
+                this.getSubmissions(id)
+            ]);
+
+            // Cleanup all submissions for this assignment (handles storage)
+            for (const sub of submissions) {
+                await this.deleteSubmission(id, sub.student_email);
+            }
+
+            // Cleanup assignment attachments
+            if (assignment && assignment.attachments && Array.isArray(assignment.attachments)) {
+                for (const att of assignment.attachments) {
+                    if (att.url) await this.deleteFileByUrl(att.url);
+                }
+            }
+        } catch (e) { console.warn('Failed to cleanup assignment files:', e); }
+
         const { error } = await supabaseClient
             .from('assignments')
             .delete()
@@ -340,6 +377,23 @@ class SupabaseDB {
     }
 
     static async deleteSubmission(assignmentId, studentEmail) {
+        try {
+            const sub = await this.getSubmission(assignmentId, studentEmail);
+            if (sub && sub.answers) {
+                for (const key in sub.answers) {
+                    const val = sub.answers[key];
+                    if (typeof val === 'string' && (val.includes('assignments/submissions') || val.includes('assignment_submissions'))) {
+                        await this.deleteFileByUrl(val);
+                    }
+                }
+            }
+            if (sub && sub.attachments && Array.isArray(sub.attachments)) {
+                for (const att of sub.attachments) {
+                    if (att.url) await this.deleteFileByUrl(att.url);
+                }
+            }
+        } catch (e) { console.warn('Failed to cleanup submission files:', e); }
+
         const { error } = await supabaseClient
             .from('submissions')
             .delete()
@@ -400,13 +454,11 @@ class SupabaseDB {
             const assignIds = assignments.map(a => a.id);
             const quizIds = quizzes.map(q => q.id);
 
-            // Delete submissions
+            // Delete submissions (with storage cleanup)
             if (assignIds.length > 0) {
-                await supabaseClient
-                    .from('submissions')
-                    .delete()
-                    .eq('student_email', studentEmail)
-                    .in('assignment_id', assignIds);
+                for (const aid of assignIds) {
+                    await this.deleteSubmission(aid, studentEmail);
+                }
             }
 
             // Delete quiz submissions
@@ -574,6 +626,34 @@ class SupabaseDB {
     }
 
     static async deleteCourse(id) {
+        try {
+            const [materials, assignments, liveClasses, certs] = await Promise.all([
+                this.getMaterials(id),
+                this.getAssignments(null, id),
+                this.getLiveClasses(id),
+                supabaseClient.from('certificates').select('certificate_url').eq('course_id', id)
+            ]);
+
+            // Recursive cleanup for all course content
+            for (const m of materials) {
+                await this.deleteMaterial(m.id);
+            }
+
+            for (const a of assignments) {
+                await this.deleteAssignment(a.id);
+            }
+
+            for (const lc of liveClasses) {
+                await this.deleteLiveClass(lc.id);
+            }
+
+            if (certs.data) {
+                for (const cert of certs.data) {
+                    if (cert.certificate_url) await this.deleteFileByUrl(cert.certificate_url);
+                }
+            }
+        } catch (e) { console.warn('Course content cleanup failed:', e); }
+
         const { error } = await supabaseClient
             .from('courses')
             .delete()
@@ -652,6 +732,13 @@ class SupabaseDB {
     }
 
     static async deleteMaterial(id) {
+        try {
+            const { data: material } = await supabaseClient.from('materials').select('file_url').eq('id', id).single();
+            if (material && material.file_url) {
+                await this.deleteFileByUrl(material.file_url);
+            }
+        } catch (e) { console.warn('Failed to cleanup material file:', e); }
+
         const { error } = await supabaseClient
             .from('materials')
             .delete()
@@ -1045,6 +1132,13 @@ class SupabaseDB {
     }
 
     static async deleteLiveClass(id) {
+        try {
+            const lc = await this.getLiveClass(id);
+            if (lc && lc.recording_url) {
+                await this.deleteFileByUrl(lc.recording_url);
+            }
+        } catch (e) { console.warn('Failed to cleanup live class recording:', e); }
+
         const { error } = await supabaseClient
             .from('live_classes')
             .delete()
@@ -1167,6 +1261,30 @@ class SupabaseDB {
             .from(bucket)
             .getPublicUrl(path);
         return data.publicUrl;
+    }
+
+    static async deleteFile(bucket, path) {
+        const { error } = await supabaseClient.storage
+            .from(bucket)
+            .remove([path]);
+        if (error) throw error;
+    }
+
+    static async deleteFileByUrl(url) {
+        if (!url) return;
+        try {
+            // URL format: https://[project].supabase.co/storage/v1/object/public/[bucket]/[path]
+            const parts = url.split('/storage/v1/object/public/');
+            if (parts.length < 2) return;
+            const pathParts = parts[1].split('/');
+            const bucket = pathParts.shift();
+            const path = pathParts.join('/');
+            if (bucket && path) {
+                await this.deleteFile(bucket, path);
+            }
+        } catch (e) {
+            console.warn('Failed to parse and delete file from URL:', url, e);
+        }
     }
 }
 

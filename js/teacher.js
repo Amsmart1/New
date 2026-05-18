@@ -1,5 +1,9 @@
 let activeCountdowns = [];
 
+function showLoading(containerId = 'pageContent') {
+    UI.showLoading(containerId);
+}
+
 function clearActiveCountdowns() {
     activeCountdowns.forEach(c => c.destroy());
     activeCountdowns = [];
@@ -10,6 +14,7 @@ function clearActiveCountdowns() {
 }
 
 async function renderDashboard() {
+  showLoading();
   NotificationManager.initPolling();
   const content = document.getElementById('pageContent');
   if (!content) return;
@@ -44,6 +49,7 @@ async function renderDashboard() {
 }
 
 async function renderCourses() {
+  showLoading();
   const content = document.getElementById('pageContent');
   if (!content) return;
   clearActiveCountdowns();
@@ -261,6 +267,7 @@ async function deleteCourseById(id) {
   }
 }
 async function renderAssignments() {
+  showLoading();
   const content = document.getElementById('pageContent');
   if (!content) return;
   clearActiveCountdowns();
@@ -324,6 +331,7 @@ async function renderAssignments() {
   }
 }
 async function renderGrading() {
+  showLoading();
   const content = document.getElementById('pageContent');
   if (!content) return;
   clearActiveCountdowns();
@@ -381,6 +389,7 @@ async function renderGrading() {
   }
 }
 async function renderStudents() {
+  showLoading();
   const content = document.getElementById('pageContent');
   if (!content) return;
   clearActiveCountdowns();
@@ -826,6 +835,7 @@ async function gradeSubmission(assignmentId, studentEmail) {
   }
 }
 async function renderDiscussions() {
+  showLoading();
   const container = document.getElementById('pageContent');
   if (!container) return;
   clearActiveCountdowns();
@@ -1008,6 +1018,7 @@ async function renderSettings() {
 window.renderSettings = renderSettings;
 
 async function renderLiveClasses() {
+  showLoading();
   const content = document.getElementById('pageContent');
   if (!content) return;
   clearActiveCountdowns();
@@ -1503,6 +1514,7 @@ window.viewAttendance = viewAttendance;
 window.renderLiveClasses = renderLiveClasses;
 
 async function renderQuizzes() {
+  showLoading();
   const container = document.getElementById('pageContent');
   if (!container) return;
   clearActiveCountdowns();
@@ -1927,6 +1939,7 @@ async function gradeQuizSubmission(submissionId, quizId) {
 window.gradeQuizSubmission = gradeQuizSubmission;
 
 async function renderGradeBook() {
+    showLoading();
     const content = document.getElementById('pageContent');
     if (!content) return;
     clearActiveCountdowns();
@@ -2082,42 +2095,53 @@ function initNav() {
 
 
 async function renderMaterials() {
+  showLoading();
   const content = document.getElementById('pageContent');
   if (!content) return;
   clearActiveCountdowns();
-  const user = await SessionManager.getCurrentUser();
-  const courses = await SupabaseDB.getCourses(user.email);
-  const courseIds = courses.map(c => c.id);
-  const materials = await SupabaseDB.getMaterials(null, courseIds);
 
-  content.innerHTML = `
-    <div class="card flex-between">
-      <h2 class="m-0">Course Materials</h2>
-      <button class="button w-auto" onclick="showMaterialForm()">+ Add Material</button>
-    </div>
-    <div class="grid">
-      ${courses.map(c => {
-        const courseMaterials = materials.filter(m => m.course_id === c.id);
-        return `
-          <div class="card">
-            <h3 class="m-0">${escapeHtml(c.title)}</h3>
-            <div class="grid mt-10" style="gap:8px">
-              ${courseMaterials.map(m => `
-                <div class="flex-between list-item">
-                  <span class="small">${escapeHtml(m.title)}</span>
-                  <div class="flex gap-5">
-                    <button class="button secondary tiny" onclick="UI.viewFile('${escapeAttr(m.file_url)}', '${escapeAttr(m.title)}')">View</button>
-                    <button class="button danger tiny" onclick="deleteMaterial('${escapeAttr(m.id)}')">Delete</button>
+  try {
+    const user = await SessionManager.getCurrentUser();
+    const courses = await SupabaseDB.getCourses(user.email);
+    const courseIds = courses.map(c => c.id);
+    const materials = await SupabaseDB.getMaterials(null, courseIds);
+
+    content.innerHTML = `
+      <div class="card flex-between">
+        <h2 class="m-0">Course Materials</h2>
+        <button class="button w-auto" onclick="showMaterialForm()">+ Add Material</button>
+      </div>
+      <div class="grid">
+        ${courses.map(c => {
+          const courseMaterials = materials.filter(m => m.course_id === c.id);
+          return `
+            <div class="card">
+              <h3 class="m-0">${escapeHtml(c.title)}</h3>
+              <div class="grid mt-10" style="gap:8px">
+                ${courseMaterials.map(m => `
+                  <div class="flex-between list-item">
+                    <span class="small">${escapeHtml(m.title)}</span>
+                    <div class="flex gap-5">
+                      <button class="button secondary tiny" onclick="UI.viewFile('${escapeAttr(m.file_url)}', '${escapeAttr(m.title)}')">View</button>
+                      <button class="button danger tiny" onclick="deleteMaterial('${escapeAttr(m.id)}')">Delete</button>
+                    </div>
                   </div>
-                </div>
-              `).join('') || '<p class="small">No materials yet.</p>'}
+                `).join('') || '<p class="small">No materials yet.</p>'}
+              </div>
             </div>
-          </div>
-        `;
-      }).join('')}
-    </div>
-    <div id="materialFormArea" class="hidden mt-20"></div>
-  `;
+          `;
+        }).join('')}
+      </div>
+      <div id="materialFormArea" class="hidden mt-20"></div>
+    `;
+  } catch (error) {
+    console.error('Materials error:', error);
+    content.innerHTML = `<div class="stat-card danger">
+      <h3>Error Loading Materials</h3>
+      <div class="small danger-text">${escapeHtml(error.message)}</div>
+      <button class="button w-auto mt-10" onclick="renderMaterials()">Retry</button>
+    </div>`;
+  }
 }
 
 async function showMaterialForm() {

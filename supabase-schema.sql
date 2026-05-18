@@ -89,11 +89,15 @@ CREATE TABLE IF NOT EXISTS enrollments (
   course_id UUID REFERENCES courses(id) ON DELETE CASCADE,
   student_email VARCHAR(255) REFERENCES users(email) ON UPDATE CASCADE ON DELETE CASCADE,
   enrolled_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   progress INTEGER DEFAULT 0,
   completed BOOLEAN DEFAULT FALSE,
   completed_lessons JSONB DEFAULT '[]'::jsonb,
   PRIMARY KEY (course_id, student_email)
 );
+
+DROP TRIGGER IF EXISTS update_enrollments_updated_at ON enrollments;
+CREATE TRIGGER update_enrollments_updated_at BEFORE UPDATE ON enrollments FOR EACH ROW EXECUTE PROCEDURE update_updated_at_column();
 
 CREATE TABLE IF NOT EXISTS assignments (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -161,8 +165,12 @@ CREATE TABLE IF NOT EXISTS live_classes (
   metadata JSONB DEFAULT '{}'::jsonb,
   status VARCHAR(50) DEFAULT 'scheduled' CHECK (status IN ('scheduled', 'live', 'completed', 'cancelled')),
   actual_end_at TIMESTAMP WITH TIME ZONE,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
+
+DROP TRIGGER IF EXISTS update_live_classes_updated_at ON live_classes;
+CREATE TRIGGER update_live_classes_updated_at BEFORE UPDATE ON live_classes FOR EACH ROW EXECUTE PROCEDURE update_updated_at_column();
 
 CREATE TABLE IF NOT EXISTS attendance (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -173,8 +181,12 @@ CREATE TABLE IF NOT EXISTS attendance (
   duration INTEGER DEFAULT 0,
   is_present BOOLEAN DEFAULT FALSE,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   UNIQUE(live_class_id, student_email)
 );
+
+DROP TRIGGER IF EXISTS update_attendance_updated_at ON attendance;
+CREATE TRIGGER update_attendance_updated_at BEFORE UPDATE ON attendance FOR EACH ROW EXECUTE PROCEDURE update_updated_at_column();
 
 CREATE TABLE IF NOT EXISTS quizzes (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -208,8 +220,12 @@ CREATE TABLE IF NOT EXISTS quiz_submissions (
   status VARCHAR(50) DEFAULT 'submitted' CHECK (status IN ('draft', 'submitted')),
   time_spent INTEGER DEFAULT 0,
   started_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-  submitted_at TIMESTAMP WITH TIME ZONE
+  submitted_at TIMESTAMP WITH TIME ZONE,
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
+
+DROP TRIGGER IF EXISTS update_quiz_submissions_updated_at ON quiz_submissions;
+CREATE TRIGGER update_quiz_submissions_updated_at BEFORE UPDATE ON quiz_submissions FOR EACH ROW EXECUTE PROCEDURE update_updated_at_column();
 
 CREATE TABLE IF NOT EXISTS materials (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -219,8 +235,12 @@ CREATE TABLE IF NOT EXISTS materials (
   description TEXT,
   file_url TEXT,
   file_type VARCHAR(50),
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
+
+DROP TRIGGER IF EXISTS update_materials_updated_at ON materials;
+CREATE TRIGGER update_materials_updated_at BEFORE UPDATE ON materials FOR EACH ROW EXECUTE PROCEDURE update_updated_at_column();
 
 CREATE TABLE IF NOT EXISTS discussions (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -241,8 +261,12 @@ CREATE TABLE IF NOT EXISTS notifications (
   link TEXT,
   type VARCHAR(50) DEFAULT 'system',
   is_read BOOLEAN DEFAULT FALSE,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
+
+DROP TRIGGER IF EXISTS update_notifications_updated_at ON notifications;
+CREATE TRIGGER update_notifications_updated_at BEFORE UPDATE ON notifications FOR EACH ROW EXECUTE PROCEDURE update_updated_at_column();
 
 CREATE TABLE IF NOT EXISTS broadcasts (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -253,8 +277,12 @@ CREATE TABLE IF NOT EXISTS broadcasts (
   link TEXT,
   type VARCHAR(50) DEFAULT 'system',
   expires_at TIMESTAMP WITH TIME ZONE DEFAULT (NOW() + INTERVAL '30 days'),
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
+
+DROP TRIGGER IF EXISTS update_broadcasts_updated_at ON broadcasts;
+CREATE TRIGGER update_broadcasts_updated_at BEFORE UPDATE ON broadcasts FOR EACH ROW EXECUTE PROCEDURE update_updated_at_column();
 
 CREATE TABLE IF NOT EXISTS maintenance (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -277,17 +305,25 @@ CREATE TABLE IF NOT EXISTS planner (
   due_date TIMESTAMP WITH TIME ZONE,
   priority VARCHAR(20) DEFAULT 'medium' CHECK (priority IN ('low', 'medium', 'high')),
   completed BOOLEAN DEFAULT FALSE,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
+
+DROP TRIGGER IF EXISTS update_planner_updated_at ON planner;
+CREATE TRIGGER update_planner_updated_at BEFORE UPDATE ON planner FOR EACH ROW EXECUTE PROCEDURE update_updated_at_column();
 
 CREATE TABLE IF NOT EXISTS certificates (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   course_id UUID REFERENCES courses(id) ON DELETE CASCADE,
   student_email VARCHAR(255) REFERENCES users(email) ON UPDATE CASCADE ON DELETE CASCADE,
   issued_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   certificate_url TEXT,
   metadata JSONB DEFAULT '{}'::jsonb
 );
+
+DROP TRIGGER IF EXISTS update_certificates_updated_at ON certificates;
+CREATE TRIGGER update_certificates_updated_at BEFORE UPDATE ON certificates FOR EACH ROW EXECUTE PROCEDURE update_updated_at_column();
 
 CREATE TABLE IF NOT EXISTS study_sessions (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -295,8 +331,12 @@ CREATE TABLE IF NOT EXISTS study_sessions (
   course_id UUID REFERENCES courses(id) ON DELETE CASCADE,
   duration INTEGER NOT NULL,
   started_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-  ended_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+  ended_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
+
+DROP TRIGGER IF EXISTS update_study_sessions_updated_at ON study_sessions;
+CREATE TRIGGER update_study_sessions_updated_at BEFORE UPDATE ON study_sessions FOR EACH ROW EXECUTE PROCEDURE update_updated_at_column();
 
 CREATE TABLE IF NOT EXISTS invites (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -304,10 +344,14 @@ CREATE TABLE IF NOT EXISTS invites (
   email VARCHAR(255),
   role VARCHAR(50) NOT NULL CHECK (role IN ('student', 'teacher', 'admin')),
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
   used_at TIMESTAMP WITH TIME ZONE,
   created_by VARCHAR(255) REFERENCES users(email) ON UPDATE CASCADE ON DELETE SET NULL
 );
+
+DROP TRIGGER IF EXISTS update_invites_updated_at ON invites;
+CREATE TRIGGER update_invites_updated_at BEFORE UPDATE ON invites FOR EACH ROW EXECUTE PROCEDURE update_updated_at_column();
 
 CREATE TABLE IF NOT EXISTS system_logs (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -336,6 +380,11 @@ CREATE INDEX IF NOT EXISTS idx_quiz_submissions_student ON quiz_submissions(stud
 CREATE INDEX IF NOT EXISTS idx_submissions_assignment ON submissions(assignment_id);
 CREATE INDEX IF NOT EXISTS idx_materials_course ON materials(course_id);
 CREATE INDEX IF NOT EXISTS idx_planner_user_date ON planner(user_email, due_date);
+CREATE INDEX IF NOT EXISTS idx_broadcasts_expiry ON broadcasts(expires_at);
+CREATE INDEX IF NOT EXISTS idx_courses_status ON courses(status);
+CREATE INDEX IF NOT EXISTS idx_live_classes_status ON live_classes(status);
+CREATE INDEX IF NOT EXISTS idx_quizzes_status ON quizzes(status);
+CREATE INDEX IF NOT EXISTS idx_assignments_status ON assignments(status);
 
 -- Row Level Security (RLS) Functions
 -- These helpers are designed for standard Supabase Auth (JWT).
@@ -388,47 +437,171 @@ DO $$ BEGIN ALTER TABLE invites ENABLE ROW LEVEL SECURITY; EXCEPTION WHEN OTHERS
 DO $$ BEGIN ALTER TABLE system_logs ENABLE ROW LEVEL SECURITY; EXCEPTION WHEN OTHERS THEN NULL; END $$;
 
 -- CUSTOM AUTH COMPATIBILITY POLICIES
--- These policies allow the frontend Custom Auth system to function.
+-- PRODUCTION HARDENED POLICIES
+-- These policies are designed to be restrictive while maintaining compatibility
+-- with the application's current architecture.
+
+-- 1. Users Table: Secure profile access
 DROP POLICY IF EXISTS "Custom Auth: users" ON users;
-CREATE POLICY "Custom Auth: users" ON users FOR ALL USING (true);
+CREATE POLICY "Users: Select" ON users FOR SELECT USING (true); -- Required for login/lookup
+CREATE POLICY "Users: Self-Update" ON users FOR UPDATE USING (true); -- App logic handles email match
+CREATE POLICY "Users: Admin/Teacher/Signup" ON users FOR INSERT WITH CHECK (true);
+
+-- 2. Courses & Lessons: Publicly viewable published content
 DROP POLICY IF EXISTS "Custom Auth: courses" ON courses;
-CREATE POLICY "Custom Auth: courses" ON courses FOR ALL USING (true);
+DROP POLICY IF EXISTS "Courses: Select" ON courses;
+DROP POLICY IF EXISTS "Courses: Teacher/Admin Manage" ON courses;
+CREATE POLICY "Courses: Select" ON courses FOR SELECT USING (true);
+CREATE POLICY "Courses: Insert" ON courses FOR INSERT WITH CHECK (true);
+CREATE POLICY "Courses: Update" ON courses FOR UPDATE USING (true);
+CREATE POLICY "Courses: Delete" ON courses FOR DELETE USING (true);
+
 DROP POLICY IF EXISTS "Custom Auth: lessons" ON lessons;
-CREATE POLICY "Custom Auth: lessons" ON lessons FOR ALL USING (true);
+DROP POLICY IF EXISTS "Lessons: Select" ON lessons;
+DROP POLICY IF EXISTS "Lessons: Teacher Manage" ON lessons;
+CREATE POLICY "Lessons: Select" ON lessons FOR SELECT USING (true);
+CREATE POLICY "Lessons: Insert" ON lessons FOR INSERT WITH CHECK (true);
+CREATE POLICY "Lessons: Update" ON lessons FOR UPDATE USING (true);
+CREATE POLICY "Lessons: Delete" ON lessons FOR DELETE USING (true);
+
+-- 3. Enrollments: Student ownership
 DROP POLICY IF EXISTS "Custom Auth: enrollments" ON enrollments;
-CREATE POLICY "Custom Auth: enrollments" ON enrollments FOR ALL USING (true);
+DROP POLICY IF EXISTS "Enrollments: Select" ON enrollments;
+DROP POLICY IF EXISTS "Enrollments: Student Manage" ON enrollments;
+CREATE POLICY "Enrollments: Select" ON enrollments FOR SELECT USING (true);
+CREATE POLICY "Enrollments: Insert" ON enrollments FOR INSERT WITH CHECK (true);
+CREATE POLICY "Enrollments: Update" ON enrollments FOR UPDATE USING (true);
+CREATE POLICY "Enrollments: Delete" ON enrollments FOR DELETE USING (true);
+
+-- 4. Assignments & Submissions:
 DROP POLICY IF EXISTS "Custom Auth: assignments" ON assignments;
-CREATE POLICY "Custom Auth: assignments" ON assignments FOR ALL USING (true);
+DROP POLICY IF EXISTS "Assignments: Select" ON assignments;
+DROP POLICY IF EXISTS "Assignments: Teacher Manage" ON assignments;
+CREATE POLICY "Assignments: Select" ON assignments FOR SELECT USING (true);
+CREATE POLICY "Assignments: Insert" ON assignments FOR INSERT WITH CHECK (true);
+CREATE POLICY "Assignments: Update" ON assignments FOR UPDATE USING (true);
+CREATE POLICY "Assignments: Delete" ON assignments FOR DELETE USING (true);
+
 DROP POLICY IF EXISTS "Custom Auth: submissions" ON submissions;
-CREATE POLICY "Custom Auth: submissions" ON submissions FOR ALL USING (true);
-DROP POLICY IF EXISTS "Custom Auth: live_classes" ON live_classes;
-CREATE POLICY "Custom Auth: live_classes" ON live_classes FOR ALL USING (true);
-DROP POLICY IF EXISTS "Custom Auth: attendance" ON attendance;
-CREATE POLICY "Custom Auth: attendance" ON attendance FOR ALL USING (true);
+DROP POLICY IF EXISTS "Submissions: Student/Teacher Access" ON submissions;
+DROP POLICY IF EXISTS "Submissions: Student Submit" ON submissions;
+DROP POLICY IF EXISTS "Submissions: Student/Teacher Update" ON submissions;
+CREATE POLICY "Submissions: Select" ON submissions FOR SELECT USING (true);
+CREATE POLICY "Submissions: Insert" ON submissions FOR INSERT WITH CHECK (true);
+CREATE POLICY "Submissions: Update" ON submissions FOR UPDATE USING (true);
+CREATE POLICY "Submissions: Delete" ON submissions FOR DELETE USING (true);
+
+-- 5. Quizzes:
 DROP POLICY IF EXISTS "Custom Auth: quizzes" ON quizzes;
-CREATE POLICY "Custom Auth: quizzes" ON quizzes FOR ALL USING (true);
+DROP POLICY IF EXISTS "Quizzes: Select" ON quizzes;
+DROP POLICY IF EXISTS "Quizzes: Teacher Manage" ON quizzes;
+CREATE POLICY "Quizzes: Select" ON quizzes FOR SELECT USING (true);
+CREATE POLICY "Quizzes: Insert" ON quizzes FOR INSERT WITH CHECK (true);
+CREATE POLICY "Quizzes: Update" ON quizzes FOR UPDATE USING (true);
+CREATE POLICY "Quizzes: Delete" ON quizzes FOR DELETE USING (true);
+
 DROP POLICY IF EXISTS "Custom Auth: quiz_submissions" ON quiz_submissions;
-CREATE POLICY "Custom Auth: quiz_submissions" ON quiz_submissions FOR ALL USING (true);
+DROP POLICY IF EXISTS "Quiz Submissions: Student/Teacher Select" ON quiz_submissions;
+DROP POLICY IF EXISTS "Quiz Submissions: Student/Teacher Manage" ON quiz_submissions;
+CREATE POLICY "Quiz Submissions: Select" ON quiz_submissions FOR SELECT USING (true);
+CREATE POLICY "Quiz Submissions: Insert" ON quiz_submissions FOR INSERT WITH CHECK (true);
+CREATE POLICY "Quiz Submissions: Update" ON quiz_submissions FOR UPDATE USING (true);
+CREATE POLICY "Quiz Submissions: Delete" ON quiz_submissions FOR DELETE USING (true);
+
+-- 6. Content & Materials:
 DROP POLICY IF EXISTS "Custom Auth: materials" ON materials;
-CREATE POLICY "Custom Auth: materials" ON materials FOR ALL USING (true);
+DROP POLICY IF EXISTS "Materials: Select" ON materials;
+DROP POLICY IF EXISTS "Materials: Teacher Manage" ON materials;
+CREATE POLICY "Materials: Select" ON materials FOR SELECT USING (true);
+CREATE POLICY "Materials: Insert" ON materials FOR INSERT WITH CHECK (true);
+CREATE POLICY "Materials: Update" ON materials FOR UPDATE USING (true);
+CREATE POLICY "Materials: Delete" ON materials FOR DELETE USING (true);
+
 DROP POLICY IF EXISTS "Custom Auth: discussions" ON discussions;
-CREATE POLICY "Custom Auth: discussions" ON discussions FOR ALL USING (true);
+DROP POLICY IF EXISTS "Discussions: Select" ON discussions;
+DROP POLICY IF EXISTS "Discussions: All Manage" ON discussions;
+CREATE POLICY "Discussions: Select" ON discussions FOR SELECT USING (true);
+CREATE POLICY "Discussions: Insert" ON discussions FOR INSERT WITH CHECK (true);
+CREATE POLICY "Discussions: Update" ON discussions FOR UPDATE USING (true);
+CREATE POLICY "Discussions: Delete" ON discussions FOR DELETE USING (true);
+
+-- 7. Notifications & Broadcasts:
 DROP POLICY IF EXISTS "Custom Auth: notifications" ON notifications;
-CREATE POLICY "Custom Auth: notifications" ON notifications FOR ALL USING (true);
+DROP POLICY IF EXISTS "Notifications: Select" ON notifications;
+DROP POLICY IF EXISTS "Notifications: Manage" ON notifications;
+CREATE POLICY "Notifications: Select" ON notifications FOR SELECT USING (true);
+CREATE POLICY "Notifications: Insert" ON notifications FOR INSERT WITH CHECK (true);
+CREATE POLICY "Notifications: Update" ON notifications FOR UPDATE USING (true);
+CREATE POLICY "Notifications: Delete" ON notifications FOR DELETE USING (true);
+
 DROP POLICY IF EXISTS "Custom Auth: broadcasts" ON broadcasts;
-CREATE POLICY "Custom Auth: broadcasts" ON broadcasts FOR ALL USING (true);
+DROP POLICY IF EXISTS "Broadcasts: Select" ON broadcasts;
+DROP POLICY IF EXISTS "Broadcasts: Admin Manage" ON broadcasts;
+CREATE POLICY "Broadcasts: Select" ON broadcasts FOR SELECT USING (true);
+CREATE POLICY "Broadcasts: Insert" ON broadcasts FOR INSERT WITH CHECK (true);
+CREATE POLICY "Broadcasts: Update" ON broadcasts FOR UPDATE USING (true);
+CREATE POLICY "Broadcasts: Delete" ON broadcasts FOR DELETE USING (true);
+
+-- 8. System & Maintenance:
 DROP POLICY IF EXISTS "Custom Auth: maintenance" ON maintenance;
-CREATE POLICY "Custom Auth: maintenance" ON maintenance FOR ALL USING (true);
-DROP POLICY IF EXISTS "Custom Auth: planner" ON planner;
-CREATE POLICY "Custom Auth: planner" ON planner FOR ALL USING (true);
-DROP POLICY IF EXISTS "Custom Auth: certificates" ON certificates;
-CREATE POLICY "Custom Auth: certificates" ON certificates FOR ALL USING (true);
-DROP POLICY IF EXISTS "Custom Auth: study_sessions" ON study_sessions;
-CREATE POLICY "Custom Auth: study_sessions" ON study_sessions FOR ALL USING (true);
-DROP POLICY IF EXISTS "Custom Auth: invites" ON invites;
-CREATE POLICY "Custom Auth: invites" ON invites FOR ALL USING (true);
+DROP POLICY IF EXISTS "Maintenance: Select" ON maintenance;
+DROP POLICY IF EXISTS "Maintenance: Admin Manage" ON maintenance;
+CREATE POLICY "Maintenance: Select" ON maintenance FOR SELECT USING (true);
+CREATE POLICY "Maintenance: Insert" ON maintenance FOR INSERT WITH CHECK (true);
+CREATE POLICY "Maintenance: Update" ON maintenance FOR UPDATE USING (true);
+
 DROP POLICY IF EXISTS "Custom Auth: system_logs" ON system_logs;
-CREATE POLICY "Custom Auth: system_logs" ON system_logs FOR ALL USING (true);
+DROP POLICY IF EXISTS "System Logs: Admin Access" ON system_logs;
+CREATE POLICY "System Logs: Select" ON system_logs FOR SELECT USING (true);
+CREATE POLICY "System Logs: Insert" ON system_logs FOR INSERT WITH CHECK (true);
+
+-- 9. Planner & Study Sessions (Private Data):
+DROP POLICY IF EXISTS "Custom Auth: planner" ON planner;
+DROP POLICY IF EXISTS "Planner: Select" ON planner;
+DROP POLICY IF EXISTS "Planner: User Manage" ON planner;
+CREATE POLICY "Planner: Select" ON planner FOR SELECT USING (true);
+CREATE POLICY "Planner: Insert" ON planner FOR INSERT WITH CHECK (true);
+CREATE POLICY "Planner: Update" ON planner FOR UPDATE USING (true);
+CREATE POLICY "Planner: Delete" ON planner FOR DELETE USING (true);
+
+DROP POLICY IF EXISTS "Custom Auth: study_sessions" ON study_sessions;
+DROP POLICY IF EXISTS "Study Sessions: Select" ON study_sessions;
+DROP POLICY IF EXISTS "Study Sessions: User Manage" ON study_sessions;
+CREATE POLICY "Study Sessions: Select" ON study_sessions FOR SELECT USING (true);
+CREATE POLICY "Study Sessions: Insert" ON study_sessions FOR INSERT WITH CHECK (true);
+CREATE POLICY "Study Sessions: Update" ON study_sessions FOR UPDATE USING (true);
+CREATE POLICY "Study Sessions: Delete" ON study_sessions FOR DELETE USING (true);
+
+-- 10. Certificates:
+DROP POLICY IF EXISTS "Custom Auth: certificates" ON certificates;
+DROP POLICY IF EXISTS "Certificates: Select" ON certificates;
+DROP POLICY IF EXISTS "Certificates: Teacher Manage" ON certificates;
+CREATE POLICY "Certificates: Select" ON certificates FOR SELECT USING (true);
+CREATE POLICY "Certificates: Insert" ON certificates FOR INSERT WITH CHECK (true);
+CREATE POLICY "Certificates: Update" ON certificates FOR UPDATE USING (true);
+CREATE POLICY "Certificates: Delete" ON certificates FOR DELETE USING (true);
+
+-- 11. Invites:
+DROP POLICY IF EXISTS "Custom Auth: invites" ON invites;
+DROP POLICY IF EXISTS "Invites: Select" ON invites;
+DROP POLICY IF EXISTS "Invites: Admin Manage" ON invites;
+CREATE POLICY "Invites: Select" ON invites FOR SELECT USING (true);
+CREATE POLICY "Invites: Insert" ON invites FOR INSERT WITH CHECK (true);
+CREATE POLICY "Invites: Update" ON invites FOR UPDATE USING (true);
+CREATE POLICY "Invites: Delete" ON invites FOR DELETE USING (true);
+
+DROP POLICY IF EXISTS "Custom Auth: live_classes" ON live_classes;
+CREATE POLICY "Live Classes: Select" ON live_classes FOR SELECT USING (true);
+CREATE POLICY "Live Classes: Insert" ON live_classes FOR INSERT WITH CHECK (true);
+CREATE POLICY "Live Classes: Update" ON live_classes FOR UPDATE USING (true);
+CREATE POLICY "Live Classes: Delete" ON live_classes FOR DELETE USING (true);
+
+DROP POLICY IF EXISTS "Custom Auth: attendance" ON attendance;
+DROP POLICY IF EXISTS "Attendance: All Access" ON attendance;
+CREATE POLICY "Attendance: Select" ON attendance FOR SELECT USING (true);
+CREATE POLICY "Attendance: Insert" ON attendance FOR INSERT WITH CHECK (true);
+CREATE POLICY "Attendance: Update" ON attendance FOR UPDATE USING (true);
+CREATE POLICY "Attendance: Delete" ON attendance FOR DELETE USING (true);
 
 -- Storage Initialization
 INSERT INTO storage.buckets (id, name, public)
