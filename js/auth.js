@@ -443,6 +443,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             const hashedInput = await Auth.hashPassword(password, email);
+            sessionStorage.removeItem('sessionId');
             const sid = SessionManager.getSessionId();
 
             try {
