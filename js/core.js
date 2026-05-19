@@ -658,8 +658,14 @@ async function updateMaintBanner() {
             const isMaint = isActiveMaintenance(m);
             const isRestricted = !fresh || !fresh.active || fresh.flagged || isAccountLocked(fresh);
 
-            if ((isMaint && user.role !== 'admin') || isRestricted) {
+            // Check for session invalidation (single-session enforcement)
+            const currentSid = SessionManager.getSessionId();
+            const sessionMismatch = fresh && fresh.session_id && fresh.session_id !== currentSid;
+
+            if ((isMaint && user.role !== 'admin') || isRestricted || sessionMismatch) {
                 let msg = isMaint ? 'System entered maintenance mode.' : 'Your account status has changed.';
+                if (sessionMismatch) msg = 'You have been logged in from another device or tab.';
+
                 await SessionManager.clearCurrentUser();
                 if (!window.location.href.includes('index.html')) {
                     alert(msg + ' Logging out.');

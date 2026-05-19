@@ -330,6 +330,11 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             const hashedPassword = await Auth.hashPassword(password, email);
+
+            // Generate a fresh session ID for the new signup
+            sessionStorage.removeItem('sessionId');
+            const sid = SessionManager.getSessionId();
+
             const user = {
                 full_name: fullName,
                 email,
@@ -342,7 +347,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 lockouts: 0,
                 flagged: false,
                 reset_request: null,
-                active: true
+                active: true,
+                session_id: sid
             };
             
             const savedUser = await SupabaseDB.saveUser(user);
@@ -488,6 +494,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
             user.failed_attempts = 0;
             user.locked_until = null;
+
+            // Generate and persist new session ID on login
+            sessionStorage.removeItem('sessionId');
+            user.session_id = SessionManager.getSessionId();
+
             await SupabaseDB.saveUser(user);
             await SessionManager.setCurrentUser(user);
 
@@ -628,6 +639,10 @@ document.addEventListener('DOMContentLoaded', () => {
             // update password and clear reset request
             freshUser.password = await Auth.hashPassword(newPass, freshUser.email);
             freshUser.reset_request = null;
+
+            // Generate and persist new session ID after password change
+            sessionStorage.removeItem('sessionId');
+            freshUser.session_id = SessionManager.getSessionId();
 
             await Promise.all([
                 SupabaseDB.saveUser(freshUser),

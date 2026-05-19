@@ -1842,9 +1842,6 @@ async function startQuiz(quizId) {
   }
 
   // Start Timer
-  // Initialize Anti-Cheat if configured
-  if (quiz.anti_cheat_config && Object.values(quiz.anti_cheat_config).some(v => v === true)) {
-
   if (quiz.time_limit > 0) {
     const startTs = new Date(currentSubmission.started_at).getTime();
     const endTime = startTs + (quiz.time_limit * 60 * 1000);

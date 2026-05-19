@@ -38,6 +38,7 @@ CREATE TABLE IF NOT EXISTS users (
   flagged BOOLEAN DEFAULT FALSE,
   reset_request JSONB,
   active BOOLEAN DEFAULT TRUE,
+  session_id VARCHAR(255),
   notification_preferences JSONB DEFAULT '{"email": true, "push": true, "inApp": true}'::jsonb,
   metadata JSONB DEFAULT '{}'::jsonb
 );
@@ -68,6 +69,7 @@ ALTER TABLE courses ADD COLUMN IF NOT EXISTS enrollment_id VARCHAR(255);
 ALTER TABLE courses ADD COLUMN IF NOT EXISTS metadata JSONB DEFAULT '{}'::jsonb;
 
 -- Migration: Ensure new columns exist for existing users table
+ALTER TABLE users ADD COLUMN IF NOT EXISTS session_id VARCHAR(255);
 ALTER TABLE users ADD COLUMN IF NOT EXISTS notification_preferences JSONB DEFAULT '{"email": true, "push": true, "inApp": true}'::jsonb;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS metadata JSONB DEFAULT '{}'::jsonb;
 
