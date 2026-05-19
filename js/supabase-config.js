@@ -9,8 +9,40 @@ if (!window.supabase) {
     alert('Critical Error: Supabase connection could not be established.');
 }
 const { createClient } = window.supabase || { createClient: () => ({ from: () => ({ select: () => ({ eq: () => ({ single: () => ({}) }) }) }) }) };
-const supabaseClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+// Standard client options
+const clientOptions = {
+    global: {
+        headers: {}
+    }
+};
+
+// Inject current session ID into headers if it exists
+const currentSessionId = sessionStorage.getItem('sessionId');
+if (currentSessionId) {
+    clientOptions.global.headers['x-session-id'] = currentSessionId;
+}
+
+let supabaseClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, clientOptions);
 window.supabaseClient = supabaseClient;
+
+/**
+ * Updates the Supabase client with a new session ID for RLS context.
+ * Should be called after login, signup, or password reset.
+ */
+function setSupabaseSession(sessionId) {
+    if (sessionId) {
+        sessionStorage.setItem('sessionId', sessionId);
+        clientOptions.global.headers['x-session-id'] = sessionId;
+    } else {
+        sessionStorage.removeItem('sessionId');
+        delete clientOptions.global.headers['x-session-id'];
+    }
+    // Re-initialize client with updated headers
+    supabaseClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, clientOptions);
+    window.supabaseClient = supabaseClient;
+}
+window.setSupabaseSession = setSupabaseSession;
 
 const _stats = {
     totalRequests: 0,

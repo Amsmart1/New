@@ -357,6 +357,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
 
+            // Establish RLS session context
+            window.setSupabaseSession(sid);
+
             // Mark invite as used if applicable
             if (activeInvite) {
                 try {
@@ -500,6 +503,10 @@ document.addEventListener('DOMContentLoaded', () => {
             user.session_id = SessionManager.getSessionId();
 
             await SupabaseDB.saveUser(user);
+
+            // Establish RLS session context
+            window.setSupabaseSession(user.session_id);
+
             await SessionManager.setCurrentUser(user);
 
             alert(`Welcome back ${user.full_name}!`);
@@ -643,6 +650,9 @@ document.addEventListener('DOMContentLoaded', () => {
             // Generate and persist new session ID after password change
             sessionStorage.removeItem('sessionId');
             freshUser.session_id = SessionManager.getSessionId();
+
+            // Establish RLS session context
+            window.setSupabaseSession(freshUser.session_id);
 
             await Promise.all([
                 SupabaseDB.saveUser(freshUser),
