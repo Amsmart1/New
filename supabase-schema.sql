@@ -2,12 +2,7 @@
 -- This script replaces the entire schema while preserving ALL existing features,
 -- fixing RLS for the custom auth system, and initializing storage buckets.
 
--- 1. Clean start (Safe Idempotency)
--- 1. Idempotent Schema Initialization
--- This script ensures all necessary tables, functions, and policies exist
--- without destroying existing user data.
 SET client_min_messages TO WARNING;
-
 SET client_min_messages TO NOTICE;
 
 -- Extensions
@@ -22,12 +17,12 @@ BEGIN
 END;
 $$ language 'plpgsql';
 
--- Tables
+-- 1. Tables Creation (With all columns integrated)
+
 CREATE TABLE IF NOT EXISTS users (
   email VARCHAR(255) PRIMARY KEY,
   full_name VARCHAR(255) NOT NULL,
   phone VARCHAR(50),
-  password VARCHAR(255) NOT NULL,
   role VARCHAR(50) NOT NULL CHECK (role IN ('student', 'teacher', 'admin')),
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
@@ -38,13 +33,17 @@ CREATE TABLE IF NOT EXISTS users (
   flagged BOOLEAN DEFAULT FALSE,
   reset_request JSONB,
   active BOOLEAN DEFAULT TRUE,
-  session_id VARCHAR(255),
   notification_preferences JSONB DEFAULT '{"email": true, "push": true, "inApp": true}'::jsonb,
   metadata JSONB DEFAULT '{}'::jsonb
 );
 
-DROP TRIGGER IF EXISTS update_users_updated_at ON users;
-CREATE TRIGGER update_users_updated_at BEFORE UPDATE ON users FOR EACH ROW EXECUTE PROCEDURE update_updated_at_column();
+-- Table for sensitive authentication data (Hidden from public SELECT)
+CREATE TABLE IF NOT EXISTS user_secrets (
+  email VARCHAR(255) PRIMARY KEY REFERENCES users(email) ON UPDATE CASCADE ON DELETE CASCADE,
+  password_hash VARCHAR(255) NOT NULL,
+  session_id VARCHAR(255),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
 
 CREATE TABLE IF NOT EXISTS courses (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -59,44 +58,6 @@ CREATE TABLE IF NOT EXISTS courses (
   metadata JSONB DEFAULT '{}'::jsonb
 );
 
-DROP TRIGGER IF EXISTS update_courses_updated_at ON courses;
-CREATE TRIGGER update_courses_updated_at BEFORE UPDATE ON courses FOR EACH ROW EXECUTE PROCEDURE update_updated_at_column();
-
--- Migration: Ensure created_by exists for existing tables
--- Migration: Ensure new columns exist for existing courses table
-ALTER TABLE courses ADD COLUMN IF NOT EXISTS created_by VARCHAR(255);
-ALTER TABLE courses ADD COLUMN IF NOT EXISTS enrollment_id VARCHAR(255);
-ALTER TABLE courses ADD COLUMN IF NOT EXISTS metadata JSONB DEFAULT '{}'::jsonb;
-
--- Migration: Ensure new columns exist for existing users table
-ALTER TABLE users ADD COLUMN IF NOT EXISTS session_id VARCHAR(255);
-ALTER TABLE users ADD COLUMN IF NOT EXISTS notification_preferences JSONB DEFAULT '{"email": true, "push": true, "inApp": true}'::jsonb;
-ALTER TABLE users ADD COLUMN IF NOT EXISTS metadata JSONB DEFAULT '{}'::jsonb;
-
--- Migration: Ensure Anti-Cheat config exists for assessments
-ALTER TABLE assignments ADD COLUMN IF NOT EXISTS anti_cheat_config JSONB DEFAULT '{}'::jsonb;
-ALTER TABLE quizzes ADD COLUMN IF NOT EXISTS anti_cheat_config JSONB DEFAULT '{}'::jsonb;
-
--- Migration: Ensure updated_at exists for all tables to support triggers
-ALTER TABLE users ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
-ALTER TABLE courses ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
-ALTER TABLE lessons ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
-ALTER TABLE enrollments ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
-ALTER TABLE assignments ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
-ALTER TABLE submissions ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
-ALTER TABLE live_classes ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
-ALTER TABLE attendance ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
-ALTER TABLE quizzes ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
-ALTER TABLE quiz_submissions ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
-ALTER TABLE materials ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
-ALTER TABLE notifications ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
-ALTER TABLE broadcasts ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
-ALTER TABLE maintenance ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
-ALTER TABLE planner ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
-ALTER TABLE certificates ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
-ALTER TABLE study_sessions ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
-ALTER TABLE invites ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
-
 CREATE TABLE IF NOT EXISTS lessons (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   course_id UUID REFERENCES courses(id) ON DELETE CASCADE,
@@ -108,9 +69,6 @@ CREATE TABLE IF NOT EXISTS lessons (
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
-DROP TRIGGER IF EXISTS update_lessons_updated_at ON lessons;
-CREATE TRIGGER update_lessons_updated_at BEFORE UPDATE ON lessons FOR EACH ROW EXECUTE PROCEDURE update_updated_at_column();
-
 CREATE TABLE IF NOT EXISTS enrollments (
   course_id UUID REFERENCES courses(id) ON DELETE CASCADE,
   student_email VARCHAR(255) REFERENCES users(email) ON UPDATE CASCADE ON DELETE CASCADE,
@@ -121,9 +79,6 @@ CREATE TABLE IF NOT EXISTS enrollments (
   completed_lessons JSONB DEFAULT '[]'::jsonb,
   PRIMARY KEY (course_id, student_email)
 );
-
-DROP TRIGGER IF EXISTS update_enrollments_updated_at ON enrollments;
-CREATE TRIGGER update_enrollments_updated_at BEFORE UPDATE ON enrollments FOR EACH ROW EXECUTE PROCEDURE update_updated_at_column();
 
 CREATE TABLE IF NOT EXISTS assignments (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -145,9 +100,6 @@ CREATE TABLE IF NOT EXISTS assignments (
   anti_cheat_config JSONB DEFAULT '{}'::jsonb
 );
 
-DROP TRIGGER IF EXISTS update_assignments_updated_at ON assignments;
-CREATE TRIGGER update_assignments_updated_at BEFORE UPDATE ON assignments FOR EACH ROW EXECUTE PROCEDURE update_updated_at_column();
-
 CREATE TABLE IF NOT EXISTS submissions (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   assignment_id UUID REFERENCES assignments(id) ON DELETE CASCADE,
@@ -168,28 +120,6 @@ CREATE TABLE IF NOT EXISTS submissions (
   UNIQUE(assignment_id, student_email)
 );
 
-DROP TRIGGER IF EXISTS update_submissions_updated_at ON submissions;
-CREATE TRIGGER update_submissions_updated_at BEFORE UPDATE ON submissions FOR EACH ROW EXECUTE PROCEDURE update_updated_at_column();
-
--- Migration: Ensure new columns exist for existing submissions table
-ALTER TABLE submissions ADD COLUMN IF NOT EXISTS question_feedback JSONB DEFAULT '{}'::jsonb;
-ALTER TABLE submissions ADD COLUMN IF NOT EXISTS question_scores JSONB DEFAULT '{}'::jsonb;
-ALTER TABLE submissions ADD COLUMN IF NOT EXISTS late_penalty_applied INTEGER DEFAULT 0;
-ALTER TABLE submissions ADD COLUMN IF NOT EXISTS id UUID DEFAULT uuid_generate_v4();
-
--- Ensure composite unique constraints exist for idempotent upserts
-DO $$ BEGIN
-    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'submissions_assignment_id_student_email_key') THEN
-        ALTER TABLE submissions ADD CONSTRAINT submissions_assignment_id_student_email_key UNIQUE(assignment_id, student_email);
-    END IF;
-EXCEPTION WHEN OTHERS THEN NULL; END $$;
-
-DO $$ BEGIN
-    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'attendance_live_class_id_student_email_key') THEN
-        ALTER TABLE attendance ADD CONSTRAINT attendance_live_class_id_student_email_key UNIQUE(live_class_id, student_email);
-    END IF;
-EXCEPTION WHEN OTHERS THEN NULL; END $$;
-
 CREATE TABLE IF NOT EXISTS live_classes (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   course_id UUID REFERENCES courses(id) ON DELETE CASCADE,
@@ -209,9 +139,6 @@ CREATE TABLE IF NOT EXISTS live_classes (
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
-DROP TRIGGER IF EXISTS update_live_classes_updated_at ON live_classes;
-CREATE TRIGGER update_live_classes_updated_at BEFORE UPDATE ON live_classes FOR EACH ROW EXECUTE PROCEDURE update_updated_at_column();
-
 CREATE TABLE IF NOT EXISTS attendance (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   live_class_id UUID REFERENCES live_classes(id) ON DELETE CASCADE,
@@ -224,9 +151,6 @@ CREATE TABLE IF NOT EXISTS attendance (
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   UNIQUE(live_class_id, student_email)
 );
-
-DROP TRIGGER IF EXISTS update_attendance_updated_at ON attendance;
-CREATE TRIGGER update_attendance_updated_at BEFORE UPDATE ON attendance FOR EACH ROW EXECUTE PROCEDURE update_updated_at_column();
 
 CREATE TABLE IF NOT EXISTS quizzes (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -247,9 +171,6 @@ CREATE TABLE IF NOT EXISTS quizzes (
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
-DROP TRIGGER IF EXISTS update_quizzes_updated_at ON quizzes;
-CREATE TRIGGER update_quizzes_updated_at BEFORE UPDATE ON quizzes FOR EACH ROW EXECUTE PROCEDURE update_updated_at_column();
-
 CREATE TABLE IF NOT EXISTS quiz_submissions (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   quiz_id UUID REFERENCES quizzes(id) ON DELETE CASCADE,
@@ -265,9 +186,6 @@ CREATE TABLE IF NOT EXISTS quiz_submissions (
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
-DROP TRIGGER IF EXISTS update_quiz_submissions_updated_at ON quiz_submissions;
-CREATE TRIGGER update_quiz_submissions_updated_at BEFORE UPDATE ON quiz_submissions FOR EACH ROW EXECUTE PROCEDURE update_updated_at_column();
-
 CREATE TABLE IF NOT EXISTS materials (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   course_id UUID REFERENCES courses(id) ON DELETE CASCADE,
@@ -279,9 +197,6 @@ CREATE TABLE IF NOT EXISTS materials (
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
-
-DROP TRIGGER IF EXISTS update_materials_updated_at ON materials;
-CREATE TRIGGER update_materials_updated_at BEFORE UPDATE ON materials FOR EACH ROW EXECUTE PROCEDURE update_updated_at_column();
 
 CREATE TABLE IF NOT EXISTS discussions (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -306,9 +221,6 @@ CREATE TABLE IF NOT EXISTS notifications (
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
-DROP TRIGGER IF EXISTS update_notifications_updated_at ON notifications;
-CREATE TRIGGER update_notifications_updated_at BEFORE UPDATE ON notifications FOR EACH ROW EXECUTE PROCEDURE update_updated_at_column();
-
 CREATE TABLE IF NOT EXISTS broadcasts (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   course_id UUID REFERENCES courses(id) ON DELETE CASCADE,
@@ -322,9 +234,6 @@ CREATE TABLE IF NOT EXISTS broadcasts (
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
-DROP TRIGGER IF EXISTS update_broadcasts_updated_at ON broadcasts;
-CREATE TRIGGER update_broadcasts_updated_at BEFORE UPDATE ON broadcasts FOR EACH ROW EXECUTE PROCEDURE update_updated_at_column();
-
 CREATE TABLE IF NOT EXISTS maintenance (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   enabled BOOLEAN DEFAULT FALSE,
@@ -334,9 +243,6 @@ CREATE TABLE IF NOT EXISTS maintenance (
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
-
-DROP TRIGGER IF EXISTS update_maintenance_updated_at ON maintenance;
-CREATE TRIGGER update_maintenance_updated_at BEFORE UPDATE ON maintenance FOR EACH ROW EXECUTE PROCEDURE update_updated_at_column();
 
 CREATE TABLE IF NOT EXISTS planner (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -350,9 +256,6 @@ CREATE TABLE IF NOT EXISTS planner (
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
-DROP TRIGGER IF EXISTS update_planner_updated_at ON planner;
-CREATE TRIGGER update_planner_updated_at BEFORE UPDATE ON planner FOR EACH ROW EXECUTE PROCEDURE update_updated_at_column();
-
 CREATE TABLE IF NOT EXISTS certificates (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   course_id UUID REFERENCES courses(id) ON DELETE CASCADE,
@@ -363,9 +266,6 @@ CREATE TABLE IF NOT EXISTS certificates (
   metadata JSONB DEFAULT '{}'::jsonb
 );
 
-DROP TRIGGER IF EXISTS update_certificates_updated_at ON certificates;
-CREATE TRIGGER update_certificates_updated_at BEFORE UPDATE ON certificates FOR EACH ROW EXECUTE PROCEDURE update_updated_at_column();
-
 CREATE TABLE IF NOT EXISTS study_sessions (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   user_email VARCHAR(255) REFERENCES users(email) ON UPDATE CASCADE ON DELETE CASCADE,
@@ -375,9 +275,6 @@ CREATE TABLE IF NOT EXISTS study_sessions (
   ended_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
-
-DROP TRIGGER IF EXISTS update_study_sessions_updated_at ON study_sessions;
-CREATE TRIGGER update_study_sessions_updated_at BEFORE UPDATE ON study_sessions FOR EACH ROW EXECUTE PROCEDURE update_updated_at_column();
 
 CREATE TABLE IF NOT EXISTS invites (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -390,9 +287,6 @@ CREATE TABLE IF NOT EXISTS invites (
   used_at TIMESTAMP WITH TIME ZONE,
   created_by VARCHAR(255) REFERENCES users(email) ON UPDATE CASCADE ON DELETE SET NULL
 );
-
-DROP TRIGGER IF EXISTS update_invites_updated_at ON invites;
-CREATE TRIGGER update_invites_updated_at BEFORE UPDATE ON invites FOR EACH ROW EXECUTE PROCEDURE update_updated_at_column();
 
 CREATE TABLE IF NOT EXISTS system_logs (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -415,7 +309,361 @@ CREATE TABLE IF NOT EXISTS violations (
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
--- Performance Indexes (Idempotent)
+-- 2. Migrations for existing tables (Idempotent)
+
+DO $$
+BEGIN
+    -- users (Move sensitive data if it exists)
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS notification_preferences JSONB DEFAULT '{"email": true, "push": true, "inApp": true}'::jsonb;
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS metadata JSONB DEFAULT '{}'::jsonb;
+
+    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'users' AND column_name = 'password') THEN
+        INSERT INTO user_secrets (email, password_hash, session_id)
+        SELECT email, password, session_id FROM users
+        ON CONFLICT (email) DO NOTHING;
+
+        ALTER TABLE users DROP COLUMN IF EXISTS password;
+        ALTER TABLE users DROP COLUMN IF EXISTS session_id;
+    END IF;
+
+    -- user_secrets
+    ALTER TABLE user_secrets ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
+
+    -- courses
+    ALTER TABLE courses ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
+    ALTER TABLE courses ADD COLUMN IF NOT EXISTS created_by VARCHAR(255);
+    ALTER TABLE courses ADD COLUMN IF NOT EXISTS enrollment_id VARCHAR(255);
+    ALTER TABLE courses ADD COLUMN IF NOT EXISTS metadata JSONB DEFAULT '{}'::jsonb;
+
+    -- lessons
+    ALTER TABLE lessons ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
+
+    -- enrollments
+    ALTER TABLE enrollments ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
+
+    -- assignments
+    ALTER TABLE assignments ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
+    ALTER TABLE assignments ADD COLUMN IF NOT EXISTS anti_cheat_config JSONB DEFAULT '{}'::jsonb;
+
+    -- submissions
+    ALTER TABLE submissions ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
+    ALTER TABLE submissions ADD COLUMN IF NOT EXISTS question_feedback JSONB DEFAULT '{}'::jsonb;
+    ALTER TABLE submissions ADD COLUMN IF NOT EXISTS question_scores JSONB DEFAULT '{}'::jsonb;
+    ALTER TABLE submissions ADD COLUMN IF NOT EXISTS late_penalty_applied INTEGER DEFAULT 0;
+
+    -- Ensure UUID PK for submissions
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'submissions' AND column_name = 'id') THEN
+        ALTER TABLE submissions ADD COLUMN id UUID DEFAULT uuid_generate_v4();
+    END IF;
+
+    -- Migration to UUID PK if it's still composite
+    IF EXISTS (
+        SELECT 1 FROM information_schema.table_constraints tc
+        JOIN information_schema.key_column_usage kcu ON tc.constraint_name = kcu.constraint_name
+        WHERE tc.table_name = 'submissions' AND tc.constraint_type = 'PRIMARY KEY'
+        GROUP BY tc.constraint_name HAVING COUNT(*) > 1
+    ) THEN
+        ALTER TABLE submissions DROP CONSTRAINT submissions_pkey;
+        ALTER TABLE submissions ADD PRIMARY KEY (id);
+    END IF;
+
+    -- live_classes
+    ALTER TABLE live_classes ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
+
+    -- attendance
+    ALTER TABLE attendance ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
+
+    -- quizzes
+    ALTER TABLE quizzes ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
+    ALTER TABLE quizzes ADD COLUMN IF NOT EXISTS anti_cheat_config JSONB DEFAULT '{}'::jsonb;
+
+    -- quiz_submissions
+    ALTER TABLE quiz_submissions ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
+
+    -- materials
+    ALTER TABLE materials ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
+
+    -- notifications
+    ALTER TABLE notifications ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
+
+    -- broadcasts
+    ALTER TABLE broadcasts ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
+
+    -- maintenance
+    ALTER TABLE maintenance ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
+
+    -- planner
+    ALTER TABLE planner ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
+
+    -- certificates
+    ALTER TABLE certificates ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
+
+    -- study_sessions
+    ALTER TABLE study_sessions ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
+
+    -- invites
+    ALTER TABLE invites ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
+END $$;
+
+-- Ensure composite unique constraints exist for idempotent upserts
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'submissions_assignment_id_student_email_key') THEN
+        ALTER TABLE submissions ADD CONSTRAINT submissions_assignment_id_student_email_key UNIQUE(assignment_id, student_email);
+    END IF;
+EXCEPTION WHEN OTHERS THEN NULL; END $$;
+
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'attendance_live_class_id_student_email_key') THEN
+        ALTER TABLE attendance ADD CONSTRAINT attendance_live_class_id_student_email_key UNIQUE(live_class_id, student_email);
+    END IF;
+EXCEPTION WHEN OTHERS THEN NULL; END $$;
+
+-- 3. Triggers for updated_at
+
+DO $$
+DECLARE
+    t text;
+BEGIN
+    FOR t IN
+        SELECT table_name
+        FROM information_schema.tables
+        WHERE table_schema = 'public'
+        AND table_name IN ('users', 'user_secrets', 'courses', 'lessons', 'enrollments', 'assignments', 'submissions', 'live_classes', 'attendance', 'quizzes', 'quiz_submissions', 'materials', 'discussions', 'notifications', 'broadcasts', 'maintenance', 'planner', 'certificates', 'study_sessions', 'invites')
+    LOOP
+        EXECUTE format('DROP TRIGGER IF EXISTS update_%I_updated_at ON %I', t, t);
+        EXECUTE format('CREATE TRIGGER update_%I_updated_at BEFORE UPDATE ON %I FOR EACH ROW EXECUTE PROCEDURE update_updated_at_column()', t, t);
+    END LOOP;
+END $$;
+
+-- 4. Functional Triggers
+
+CREATE OR REPLACE FUNCTION tr_notify_live_class() RETURNS TRIGGER AS $$
+BEGIN
+  IF (TG_OP = 'INSERT') THEN
+    IF (NEW.status = 'scheduled') THEN
+      PERFORM broadcast_data(NEW.course_id, 'student', 'Live Class Scheduled', 'A new live class "' || NEW.title || '" has been scheduled for ' || NEW.start_at, 'student.html?page=live', 'live_class', INTERVAL '7 days');
+    END IF;
+  ELSIF (TG_OP = 'UPDATE') THEN
+    IF (NEW.status = 'live' AND OLD.status != 'live') THEN
+      PERFORM broadcast_data(NEW.course_id, 'student', 'Live Class Started', 'The class "' || NEW.title || '" has started! Join now.', 'student.html?page=live', 'live_class', INTERVAL '1 day');
+    ELSIF (NEW.status = 'scheduled' AND OLD.status = 'live') THEN
+      PERFORM broadcast_data(NEW.course_id, 'student', 'Teacher Left Room', 'The teacher has left the session for "' || NEW.title || '". Please wait for them to rejoin.', 'student.html?page=live', 'teacher_left', INTERVAL '1 hour');
+    ELSIF (NEW.status = 'completed' AND OLD.status = 'live') THEN
+      PERFORM broadcast_data(NEW.course_id, 'student', 'Class Ended', 'The live class "' || NEW.title || '" has ended.', 'student.html?page=live', 'class_ended', INTERVAL '1 day');
+    END IF;
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS tr_live_class_event ON live_classes;
+CREATE TRIGGER tr_live_class_event AFTER INSERT OR UPDATE ON live_classes FOR EACH ROW EXECUTE PROCEDURE tr_notify_live_class();
+
+CREATE OR REPLACE FUNCTION tr_notify_assignment() RETURNS TRIGGER AS $$
+BEGIN
+  IF (NEW.status = 'published' AND (TG_OP = 'INSERT' OR (TG_OP = 'UPDATE' AND OLD.status != 'published'))) THEN
+    PERFORM broadcast_data(NEW.course_id, 'student', 'New Assignment', 'A new assignment "' || NEW.title || '" has been published.', 'student.html?page=assignments', 'assignment_published', INTERVAL '14 days');
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS tr_assignment_published ON assignments;
+CREATE TRIGGER tr_assignment_published AFTER INSERT OR UPDATE ON assignments FOR EACH ROW EXECUTE PROCEDURE tr_notify_assignment();
+
+CREATE OR REPLACE FUNCTION tr_notify_quiz() RETURNS TRIGGER AS $$
+BEGIN
+  IF (NEW.status = 'published' AND (TG_OP = 'INSERT' OR (TG_OP = 'UPDATE' AND OLD.status != 'published'))) THEN
+    PERFORM broadcast_data(NEW.course_id, 'student', 'New Quiz Available', 'A new quiz "' || NEW.title || '" has been published.', 'student.html?page=quizzes', 'quiz_published', INTERVAL '14 days');
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS tr_quiz_published ON quizzes;
+CREATE TRIGGER tr_quiz_published AFTER INSERT OR UPDATE ON quizzes FOR EACH ROW EXECUTE PROCEDURE tr_notify_quiz();
+
+CREATE OR REPLACE FUNCTION tr_notify_submission() RETURNS TRIGGER AS $$
+DECLARE
+  v_teacher_email VARCHAR(255);
+BEGIN
+  SELECT c.teacher_email INTO v_teacher_email FROM courses c JOIN assignments a ON c.id = a.course_id WHERE a.id = NEW.assignment_id;
+  IF (NEW.status = 'submitted' AND (TG_OP = 'INSERT' OR (TG_OP = 'UPDATE' AND OLD.status != 'submitted'))) THEN
+    IF v_teacher_email IS NOT NULL THEN
+      PERFORM notify_user(v_teacher_email, 'New Submission', 'A student has submitted an assignment.', 'teacher.html?page=grading', 'submission_received');
+    END IF;
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS tr_submission_received ON submissions;
+CREATE TRIGGER tr_submission_received AFTER INSERT OR UPDATE ON submissions FOR EACH ROW EXECUTE PROCEDURE tr_notify_submission();
+
+CREATE OR REPLACE FUNCTION tr_notify_grade() RETURNS TRIGGER AS $$
+BEGIN
+  IF (NEW.status = 'graded' AND (TG_OP = 'INSERT' OR (TG_OP = 'UPDATE' AND OLD.status != 'graded'))) THEN
+    PERFORM notify_user(NEW.student_email, 'Assignment Graded', 'Your assignment has been graded. Score: ' || NEW.final_grade || '%', 'student.html?page=assignments', 'grade_posted');
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS tr_grade_posted ON submissions;
+CREATE TRIGGER tr_grade_posted AFTER INSERT OR UPDATE ON submissions FOR EACH ROW EXECUTE PROCEDURE tr_notify_grade();
+
+CREATE OR REPLACE FUNCTION tr_sync_course_teacher_name() RETURNS TRIGGER AS $$
+BEGIN
+  SELECT full_name INTO NEW.created_by FROM users WHERE email = NEW.teacher_email;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS tr_course_teacher_name_sync ON courses;
+CREATE TRIGGER tr_course_teacher_name_sync
+BEFORE INSERT OR UPDATE OF teacher_email ON courses
+FOR EACH ROW EXECUTE PROCEDURE tr_sync_course_teacher_name();
+
+CREATE OR REPLACE FUNCTION tr_update_courses_teacher_name() RETURNS TRIGGER AS $$
+BEGIN
+  IF (TG_OP = 'UPDATE' AND OLD.full_name IS DISTINCT FROM NEW.full_name) THEN
+    UPDATE courses SET created_by = NEW.full_name WHERE teacher_email = NEW.email;
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS tr_users_teacher_name_sync ON users;
+CREATE TRIGGER tr_users_teacher_name_sync
+AFTER UPDATE OF full_name ON users
+FOR EACH ROW EXECUTE PROCEDURE tr_update_courses_teacher_name();
+
+-- 5. Validation Triggers
+
+CREATE OR REPLACE FUNCTION validate_submission_time()
+RETURNS TRIGGER AS $$
+DECLARE
+    v_start_at TIMESTAMP WITH TIME ZONE;
+    v_due_date TIMESTAMP WITH TIME ZONE;
+    v_allow_late BOOLEAN;
+BEGIN
+    SELECT start_at, due_date, allow_late_submissions
+    INTO v_start_at, v_due_date, v_allow_late
+    FROM assignments
+    WHERE id = NEW.assignment_id;
+
+    IF (NEW.status = 'submitted' AND (TG_OP = 'INSERT' OR (TG_OP = 'UPDATE' AND OLD.status != 'submitted'))) THEN
+        IF v_start_at IS NOT NULL AND NOW() < v_start_at THEN
+            RAISE EXCEPTION 'Assignment is not open for submission yet.';
+        END IF;
+
+        IF v_due_date IS NOT NULL AND v_allow_late = FALSE AND NOW() > v_due_date THEN
+            RAISE EXCEPTION 'Late submissions are not allowed for this assignment.';
+        END IF;
+    END IF;
+
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS tr_validate_submission_time ON submissions;
+CREATE TRIGGER tr_validate_submission_time
+BEFORE INSERT OR UPDATE ON submissions
+FOR EACH ROW EXECUTE PROCEDURE validate_submission_time();
+
+CREATE OR REPLACE FUNCTION validate_quiz_submission_time()
+RETURNS TRIGGER AS $$
+DECLARE
+    v_start_at TIMESTAMP WITH TIME ZONE;
+    v_end_at TIMESTAMP WITH TIME ZONE;
+    v_time_limit INTEGER;
+BEGIN
+    SELECT start_at, end_at, time_limit
+    INTO v_start_at, v_end_at, v_time_limit
+    FROM quizzes
+    WHERE id = NEW.quiz_id;
+
+    IF (NEW.status = 'submitted' AND (TG_OP = 'INSERT' OR (TG_OP = 'UPDATE' AND OLD.status != 'submitted'))) THEN
+        IF v_start_at IS NOT NULL AND NEW.started_at < v_start_at THEN
+             RAISE EXCEPTION 'Quiz was started before the allowed window.';
+        END IF;
+
+        IF v_end_at IS NOT NULL AND NOW() > (v_end_at + INTERVAL '1 minute') THEN
+            RAISE EXCEPTION 'Quiz has already closed.';
+        END IF;
+
+        IF v_time_limit > 0 AND NEW.submitted_at > (NEW.started_at + (v_time_limit * INTERVAL '1 minute') + INTERVAL '1 minute') THEN
+            RAISE EXCEPTION 'Quiz time limit exceeded.';
+        END IF;
+    END IF;
+
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS tr_validate_quiz_submission_time ON quiz_submissions;
+CREATE TRIGGER tr_validate_quiz_submission_time
+BEFORE INSERT OR UPDATE ON quiz_submissions
+FOR EACH ROW EXECUTE PROCEDURE validate_quiz_submission_time();
+
+CREATE OR REPLACE FUNCTION validate_quiz_attempts()
+RETURNS TRIGGER AS $$
+DECLARE
+    v_attempts_allowed INTEGER;
+    v_current_attempts INTEGER;
+BEGIN
+    SELECT attempts_allowed INTO v_attempts_allowed FROM quizzes WHERE id = NEW.quiz_id;
+
+    IF v_attempts_allowed IS NOT NULL AND v_attempts_allowed > 0 THEN
+        SELECT COUNT(*) INTO v_current_attempts FROM quiz_submissions WHERE quiz_id = NEW.quiz_id AND student_email = NEW.student_email;
+        IF v_current_attempts >= v_attempts_allowed THEN
+            RAISE EXCEPTION 'You have reached the maximum number of attempts allowed for this quiz.';
+        END IF;
+    END IF;
+
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS tr_validate_quiz_attempts ON quiz_submissions;
+CREATE TRIGGER tr_validate_quiz_attempts
+BEFORE INSERT ON quiz_submissions
+FOR EACH ROW EXECUTE PROCEDURE validate_quiz_attempts();
+
+-- JSONB Validation Functions
+CREATE OR REPLACE FUNCTION validate_jsonb_metadata() RETURNS TRIGGER AS $$
+BEGIN
+    IF NEW.metadata IS NOT NULL AND jsonb_typeof(NEW.metadata) != 'object' THEN
+        RAISE EXCEPTION 'metadata must be a JSON object';
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION validate_jsonb_questions() RETURNS TRIGGER AS $$
+BEGIN
+    IF NEW.questions IS NOT NULL AND jsonb_typeof(NEW.questions) != 'array' THEN
+        RAISE EXCEPTION 'questions must be a JSON array';
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS tr_validate_users_metadata ON users;
+CREATE TRIGGER tr_validate_users_metadata BEFORE INSERT OR UPDATE ON users FOR EACH ROW EXECUTE PROCEDURE validate_jsonb_metadata();
+
+DROP TRIGGER IF EXISTS tr_validate_courses_metadata ON courses;
+CREATE TRIGGER tr_validate_courses_metadata BEFORE INSERT OR UPDATE ON courses FOR EACH ROW EXECUTE PROCEDURE validate_jsonb_metadata();
+
+DROP TRIGGER IF EXISTS tr_validate_assignments_questions ON assignments;
+CREATE TRIGGER tr_validate_assignments_questions BEFORE INSERT OR UPDATE ON assignments FOR EACH ROW EXECUTE PROCEDURE validate_jsonb_questions();
+
+DROP TRIGGER IF EXISTS tr_validate_quizzes_questions ON quizzes;
+CREATE TRIGGER tr_validate_quizzes_questions BEFORE INSERT OR UPDATE ON quizzes FOR EACH ROW EXECUTE PROCEDURE validate_jsonb_questions();
+
+-- 6. Indexes
+
 CREATE INDEX IF NOT EXISTS idx_users_role ON users(role);
 CREATE INDEX IF NOT EXISTS idx_users_active ON users(active);
 CREATE INDEX IF NOT EXISTS idx_courses_teacher ON courses(teacher_email);
@@ -440,403 +688,220 @@ CREATE INDEX IF NOT EXISTS idx_assignments_status ON assignments(status);
 CREATE INDEX IF NOT EXISTS idx_violations_assessment ON violations(assessment_id);
 CREATE INDEX IF NOT EXISTS idx_violations_user ON violations(user_email);
 
--- Row Level Security (RLS) Functions
--- These helpers are designed for standard Supabase Auth (JWT).
--- For the Custom Auth system (SessionManager), RLS is permissive but logged.
+-- Index for performant RLS identity resolution
+CREATE INDEX IF NOT EXISTS idx_user_secrets_session_id ON user_secrets(session_id);
+
+-- Composite Indexes for Foreign Key Pairs & Common Lookups
+CREATE INDEX IF NOT EXISTS idx_enrollments_composite ON enrollments(course_id, student_email);
+CREATE INDEX IF NOT EXISTS idx_submissions_composite ON submissions(assignment_id, student_email);
+CREATE INDEX IF NOT EXISTS idx_attendance_composite ON attendance(live_class_id, student_email);
+CREATE INDEX IF NOT EXISTS idx_quiz_submissions_composite ON quiz_submissions(quiz_id, student_email);
+
+-- JSONB GIN Indexes for Search Performance
+CREATE INDEX IF NOT EXISTS idx_users_metadata_gin ON users USING GIN (metadata);
+CREATE INDEX IF NOT EXISTS idx_courses_metadata_gin ON courses USING GIN (metadata);
+CREATE INDEX IF NOT EXISTS idx_assignments_questions_gin ON assignments USING GIN (questions);
+CREATE INDEX IF NOT EXISTS idx_assignments_anti_cheat_gin ON assignments USING GIN (anti_cheat_config);
+CREATE INDEX IF NOT EXISTS idx_quizzes_questions_gin ON quizzes USING GIN (questions);
+CREATE INDEX IF NOT EXISTS idx_quizzes_anti_cheat_gin ON quizzes USING GIN (anti_cheat_config);
+CREATE INDEX IF NOT EXISTS idx_submissions_answers_gin ON submissions USING GIN (answers);
+CREATE INDEX IF NOT EXISTS idx_quiz_submissions_answers_gin ON quiz_submissions USING GIN (answers);
+CREATE INDEX IF NOT EXISTS idx_quiz_submissions_analytics_gin ON quiz_submissions USING GIN (analytics);
+
+-- 7. Helper Functions
+
+-- Auth helpers supporting both JWT and Custom x-session-id header
+CREATE OR REPLACE FUNCTION get_auth_email() RETURNS VARCHAR AS $$
+DECLARE
+  v_email VARCHAR;
+  v_session_id VARCHAR;
+BEGIN
+  -- 1. Try JWT claims (Standard Supabase Auth)
+  v_email := current_setting('request.jwt.claims', true)::jsonb->>'email';
+  IF v_email IS NOT NULL THEN
+    RETURN v_email;
+  END IF;
+
+  -- 2. Try custom x-session-id header (Custom SessionManager)
+  v_session_id := current_setting('request.headers', true)::jsonb->>'x-session-id';
+  IF v_session_id IS NOT NULL THEN
+    SELECT email INTO v_email FROM user_secrets WHERE session_id = v_session_id;
+    RETURN v_email;
+  END IF;
+
+  RETURN NULL;
+END;
+$$ LANGUAGE plpgsql STABLE SECURITY DEFINER;
+
+CREATE OR REPLACE FUNCTION get_auth_role() RETURNS VARCHAR AS $$
+DECLARE
+  v_role VARCHAR;
+  v_session_id VARCHAR;
+BEGIN
+  -- 1. Try JWT claims
+  v_role := current_setting('request.jwt.claims', true)::jsonb->>'role';
+  IF v_role IS NOT NULL THEN
+    RETURN v_role;
+  END IF;
+
+  -- 2. Try custom x-session-id header
+  v_session_id := current_setting('request.headers', true)::jsonb->>'x-session-id';
+  IF v_session_id IS NOT NULL THEN
+    SELECT u.role INTO v_role
+    FROM users u
+    JOIN user_secrets s ON u.email = s.email
+    WHERE s.session_id = v_session_id;
+    RETURN v_role;
+  END IF;
+
+  RETURN NULL;
+END;
+$$ LANGUAGE plpgsql STABLE SECURITY DEFINER;
 
 CREATE OR REPLACE FUNCTION is_admin() RETURNS BOOLEAN AS $$
-  SELECT EXISTS (
-    SELECT 1 FROM users
-    WHERE email = current_setting('request.jwt.claims', true)::jsonb->>'email'
-    AND role = 'admin'
-  );
-$$ LANGUAGE sql SECURITY DEFINER;
+  SELECT get_auth_role() = 'admin';
+$$ LANGUAGE sql STABLE;
 
 CREATE OR REPLACE FUNCTION is_teacher() RETURNS BOOLEAN AS $$
-  SELECT EXISTS (
-    SELECT 1 FROM users
-    WHERE email = current_setting('request.jwt.claims', true)::jsonb->>'email'
-    AND role = 'teacher'
-  );
-$$ LANGUAGE sql SECURITY DEFINER;
+  SELECT get_auth_role() = 'teacher';
+$$ LANGUAGE sql STABLE;
 
--- Explicit RLS Policies (Secure & Production-Ready)
--- WARNING: The current application uses a Custom Session Management system (SessionManager)
--- that interacts with the database using the service_role/anon keys via client-side logic.
--- To maintain functionality while ensuring future scalability, RLS is enabled but
--- permissive FOR NOW. In a real production environment, these must be migrated
--- to Supabase Auth (auth.uid() or auth.jwt()) for true row-level isolation.
-
--- SECURE DEFAULT: Enable RLS on all tables
-DO $$ BEGIN
-  ALTER TABLE users ENABLE ROW LEVEL SECURITY;
-EXCEPTION WHEN OTHERS THEN NULL; END $$;
-DO $$ BEGIN ALTER TABLE courses ENABLE ROW LEVEL SECURITY; EXCEPTION WHEN OTHERS THEN NULL; END $$;
-DO $$ BEGIN ALTER TABLE lessons ENABLE ROW LEVEL SECURITY; EXCEPTION WHEN OTHERS THEN NULL; END $$;
-DO $$ BEGIN ALTER TABLE enrollments ENABLE ROW LEVEL SECURITY; EXCEPTION WHEN OTHERS THEN NULL; END $$;
-DO $$ BEGIN ALTER TABLE assignments ENABLE ROW LEVEL SECURITY; EXCEPTION WHEN OTHERS THEN NULL; END $$;
-DO $$ BEGIN ALTER TABLE submissions ENABLE ROW LEVEL SECURITY; EXCEPTION WHEN OTHERS THEN NULL; END $$;
-DO $$ BEGIN ALTER TABLE live_classes ENABLE ROW LEVEL SECURITY; EXCEPTION WHEN OTHERS THEN NULL; END $$;
-DO $$ BEGIN ALTER TABLE attendance ENABLE ROW LEVEL SECURITY; EXCEPTION WHEN OTHERS THEN NULL; END $$;
-DO $$ BEGIN ALTER TABLE quizzes ENABLE ROW LEVEL SECURITY; EXCEPTION WHEN OTHERS THEN NULL; END $$;
-DO $$ BEGIN ALTER TABLE quiz_submissions ENABLE ROW LEVEL SECURITY; EXCEPTION WHEN OTHERS THEN NULL; END $$;
-DO $$ BEGIN ALTER TABLE materials ENABLE ROW LEVEL SECURITY; EXCEPTION WHEN OTHERS THEN NULL; END $$;
-DO $$ BEGIN ALTER TABLE discussions ENABLE ROW LEVEL SECURITY; EXCEPTION WHEN OTHERS THEN NULL; END $$;
-DO $$ BEGIN ALTER TABLE notifications ENABLE ROW LEVEL SECURITY; EXCEPTION WHEN OTHERS THEN NULL; END $$;
-DO $$ BEGIN ALTER TABLE maintenance ENABLE ROW LEVEL SECURITY; EXCEPTION WHEN OTHERS THEN NULL; END $$;
-DO $$ BEGIN ALTER TABLE planner ENABLE ROW LEVEL SECURITY; EXCEPTION WHEN OTHERS THEN NULL; END $$;
-DO $$ BEGIN ALTER TABLE certificates ENABLE ROW LEVEL SECURITY; EXCEPTION WHEN OTHERS THEN NULL; END $$;
-DO $$ BEGIN ALTER TABLE study_sessions ENABLE ROW LEVEL SECURITY; EXCEPTION WHEN OTHERS THEN NULL; END $$;
-DO $$ BEGIN ALTER TABLE invites ENABLE ROW LEVEL SECURITY; EXCEPTION WHEN OTHERS THEN NULL; END $$;
-DO $$ BEGIN ALTER TABLE system_logs ENABLE ROW LEVEL SECURITY; EXCEPTION WHEN OTHERS THEN NULL; END $$;
-DO $$ BEGIN ALTER TABLE violations ENABLE ROW LEVEL SECURITY; EXCEPTION WHEN OTHERS THEN NULL; END $$;
-
--- CUSTOM AUTH COMPATIBILITY POLICIES
--- PRODUCTION HARDENED POLICIES
--- These policies are designed to be restrictive while maintaining compatibility
--- with the application's current architecture.
-
--- 1. Users Table: Secure profile access
--- 1. Users Table
-DROP POLICY IF EXISTS "Users: Select" ON users;
-CREATE POLICY "Users: Select" ON users FOR SELECT USING (true);
-DROP POLICY IF EXISTS "Users: Self-Update" ON users;
-CREATE POLICY "Users: Self-Update" ON users FOR UPDATE USING (true);
-DROP POLICY IF EXISTS "Users: Admin/Teacher/Signup" ON users;
-CREATE POLICY "Users: Admin/Teacher/Signup" ON users FOR INSERT WITH CHECK (true);
-
--- 2. Courses Table
-DROP POLICY IF EXISTS "Courses: Select" ON courses;
-CREATE POLICY "Courses: Select" ON courses FOR SELECT USING (true);
-DROP POLICY IF EXISTS "Courses: Insert" ON courses;
-CREATE POLICY "Courses: Insert" ON courses FOR INSERT WITH CHECK (true);
-DROP POLICY IF EXISTS "Courses: Update" ON courses;
-CREATE POLICY "Courses: Update" ON courses FOR UPDATE USING (true);
-DROP POLICY IF EXISTS "Courses: Delete" ON courses;
-CREATE POLICY "Courses: Delete" ON courses FOR DELETE USING (true);
-
--- 3. Lessons Table
-DROP POLICY IF EXISTS "Lessons: Select" ON lessons;
-CREATE POLICY "Lessons: Select" ON lessons FOR SELECT USING (true);
-DROP POLICY IF EXISTS "Lessons: Insert" ON lessons;
-CREATE POLICY "Lessons: Insert" ON lessons FOR INSERT WITH CHECK (true);
-DROP POLICY IF EXISTS "Lessons: Update" ON lessons;
-CREATE POLICY "Lessons: Update" ON lessons FOR UPDATE USING (true);
-DROP POLICY IF EXISTS "Lessons: Delete" ON lessons;
-CREATE POLICY "Lessons: Delete" ON lessons FOR DELETE USING (true);
-
--- 4. Enrollments Table
-DROP POLICY IF EXISTS "Enrollments: Select" ON enrollments;
-CREATE POLICY "Enrollments: Select" ON enrollments FOR SELECT USING (true);
-DROP POLICY IF EXISTS "Enrollments: Insert" ON enrollments;
-CREATE POLICY "Enrollments: Insert" ON enrollments FOR INSERT WITH CHECK (true);
-DROP POLICY IF EXISTS "Enrollments: Update" ON enrollments;
-CREATE POLICY "Enrollments: Update" ON enrollments FOR UPDATE USING (true);
-DROP POLICY IF EXISTS "Enrollments: Delete" ON enrollments;
-CREATE POLICY "Enrollments: Delete" ON enrollments FOR DELETE USING (true);
-
--- 5. Assignments Table
-DROP POLICY IF EXISTS "Assignments: Select" ON assignments;
-CREATE POLICY "Assignments: Select" ON assignments FOR SELECT USING (true);
-DROP POLICY IF EXISTS "Assignments: Insert" ON assignments;
-CREATE POLICY "Assignments: Insert" ON assignments FOR INSERT WITH CHECK (true);
-DROP POLICY IF EXISTS "Assignments: Update" ON assignments;
-CREATE POLICY "Assignments: Update" ON assignments FOR UPDATE USING (true);
-DROP POLICY IF EXISTS "Assignments: Delete" ON assignments;
-CREATE POLICY "Assignments: Delete" ON assignments FOR DELETE USING (true);
-
--- 6. Submissions Table
-DROP POLICY IF EXISTS "Submissions: Select" ON submissions;
-CREATE POLICY "Submissions: Select" ON submissions FOR SELECT USING (true);
-DROP POLICY IF EXISTS "Submissions: Insert" ON submissions;
-CREATE POLICY "Submissions: Insert" ON submissions FOR INSERT WITH CHECK (true);
-DROP POLICY IF EXISTS "Submissions: Update" ON submissions;
-CREATE POLICY "Submissions: Update" ON submissions FOR UPDATE USING (true);
-DROP POLICY IF EXISTS "Submissions: Delete" ON submissions;
-CREATE POLICY "Submissions: Delete" ON submissions FOR DELETE USING (true);
-
--- 7. Live Classes Table
-DROP POLICY IF EXISTS "Live Classes: Select" ON live_classes;
-CREATE POLICY "Live Classes: Select" ON live_classes FOR SELECT USING (true);
-DROP POLICY IF EXISTS "Live Classes: Insert" ON live_classes;
-CREATE POLICY "Live Classes: Insert" ON live_classes FOR INSERT WITH CHECK (true);
-DROP POLICY IF EXISTS "Live Classes: Update" ON live_classes;
-CREATE POLICY "Live Classes: Update" ON live_classes FOR UPDATE USING (true);
-DROP POLICY IF EXISTS "Live Classes: Delete" ON live_classes;
-CREATE POLICY "Live Classes: Delete" ON live_classes FOR DELETE USING (true);
-
--- 8. Attendance Table
-DROP POLICY IF EXISTS "Attendance: Select" ON attendance;
-CREATE POLICY "Attendance: Select" ON attendance FOR SELECT USING (true);
-DROP POLICY IF EXISTS "Attendance: Insert" ON attendance;
-CREATE POLICY "Attendance: Insert" ON attendance FOR INSERT WITH CHECK (true);
-DROP POLICY IF EXISTS "Attendance: Update" ON attendance;
-CREATE POLICY "Attendance: Update" ON attendance FOR UPDATE USING (true);
-DROP POLICY IF EXISTS "Attendance: Delete" ON attendance;
-CREATE POLICY "Attendance: Delete" ON attendance FOR DELETE USING (true);
-
--- 9. Quizzes Table
-DROP POLICY IF EXISTS "Quizzes: Select" ON quizzes;
-CREATE POLICY "Quizzes: Select" ON quizzes FOR SELECT USING (true);
-DROP POLICY IF EXISTS "Quizzes: Insert" ON quizzes;
-CREATE POLICY "Quizzes: Insert" ON quizzes FOR INSERT WITH CHECK (true);
-DROP POLICY IF EXISTS "Quizzes: Update" ON quizzes;
-CREATE POLICY "Quizzes: Update" ON quizzes FOR UPDATE USING (true);
-DROP POLICY IF EXISTS "Quizzes: Delete" ON quizzes;
-CREATE POLICY "Quizzes: Delete" ON quizzes FOR DELETE USING (true);
-
--- 10. Quiz Submissions Table
-DROP POLICY IF EXISTS "Quiz Submissions: Select" ON quiz_submissions;
-CREATE POLICY "Quiz Submissions: Select" ON quiz_submissions FOR SELECT USING (true);
-DROP POLICY IF EXISTS "Quiz Submissions: Insert" ON quiz_submissions;
-CREATE POLICY "Quiz Submissions: Insert" ON quiz_submissions FOR INSERT WITH CHECK (true);
-DROP POLICY IF EXISTS "Quiz Submissions: Update" ON quiz_submissions;
-CREATE POLICY "Quiz Submissions: Update" ON quiz_submissions FOR UPDATE USING (true);
-DROP POLICY IF EXISTS "Quiz Submissions: Delete" ON quiz_submissions;
-CREATE POLICY "Quiz Submissions: Delete" ON quiz_submissions FOR DELETE USING (true);
-
--- 11. Materials Table
-DROP POLICY IF EXISTS "Materials: Select" ON materials;
-CREATE POLICY "Materials: Select" ON materials FOR SELECT USING (true);
-DROP POLICY IF EXISTS "Materials: Insert" ON materials;
-CREATE POLICY "Materials: Insert" ON materials FOR INSERT WITH CHECK (true);
-DROP POLICY IF EXISTS "Materials: Update" ON materials;
-CREATE POLICY "Materials: Update" ON materials FOR UPDATE USING (true);
-DROP POLICY IF EXISTS "Materials: Delete" ON materials;
-CREATE POLICY "Materials: Delete" ON materials FOR DELETE USING (true);
-
--- 12. Discussions Table
-DROP POLICY IF EXISTS "Discussions: Select" ON discussions;
-CREATE POLICY "Discussions: Select" ON discussions FOR SELECT USING (true);
-DROP POLICY IF EXISTS "Discussions: Insert" ON discussions;
-CREATE POLICY "Discussions: Insert" ON discussions FOR INSERT WITH CHECK (true);
-DROP POLICY IF EXISTS "Discussions: Update" ON discussions;
-CREATE POLICY "Discussions: Update" ON discussions FOR UPDATE USING (true);
-DROP POLICY IF EXISTS "Discussions: Delete" ON discussions;
-CREATE POLICY "Discussions: Delete" ON discussions FOR DELETE USING (true);
-
--- 13. Notifications Table
-DROP POLICY IF EXISTS "Notifications: Select" ON notifications;
-CREATE POLICY "Notifications: Select" ON notifications FOR SELECT USING (true);
-DROP POLICY IF EXISTS "Notifications: Insert" ON notifications;
-CREATE POLICY "Notifications: Insert" ON notifications FOR INSERT WITH CHECK (true);
-DROP POLICY IF EXISTS "Notifications: Update" ON notifications;
-CREATE POLICY "Notifications: Update" ON notifications FOR UPDATE USING (true);
-DROP POLICY IF EXISTS "Notifications: Delete" ON notifications;
-CREATE POLICY "Notifications: Delete" ON notifications FOR DELETE USING (true);
-
--- 14. Broadcasts Table
-DROP POLICY IF EXISTS "Broadcasts: Select" ON broadcasts;
-CREATE POLICY "Broadcasts: Select" ON broadcasts FOR SELECT USING (true);
-DROP POLICY IF EXISTS "Broadcasts: Insert" ON broadcasts;
-CREATE POLICY "Broadcasts: Insert" ON broadcasts FOR INSERT WITH CHECK (true);
-DROP POLICY IF EXISTS "Broadcasts: Update" ON broadcasts;
-CREATE POLICY "Broadcasts: Update" ON broadcasts FOR UPDATE USING (true);
-DROP POLICY IF EXISTS "Broadcasts: Delete" ON broadcasts;
-CREATE POLICY "Broadcasts: Delete" ON broadcasts FOR DELETE USING (true);
-
--- 15. Maintenance Table
-DROP POLICY IF EXISTS "Maintenance: Select" ON maintenance;
-CREATE POLICY "Maintenance: Select" ON maintenance FOR SELECT USING (true);
-DROP POLICY IF EXISTS "Maintenance: Insert" ON maintenance;
-CREATE POLICY "Maintenance: Insert" ON maintenance FOR INSERT WITH CHECK (true);
-DROP POLICY IF EXISTS "Maintenance: Update" ON maintenance;
-CREATE POLICY "Maintenance: Update" ON maintenance FOR UPDATE USING (true);
-
--- 16. System Logs Table
-DROP POLICY IF EXISTS "System Logs: Select" ON system_logs;
-CREATE POLICY "System Logs: Select" ON system_logs FOR SELECT USING (true);
-DROP POLICY IF EXISTS "System Logs: Insert" ON system_logs;
-CREATE POLICY "System Logs: Insert" ON system_logs FOR INSERT WITH CHECK (true);
-
--- 17. Violations Table
-DROP POLICY IF EXISTS "Violations: Select" ON violations;
-CREATE POLICY "Violations: Select" ON violations FOR SELECT USING (true);
-DROP POLICY IF EXISTS "Violations: Insert" ON violations;
-CREATE POLICY "Violations: Insert" ON violations FOR INSERT WITH CHECK (true);
-
--- 18. Planner Table
-DROP POLICY IF EXISTS "Planner: Select" ON planner;
-CREATE POLICY "Planner: Select" ON planner FOR SELECT USING (true);
-DROP POLICY IF EXISTS "Planner: Insert" ON planner;
-CREATE POLICY "Planner: Insert" ON planner FOR INSERT WITH CHECK (true);
-DROP POLICY IF EXISTS "Planner: Update" ON planner;
-CREATE POLICY "Planner: Update" ON planner FOR UPDATE USING (true);
-DROP POLICY IF EXISTS "Planner: Delete" ON planner;
-CREATE POLICY "Planner: Delete" ON planner FOR DELETE USING (true);
-
--- 19. Study Sessions Table
-DROP POLICY IF EXISTS "Study Sessions: Select" ON study_sessions;
-CREATE POLICY "Study Sessions: Select" ON study_sessions FOR SELECT USING (true);
-DROP POLICY IF EXISTS "Study Sessions: Insert" ON study_sessions;
-CREATE POLICY "Study Sessions: Insert" ON study_sessions FOR INSERT WITH CHECK (true);
-DROP POLICY IF EXISTS "Study Sessions: Update" ON study_sessions;
-CREATE POLICY "Study Sessions: Update" ON study_sessions FOR UPDATE USING (true);
-DROP POLICY IF EXISTS "Study Sessions: Delete" ON study_sessions;
-CREATE POLICY "Study Sessions: Delete" ON study_sessions FOR DELETE USING (true);
-
--- 20. Certificates Table
-DROP POLICY IF EXISTS "Certificates: Select" ON certificates;
-CREATE POLICY "Certificates: Select" ON certificates FOR SELECT USING (true);
-DROP POLICY IF EXISTS "Certificates: Insert" ON certificates;
-CREATE POLICY "Certificates: Insert" ON certificates FOR INSERT WITH CHECK (true);
-DROP POLICY IF EXISTS "Certificates: Update" ON certificates;
-CREATE POLICY "Certificates: Update" ON certificates FOR UPDATE USING (true);
-DROP POLICY IF EXISTS "Certificates: Delete" ON certificates;
-CREATE POLICY "Certificates: Delete" ON certificates FOR DELETE USING (true);
-
--- 21. Invites Table
-DROP POLICY IF EXISTS "Invites: Select" ON invites;
-CREATE POLICY "Invites: Select" ON invites FOR SELECT USING (true);
-DROP POLICY IF EXISTS "Invites: Insert" ON invites;
-CREATE POLICY "Invites: Insert" ON invites FOR INSERT WITH CHECK (true);
-DROP POLICY IF EXISTS "Invites: Update" ON invites;
-CREATE POLICY "Invites: Update" ON invites FOR UPDATE USING (true);
-DROP POLICY IF EXISTS "Invites: Delete" ON invites;
-CREATE POLICY "Invites: Delete" ON invites FOR DELETE USING (true);
-
--- Storage Initialization
-INSERT INTO storage.buckets (id, name, public)
-VALUES ('materials', 'materials', true), ('assignments', 'assignments', true), ('certificates', 'certificates', true)
-ON CONFLICT (id) DO NOTHING;
-
--- Storage Policies (Simplified for Custom Auth)
-DROP POLICY IF EXISTS "Public view materials" ON storage.objects;
-CREATE POLICY "Public view materials" ON storage.objects FOR SELECT USING (bucket_id = 'materials');
-DROP POLICY IF EXISTS "Teachers manage materials" ON storage.objects;
-CREATE POLICY "Teachers manage materials" ON storage.objects FOR ALL TO public USING (bucket_id = 'materials');
-
-DROP POLICY IF EXISTS "Students manage own submissions" ON storage.objects;
-CREATE POLICY "Students manage own submissions" ON storage.objects FOR ALL TO public USING (bucket_id = 'assignments');
-DROP POLICY IF EXISTS "Teachers view submissions" ON storage.objects;
-CREATE POLICY "Teachers view submissions" ON storage.objects FOR SELECT USING (bucket_id = 'assignments');
-
-DROP POLICY IF EXISTS "Users view own certificates" ON storage.objects;
-CREATE POLICY "Users view own certificates" ON storage.objects FOR SELECT USING (bucket_id = 'certificates');
-DROP POLICY IF EXISTS "Teachers manage certificates" ON storage.objects;
-CREATE POLICY "Teachers manage certificates" ON storage.objects FOR ALL TO public USING (bucket_id = 'certificates');
-
-DROP POLICY IF EXISTS "Admins full storage access" ON storage.objects;
-CREATE POLICY "Admins full storage access" ON storage.objects FOR ALL TO public USING (true);
-
--- Notification Helper Functions
-CREATE OR REPLACE FUNCTION notify_user(target_email VARCHAR, n_title TEXT, n_msg TEXT, n_link TEXT DEFAULT NULL, n_type TEXT DEFAULT 'system')
-RETURNS VOID AS $$
-BEGIN
-  INSERT INTO notifications (user_email, title, message, link, type)
-  VALUES (target_email, n_title, n_msg, n_link, n_type);
-END;
-$$ LANGUAGE plpgsql;
-
-CREATE OR REPLACE FUNCTION broadcast_data(n_course_id UUID, n_role VARCHAR, n_title TEXT, n_msg TEXT, n_link TEXT DEFAULT NULL, n_type TEXT DEFAULT 'system', n_expires_in INTERVAL DEFAULT INTERVAL '30 days')
-RETURNS VOID AS $$
-BEGIN
-  INSERT INTO broadcasts (course_id, target_role, title, message, link, type, expires_at)
-  VALUES (n_course_id, n_role, n_title, n_msg, n_link, n_type, NOW() + n_expires_in);
-END;
-$$ LANGUAGE plpgsql;
-
--- Trigger: Notify students when live class starts (Using Broadcast)
--- Triggers for Notifications
-CREATE OR REPLACE FUNCTION tr_notify_live_class() RETURNS TRIGGER AS $$
-BEGIN
-  IF (NEW.status = 'live' AND (OLD.status IS NULL OR OLD.status != 'live')) THEN
-    PERFORM broadcast_data(NEW.course_id, 'student', 'Live Class Started', 'The class "' || NEW.title || '" has started! Join now.', 'student.html?page=live', 'live_class', INTERVAL '1 day');
-  ELSIF (NEW.status = 'scheduled' AND OLD.status IS NULL) THEN
-    PERFORM broadcast_data(NEW.course_id, 'student', 'Live Class Scheduled', 'A new live class "' || NEW.title || '" has been scheduled for ' || NEW.start_at, 'student.html?page=live', 'live_class', INTERVAL '7 days');
-  ELSIF (NEW.status = 'scheduled' AND OLD.status = 'live') THEN
-    PERFORM broadcast_data(NEW.course_id, 'student', 'Teacher Left Room', 'The teacher has left the session for "' || NEW.title || '". Please wait for them to rejoin.', 'student.html?page=live', 'teacher_left', INTERVAL '1 hour');
-  ELSIF (NEW.status = 'completed' AND OLD.status = 'live') THEN
-    PERFORM broadcast_data(NEW.course_id, 'student', 'Class Ended', 'The live class "' || NEW.title || '" has ended.', 'student.html?page=live', 'class_ended', INTERVAL '1 day');
-  END IF;
-  RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS tr_live_class_event ON live_classes;
-CREATE TRIGGER tr_live_class_event AFTER INSERT OR UPDATE ON live_classes FOR EACH ROW EXECUTE PROCEDURE tr_notify_live_class();
-
-CREATE OR REPLACE FUNCTION tr_notify_assignment() RETURNS TRIGGER AS $$
-BEGIN
-  IF (NEW.status = 'published' AND (OLD.status IS NULL OR OLD.status != 'published')) THEN
-    PERFORM broadcast_data(NEW.course_id, 'student', 'New Assignment', 'A new assignment "' || NEW.title || '" has been published.', 'student.html?page=assignments', 'assignment_published', INTERVAL '14 days');
-  END IF;
-  RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS tr_assignment_published ON assignments;
-CREATE TRIGGER tr_assignment_published AFTER INSERT OR UPDATE ON assignments FOR EACH ROW EXECUTE PROCEDURE tr_notify_assignment();
-
-CREATE OR REPLACE FUNCTION tr_notify_quiz() RETURNS TRIGGER AS $$
-BEGIN
-  IF (NEW.status = 'published' AND (OLD.status IS NULL OR OLD.status != 'published')) THEN
-    PERFORM broadcast_data(NEW.course_id, 'student', 'New Quiz Available', 'A new quiz "' || NEW.title || '" has been published.', 'student.html?page=quizzes', 'quiz_published', INTERVAL '14 days');
-  END IF;
-  RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS tr_quiz_published ON quizzes;
-CREATE TRIGGER tr_quiz_published AFTER INSERT OR UPDATE ON quizzes FOR EACH ROW EXECUTE PROCEDURE tr_notify_quiz();
-
-CREATE OR REPLACE FUNCTION tr_notify_submission() RETURNS TRIGGER AS $$
+-- Secure Auth Logic
+CREATE OR REPLACE FUNCTION authenticate_user(p_email VARCHAR, p_password_hash VARCHAR, p_session_id VARCHAR)
+RETURNS JSONB AS $$
 DECLARE
-  v_teacher_email VARCHAR(255);
+  v_user users;
+  v_secret user_secrets;
 BEGIN
-  SELECT c.teacher_email INTO v_teacher_email FROM courses c JOIN assignments a ON c.id = a.course_id WHERE a.id = NEW.assignment_id;
-  IF (NEW.status = 'submitted' AND (OLD.status IS NULL OR OLD.status != 'submitted')) THEN
-    IF v_teacher_email IS NOT NULL THEN
-      PERFORM notify_user(v_teacher_email, 'New Submission', 'A student has submitted an assignment.', 'teacher.html?page=grading', 'submission_received');
+  SELECT * INTO v_user FROM users WHERE email = p_email;
+  IF NOT FOUND THEN
+    RETURN jsonb_build_object('success', false, 'message', 'Account not found');
+  END IF;
+
+  IF NOT v_user.active THEN
+    RETURN jsonb_build_object('success', false, 'message', 'Account deactivated');
+  END IF;
+
+  IF v_user.flagged THEN
+    RETURN jsonb_build_object('success', false, 'message', 'Account flagged');
+  END IF;
+
+  IF v_user.locked_until IS NOT NULL AND v_user.locked_until > NOW() THEN
+    RETURN jsonb_build_object('success', false, 'message', 'Account locked until ' || v_user.locked_until);
+  END IF;
+
+  SELECT * INTO v_secret FROM user_secrets WHERE email = p_email;
+
+  IF v_secret.password_hash = p_password_hash THEN
+    -- Update session and login stats
+    UPDATE user_secrets SET session_id = p_session_id WHERE email = p_email;
+    UPDATE users SET last_login = NOW(), failed_attempts = 0, locked_until = NULL WHERE email = p_email;
+
+    RETURN jsonb_build_object('success', true, 'user', to_jsonb(v_user));
+  ELSE
+    -- Increment failed attempts
+    UPDATE users SET failed_attempts = failed_attempts + 1 WHERE email = p_email;
+
+    -- Lock account if too many attempts
+    IF v_user.failed_attempts + 1 >= 5 THEN
+        UPDATE users SET locked_until = NOW() + INTERVAL '30 minutes', failed_attempts = 0, lockouts = lockouts + 1 WHERE email = p_email;
+        -- Flag if too many lockouts
+        IF v_user.lockouts + 1 >= 3 THEN
+            UPDATE users SET flagged = TRUE WHERE email = p_email;
+        END IF;
+        RETURN jsonb_build_object('success', false, 'message', 'Too many failed attempts. Account locked for 30 minutes.');
     END IF;
+
+    RETURN jsonb_build_object('success', false, 'message', 'Invalid password. ' || (5 - (v_user.failed_attempts + 1)) || ' attempts remaining.');
   END IF;
-  RETURN NEW;
 END;
-$$ LANGUAGE plpgsql;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
 
-DROP TRIGGER IF EXISTS tr_submission_received ON submissions;
-CREATE TRIGGER tr_submission_received AFTER INSERT OR UPDATE ON submissions FOR EACH ROW EXECUTE PROCEDURE tr_notify_submission();
-
-CREATE OR REPLACE FUNCTION tr_notify_grade() RETURNS TRIGGER AS $$
+-- Secure User Creation RPC
+CREATE OR REPLACE FUNCTION create_user_secure(
+    p_email VARCHAR,
+    p_full_name VARCHAR,
+    p_phone VARCHAR,
+    p_password_hash VARCHAR,
+    p_role VARCHAR,
+    p_session_id VARCHAR,
+    p_invite_token VARCHAR DEFAULT NULL,
+    p_active BOOLEAN DEFAULT TRUE,
+    p_metadata JSONB DEFAULT '{}'::jsonb
+) RETURNS JSONB AS $$
+DECLARE
+    v_actual_role VARCHAR := 'student';
+    v_invite JSONB;
 BEGIN
-  IF (NEW.status = 'graded' AND (OLD.status IS NULL OR OLD.status != 'graded')) THEN
-    PERFORM notify_user(NEW.student_email, 'Assignment Graded', 'Your assignment has been graded. Score: ' || NEW.final_grade || '%', 'student.html?page=assignments', 'grade_posted');
-  END IF;
-  RETURN NEW;
+    -- 1. Check if user already exists
+    IF EXISTS (SELECT 1 FROM users WHERE email = p_email) THEN
+        RETURN jsonb_build_object('success', false, 'message', 'User with this email already exists');
+    END IF;
+
+    -- 2. Role Validation
+    IF p_role IN ('admin', 'teacher') THEN
+        IF is_admin() THEN
+            -- Admins can create any role
+            v_actual_role := p_role;
+        ELSIF p_invite_token IS NULL THEN
+            -- Public signups for admin/teacher limited to 3
+            IF (SELECT COUNT(*) FROM users WHERE role = p_role) >= 3 THEN
+                RETURN jsonb_build_object('success', false, 'message', 'Maximum number of ' || p_role || ' accounts reached. Invitation required.');
+            END IF;
+            v_actual_role := p_role;
+        ELSE
+            -- Validate invite
+            SELECT to_jsonb(i.*) INTO v_invite FROM invites i WHERE token = p_invite_token AND (email IS NULL OR email = p_email) AND used_at IS NULL AND expires_at > NOW();
+            IF v_invite IS NULL THEN
+                RETURN jsonb_build_object('success', false, 'message', 'Invalid or expired invitation');
+            END IF;
+            v_actual_role := v_invite->>'role';
+            -- Mark invite as used
+            UPDATE invites SET used_at = NOW() WHERE token = p_invite_token;
+        END IF;
+    ELSE
+        v_actual_role := 'student';
+    END IF;
+
+    -- 3. Create User
+    INSERT INTO users (email, full_name, phone, role, active, metadata)
+    VALUES (p_email, p_full_name, p_phone, v_actual_role, p_active, p_metadata);
+
+    -- 4. Create Secrets
+    INSERT INTO user_secrets (email, password_hash, session_id)
+    VALUES (p_email, p_password_hash, p_session_id);
+
+    RETURN jsonb_build_object('success', true, 'user', (SELECT to_jsonb(u.*) FROM users u WHERE email = p_email));
 END;
-$$ LANGUAGE plpgsql;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
 
-DROP TRIGGER IF EXISTS tr_grade_posted ON submissions;
-CREATE TRIGGER tr_grade_posted AFTER INSERT OR UPDATE ON submissions FOR EACH ROW EXECUTE PROCEDURE tr_notify_grade();
-
--- Functions for syncing teacher names
-CREATE OR REPLACE FUNCTION tr_sync_course_teacher_name() RETURNS TRIGGER AS $$
+-- Secure Secret Update RPC
+CREATE OR REPLACE FUNCTION update_user_secret_secure(
+    p_email VARCHAR,
+    p_password_hash VARCHAR DEFAULT NULL,
+    p_session_id VARCHAR DEFAULT NULL
+) RETURNS VOID AS $$
 BEGIN
-  SELECT full_name INTO NEW.created_by FROM users WHERE email = NEW.teacher_email;
-  RETURN NEW;
+    -- Check permissions: User can only update own secret unless admin
+    IF NOT (is_admin() OR get_auth_email() = p_email) THEN
+        RAISE EXCEPTION 'Unauthorized to update secrets for this user.';
+    END IF;
+
+    IF p_password_hash IS NOT NULL THEN
+        UPDATE user_secrets SET password_hash = p_password_hash WHERE email = p_email;
+    END IF;
+
+    IF p_session_id IS NOT NULL THEN
+        UPDATE user_secrets SET session_id = p_session_id WHERE email = p_email;
+    END IF;
 END;
-$$ LANGUAGE plpgsql;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
 
-DROP TRIGGER IF EXISTS tr_course_teacher_name_sync ON courses;
-CREATE TRIGGER tr_course_teacher_name_sync
-BEFORE INSERT OR UPDATE OF teacher_email ON courses
-FOR EACH ROW EXECUTE PROCEDURE tr_sync_course_teacher_name();
+CREATE OR REPLACE FUNCTION get_server_time()
+RETURNS TIMESTAMP WITH TIME ZONE AS $$
+  SELECT NOW();
+$$ LANGUAGE sql STABLE;
 
-CREATE OR REPLACE FUNCTION tr_update_courses_teacher_name() RETURNS TRIGGER AS $$
-BEGIN
-  IF (OLD.full_name IS DISTINCT FROM NEW.full_name) THEN
-    UPDATE courses SET created_by = NEW.full_name WHERE teacher_email = NEW.email;
-  END IF;
-  RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS tr_users_teacher_name_sync ON users;
-CREATE TRIGGER tr_users_teacher_name_sync
-AFTER UPDATE OF full_name ON users
-FOR EACH ROW EXECUTE PROCEDURE tr_update_courses_teacher_name();
-
--- Secure Enrollment RPC
 CREATE OR REPLACE FUNCTION enroll_in_course(p_course_id UUID, p_student_email VARCHAR, p_enrollment_id VARCHAR DEFAULT NULL)
 RETURNS VOID AS $$
 DECLARE
@@ -854,100 +919,215 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- Grant Full Permissions
-ALTER TABLE broadcasts ENABLE ROW LEVEL SECURITY;
+CREATE OR REPLACE FUNCTION notify_user(target_email VARCHAR, n_title TEXT, n_msg TEXT, n_link TEXT DEFAULT NULL, n_type TEXT DEFAULT 'system')
+RETURNS VOID AS $$
+BEGIN
+  INSERT INTO notifications (user_email, title, message, link, type)
+  VALUES (target_email, n_title, n_msg, n_link, n_type);
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+CREATE OR REPLACE FUNCTION broadcast_data(n_course_id UUID, n_role VARCHAR, n_title TEXT, n_msg TEXT, n_link TEXT DEFAULT NULL, n_type TEXT DEFAULT 'system', n_expires_in INTERVAL DEFAULT INTERVAL '30 days')
+RETURNS VOID AS $$
+BEGIN
+  -- Security: Only teachers or admins should be able to broadcast
+  IF NOT (is_teacher() OR is_admin()) THEN
+    RAISE EXCEPTION 'Only teachers and admins can broadcast data.';
+  END IF;
+
+  INSERT INTO broadcasts (course_id, target_role, title, message, link, type, expires_at)
+  VALUES (n_course_id, n_role, n_title, n_msg, n_link, n_type, NOW() + n_expires_in);
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- 8. Seed Data
+
+INSERT INTO maintenance (enabled, schedules)
+SELECT false, '[]'::jsonb
+WHERE NOT EXISTS (SELECT 1 FROM maintenance);
+
+-- 9. Permissions & RLS
+
+-- SECURE DEFAULT: Enable RLS on all tables
+DO $$
+DECLARE
+    t text;
+BEGIN
+    FOR t IN
+        SELECT table_name
+        FROM information_schema.tables
+        WHERE table_schema = 'public'
+        AND table_name IN ('users', 'user_secrets', 'courses', 'lessons', 'enrollments', 'assignments', 'submissions', 'live_classes', 'attendance', 'quizzes', 'quiz_submissions', 'materials', 'discussions', 'notifications', 'broadcasts', 'maintenance', 'planner', 'certificates', 'study_sessions', 'invites', 'system_logs', 'violations')
+    LOOP
+        EXECUTE format('ALTER TABLE %I ENABLE ROW LEVEL SECURITY', t);
+    END LOOP;
+END $$;
+
+-- RLS POLICIES
+
+-- 0. User Secrets (Strictly restricted)
+DROP POLICY IF EXISTS "Secrets: No Public Access" ON user_secrets;
+CREATE POLICY "Secrets: No Public Access" ON user_secrets FOR ALL USING (false);
+
+-- 1. Users Table
+DROP POLICY IF EXISTS "Users: Select" ON users;
+CREATE POLICY "Users: Select" ON users FOR SELECT USING (true);
+DROP POLICY IF EXISTS "Users: Update" ON users;
+CREATE POLICY "Users: Update" ON users FOR UPDATE USING (email = get_auth_email() OR is_admin());
+DROP POLICY IF EXISTS "Users: No Direct Insert" ON users;
+CREATE POLICY "Users: No Direct Insert" ON users FOR INSERT WITH CHECK (false); -- Force use of create_user_secure RPC
+
+-- 2. Courses Table
+DROP POLICY IF EXISTS "Courses: Select" ON courses;
+CREATE POLICY "Courses: Select" ON courses FOR SELECT USING (status = 'published' OR teacher_email = get_auth_email() OR is_admin());
+DROP POLICY IF EXISTS "Courses: All for Teachers/Admins" ON courses;
+CREATE POLICY "Courses: All for Teachers/Admins" ON courses FOR ALL USING (is_teacher() OR is_admin());
+
+-- 3. Lessons Table
+DROP POLICY IF EXISTS "Lessons: Select" ON lessons;
+CREATE POLICY "Lessons: Select" ON lessons FOR SELECT USING (
+  EXISTS (SELECT 1 FROM enrollments WHERE course_id = lessons.course_id AND student_email = get_auth_email()) OR
+  EXISTS (SELECT 1 FROM courses WHERE id = lessons.course_id AND (teacher_email = get_auth_email() OR is_admin()))
+);
+DROP POLICY IF EXISTS "Lessons: Manage for Teachers/Admins" ON lessons;
+CREATE POLICY "Lessons: Manage for Teachers/Admins" ON lessons FOR ALL USING (is_teacher() OR is_admin());
+
+-- 4. Enrollments Table
+DROP POLICY IF EXISTS "Enrollments: User Access" ON enrollments;
+CREATE POLICY "Enrollments: User Access" ON enrollments FOR SELECT USING (student_email = get_auth_email() OR is_teacher() OR is_admin());
+DROP POLICY IF EXISTS "Enrollments: Self Enroll" ON enrollments;
+CREATE POLICY "Enrollments: Self Enroll" ON enrollments FOR INSERT WITH CHECK (student_email = get_auth_email());
+DROP POLICY IF EXISTS "Enrollments: Manage for Admins" ON enrollments;
+CREATE POLICY "Enrollments: Manage for Admins" ON enrollments FOR ALL USING (is_admin());
+
+-- 5. Assignments Table
+DROP POLICY IF EXISTS "Assignments: Select" ON assignments;
+CREATE POLICY "Assignments: Select" ON assignments FOR SELECT USING (
+  EXISTS (SELECT 1 FROM enrollments WHERE course_id = assignments.course_id AND student_email = get_auth_email()) OR
+  teacher_email = get_auth_email() OR is_admin()
+);
+DROP POLICY IF EXISTS "Assignments: Manage for Teachers/Admins" ON assignments;
+CREATE POLICY "Assignments: Manage for Teachers/Admins" ON assignments FOR ALL USING (teacher_email = get_auth_email() OR is_admin());
+
+-- 6. Submissions Table
+DROP POLICY IF EXISTS "Submissions: Select" ON submissions;
+CREATE POLICY "Submissions: Select" ON submissions FOR SELECT USING (
+  student_email = get_auth_email() OR
+  EXISTS (SELECT 1 FROM assignments WHERE id = submissions.assignment_id AND (teacher_email = get_auth_email() OR is_admin()))
+);
+DROP POLICY IF EXISTS "Submissions: Insert" ON submissions;
+CREATE POLICY "Submissions: Insert" ON submissions FOR INSERT WITH CHECK (student_email = get_auth_email());
+DROP POLICY IF EXISTS "Submissions: Update" ON submissions;
+CREATE POLICY "Submissions: Update" ON submissions FOR UPDATE USING (
+  student_email = get_auth_email() OR
+  EXISTS (SELECT 1 FROM assignments WHERE id = submissions.assignment_id AND (teacher_email = get_auth_email() OR is_admin()))
+);
+
+-- 7. Live Classes Table
+DROP POLICY IF EXISTS "Live Classes: Select" ON live_classes;
+CREATE POLICY "Live Classes: Select" ON live_classes FOR SELECT USING (
+  EXISTS (SELECT 1 FROM enrollments WHERE course_id = live_classes.course_id AND student_email = get_auth_email()) OR
+  teacher_email = get_auth_email() OR is_admin()
+);
+DROP POLICY IF EXISTS "Live Classes: Manage for Teachers/Admins" ON live_classes;
+CREATE POLICY "Live Classes: Manage for Teachers/Admins" ON live_classes FOR ALL USING (teacher_email = get_auth_email() OR is_admin());
+
+-- 8. Attendance Table
+DROP POLICY IF EXISTS "Attendance: Access" ON attendance;
+CREATE POLICY "Attendance: Access" ON attendance FOR SELECT USING (student_email = get_auth_email() OR is_teacher() OR is_admin());
+DROP POLICY IF EXISTS "Attendance: Insert" ON attendance;
+CREATE POLICY "Attendance: Insert" ON attendance FOR INSERT WITH CHECK (student_email = get_auth_email());
+
+-- 9. Quizzes Table
+DROP POLICY IF EXISTS "Quizzes: Select" ON quizzes;
+CREATE POLICY "Quizzes: Select" ON quizzes FOR SELECT USING (
+  EXISTS (SELECT 1 FROM enrollments WHERE course_id = quizzes.course_id AND student_email = get_auth_email()) OR
+  teacher_email = get_auth_email() OR is_admin()
+);
+DROP POLICY IF EXISTS "Quizzes: Manage for Teachers/Admins" ON quizzes;
+CREATE POLICY "Quizzes: Manage for Teachers/Admins" ON quizzes FOR ALL USING (teacher_email = get_auth_email() OR is_admin());
+
+-- 10. Quiz Submissions Table
+DROP POLICY IF EXISTS "Quiz Submissions: Access" ON quiz_submissions;
+CREATE POLICY "Quiz Submissions: Access" ON quiz_submissions FOR SELECT USING (
+  student_email = get_auth_email() OR
+  EXISTS (SELECT 1 FROM quizzes WHERE id = quiz_submissions.quiz_id AND (teacher_email = get_auth_email() OR is_admin()))
+);
+DROP POLICY IF EXISTS "Quiz Submissions: Insert" ON quiz_submissions;
+CREATE POLICY "Quiz Submissions: Insert" ON quiz_submissions FOR INSERT WITH CHECK (student_email = get_auth_email());
+
+-- 11. Materials Table
+DROP POLICY IF EXISTS "Materials: Select" ON materials;
+CREATE POLICY "Materials: Select" ON materials FOR SELECT USING (
+  EXISTS (SELECT 1 FROM enrollments WHERE course_id = materials.course_id AND student_email = get_auth_email()) OR
+  teacher_email = get_auth_email() OR is_admin()
+);
+DROP POLICY IF EXISTS "Materials: Manage for Teachers/Admins" ON materials;
+CREATE POLICY "Materials: Manage for Teachers/Admins" ON materials FOR ALL USING (teacher_email = get_auth_email() OR is_admin());
+
+-- 12. Discussions Table
+DROP POLICY IF EXISTS "Discussions: Access" ON discussions;
+CREATE POLICY "Discussions: Access" ON discussions FOR ALL USING (
+  EXISTS (SELECT 1 FROM enrollments WHERE course_id = discussions.course_id AND student_email = get_auth_email()) OR
+  EXISTS (SELECT 1 FROM courses WHERE id = discussions.course_id AND (teacher_email = get_auth_email() OR is_admin()))
+);
+
+-- 13. Notifications Table
+DROP POLICY IF EXISTS "Notifications: User Access" ON notifications;
+CREATE POLICY "Notifications: User Access" ON notifications FOR ALL USING (user_email = get_auth_email() OR is_admin());
+
+-- 14. Broadcasts Table
+DROP POLICY IF EXISTS "Broadcasts: Access" ON broadcasts;
+CREATE POLICY "Broadcasts: Access" ON broadcasts FOR SELECT USING (
+  (course_id IS NULL AND (target_role IS NULL OR target_role = get_auth_role())) OR
+  EXISTS (SELECT 1 FROM enrollments WHERE course_id = broadcasts.course_id AND student_email = get_auth_email()) OR
+  EXISTS (SELECT 1 FROM courses WHERE id = broadcasts.course_id AND (teacher_email = get_auth_email() OR is_admin()))
+);
+DROP POLICY IF EXISTS "Broadcasts: Manage for Teachers/Admins" ON broadcasts;
+CREATE POLICY "Broadcasts: Manage for Teachers/Admins" ON broadcasts FOR ALL USING (is_teacher() OR is_admin());
+
+-- 15. Maintenance Table
+DROP POLICY IF EXISTS "Maintenance: Select" ON maintenance;
+CREATE POLICY "Maintenance: Select" ON maintenance FOR SELECT USING (true);
+DROP POLICY IF EXISTS "Maintenance: Manage for Admins" ON maintenance;
+CREATE POLICY "Maintenance: Manage for Admins" ON maintenance FOR ALL USING (is_admin());
+
+-- 16. System Logs Table
+DROP POLICY IF EXISTS "System Logs: Manage for Admins" ON system_logs;
+CREATE POLICY "System Logs: Manage for Admins" ON system_logs FOR ALL USING (is_admin());
+DROP POLICY IF EXISTS "System Logs: Insert" ON system_logs;
+CREATE POLICY "System Logs: Insert" ON system_logs FOR INSERT WITH CHECK (true);
+
+-- 17. Violations Table
+DROP POLICY IF EXISTS "Violations: User Access" ON violations;
+CREATE POLICY "Violations: User Access" ON violations FOR SELECT USING (user_email = get_auth_email() OR is_teacher() OR is_admin());
+DROP POLICY IF EXISTS "Violations: Insert" ON violations;
+CREATE POLICY "Violations: Insert" ON violations FOR INSERT WITH CHECK (user_email = get_auth_email());
+
+-- 18. Planner Table
+DROP POLICY IF EXISTS "Planner: User Access" ON planner;
+CREATE POLICY "Planner: User Access" ON planner FOR ALL USING (user_email = get_auth_email() OR is_admin());
+
+-- 19. Study Sessions Table
+DROP POLICY IF EXISTS "Study Sessions: User Access" ON study_sessions;
+CREATE POLICY "Study Sessions: User Access" ON study_sessions FOR ALL USING (user_email = get_auth_email() OR is_admin());
+
+-- 20. Certificates Table
+DROP POLICY IF EXISTS "Certificates: User Access" ON certificates;
+CREATE POLICY "Certificates: User Access" ON certificates FOR SELECT USING (student_email = get_auth_email() OR is_teacher() OR is_admin());
+
+-- 21. Invites Table
+DROP POLICY IF EXISTS "Invites: Manage for Admins" ON invites;
+CREATE POLICY "Invites: Manage for Admins" ON invites FOR ALL USING (is_admin());
+DROP POLICY IF EXISTS "Invites: Select for Signup" ON invites;
+CREATE POLICY "Invites: Select for Signup" ON invites FOR SELECT USING (true);
+
 GRANT ALL ON ALL TABLES IN SCHEMA public TO anon, authenticated, postgres, service_role;
 GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO anon, authenticated, postgres, service_role;
 GRANT ALL ON ALL FUNCTIONS IN SCHEMA public TO anon, authenticated, postgres, service_role;
 
--- Server Time Helper
-CREATE OR REPLACE FUNCTION get_server_time()
-RETURNS TIMESTAMP WITH TIME ZONE AS $$
-  SELECT NOW();
-$$ LANGUAGE sql STABLE;
+-- 10. Storage Initialization
 
--- Insert default maintenance record
--- Server-Side Enforcement (PostgreSQL Triggers)
-
--- 1. validate_submission_time() for the submissions table
-CREATE OR REPLACE FUNCTION validate_submission_time()
-RETURNS TRIGGER AS $$
-DECLARE
-    v_start_at TIMESTAMP WITH TIME ZONE;
-    v_due_date TIMESTAMP WITH TIME ZONE;
-    v_allow_late BOOLEAN;
-BEGIN
-    SELECT start_at, due_date, allow_late_submissions
-    INTO v_start_at, v_due_date, v_allow_late
-    FROM assignments
-    WHERE id = NEW.assignment_id;
-
-    -- Only validate when status is being changed to 'submitted'
-    -- Using TG_OP to safely check for INSERT vs UPDATE
-    IF (NEW.status = 'submitted' AND (TG_OP = 'INSERT' OR (TG_OP = 'UPDATE' AND OLD.status != 'submitted'))) THEN
-        -- Check start_at (no early submissions)
-        IF v_start_at IS NOT NULL AND NOW() < v_start_at THEN
-            RAISE EXCEPTION 'Assignment is not open for submission yet.';
-        END IF;
-
-        -- Check due_date if allow_late_submissions is FALSE (no late submissions)
-        IF v_due_date IS NOT NULL AND v_allow_late = FALSE AND NOW() > v_due_date THEN
-            RAISE EXCEPTION 'Late submissions are not allowed for this assignment.';
-        END IF;
-    END IF;
-
-    RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS tr_validate_submission_time ON submissions;
-CREATE TRIGGER tr_validate_submission_time
-BEFORE INSERT OR UPDATE ON submissions
-FOR EACH ROW EXECUTE PROCEDURE validate_submission_time();
-
--- 2. validate_quiz_submission_time() for the quiz_submissions table
-CREATE OR REPLACE FUNCTION validate_quiz_submission_time()
-RETURNS TRIGGER AS $$
-DECLARE
-    v_start_at TIMESTAMP WITH TIME ZONE;
-    v_end_at TIMESTAMP WITH TIME ZONE;
-    v_time_limit INTEGER;
-BEGIN
-    SELECT start_at, end_at, time_limit
-    INTO v_start_at, v_end_at, v_time_limit
-    FROM quizzes
-    WHERE id = NEW.quiz_id;
-
-    -- Only validate when status is being changed to 'submitted'
-    -- Using TG_OP to safely check for INSERT vs UPDATE, ensuring teacher grading isn't blocked
-    IF (NEW.status = 'submitted' AND (TG_OP = 'INSERT' OR (TG_OP = 'UPDATE' AND OLD.status != 'submitted'))) THEN
-        -- Check start_at (no early attempts/submissions)
-        IF v_start_at IS NOT NULL AND NEW.started_at < v_start_at THEN
-             RAISE EXCEPTION 'Quiz was started before the allowed window.';
-        END IF;
-
-        -- Check end_at (no submissions after quiz closes)
-        IF v_end_at IS NOT NULL AND NOW() > (v_end_at + INTERVAL '1 minute') THEN
-            RAISE EXCEPTION 'Quiz has already closed.';
-        END IF;
-
-        -- Check time_limit (if time_limit > 0, ensure submitted_at - started_at does not exceed it)
-        -- We allow a 1-minute grace period for network latency
-        IF v_time_limit > 0 AND NEW.submitted_at > (NEW.started_at + (v_time_limit * INTERVAL '1 minute') + INTERVAL '1 minute') THEN
-            RAISE EXCEPTION 'Quiz time limit exceeded.';
-        END IF;
-    END IF;
-
-    RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS tr_validate_quiz_submission_time ON quiz_submissions;
-CREATE TRIGGER tr_validate_quiz_submission_time
-BEFORE INSERT OR UPDATE ON quiz_submissions
-FOR EACH ROW EXECUTE PROCEDURE validate_quiz_submission_time();
-
--- Insert default maintenance record idempotently
-INSERT INTO maintenance (enabled, schedules)
-SELECT false, '[]'::jsonb
-WHERE NOT EXISTS (SELECT 1 FROM maintenance);
+INSERT INTO storage.buckets (id, name, public)
+VALUES ('materials', 'materials', true), ('assignments', 'assignments', true), ('certificates', 'certificates', true)
+ON CONFLICT (id) DO NOTHING;

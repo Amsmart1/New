@@ -341,14 +341,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 phone,
                 password: hashedPassword,
                 role,
-                created_at: new Date().toISOString(),
-                failed_attempts: 0,
-                locked_until: null,
-                lockouts: 0,
-                flagged: false,
-                reset_request: null,
-                active: true,
-                session_id: sid
+                session_id: sid,
+                invite_token: activeInvite?.token || null
             };
             
             const savedUser = await SupabaseDB.saveUser(user);
@@ -356,6 +350,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 errorEl.innerText = 'Failed to create account. Please try again.';
                 return;
             }
+
+            // Establish RLS session context
+            window.setSupabaseSession(sid);
 
             // Mark invite as used if applicable
             if (activeInvite) {
@@ -405,22 +402,20 @@ document.addEventListener('DOMContentLoaded', () => {
             if (upcoming) { alert(`Upcoming system maintenance: ${new Date(upcoming.startAt).toLocaleString()}`); }
             
             const password = document.getElementById('loginPassword').value;
-            const user = await SupabaseDB.getUser(email);
-
             const passErr = document.getElementById('loginPasswordError');
             if (emailErr) emailErr.innerText = '';
             if (passErr) passErr.innerText = '';
+
+            const user = await SupabaseDB.getUser(email);
 
             if (!user) {
                 if (emailErr) emailErr.innerText = 'No account found with this email';
                 return;
             }
-            if (!user.active) {
-                if (emailErr) emailErr.innerText = 'Your account has been deactivated by an administrator.';
-                return;
-            }
-            if (user.flagged) {
-                if (emailErr) emailErr.innerText = 'Your account is flagged for suspicious activities. Contact admin for support.';
+
+            if (isAccountLocked(user)) {
+                const mins = Math.ceil((new Date(user.locked_until).getTime() - Date.now()) / 60000);
+                if (passErr) passErr.innerText = `Account is locked. Try again in ${mins} minutes`;
                 return;
             }
 
@@ -442,68 +437,43 @@ document.addEventListener('DOMContentLoaded', () => {
                         if (passErr) passErr.innerText = 'Temporary password expired. Please request a new reset.';
                         return;
                     }
-                    const hashedTempInput = await Auth.hashPassword(password, email);
-                    if (user.reset_request.temp_password === hashedTempInput || user.reset_request.temp_password === password) {
-                        await SessionManager.setCurrentUser(user);
-                        Auth.showNewPassword();
-                        return;
-                    } else {
-                        if (passErr) passErr.innerText = 'Your reset request is approved. Please enter the temporary password provided to you.';
-                        return;
-                    }
+                    // For approved resets, we still use the RPC but pass the temp password hash
+                    // The server will verify it against user_secrets.password_hash
                 }
-                if (user.reset_request.status === 'denied') {
-                    if (passErr) passErr.innerText = 'Your reset request was denied. You may request a new reset.';
-                    return;
-                }
-            }
-
-            if (isAccountLocked(user)) {
-                const mins = Math.ceil((new Date(user.locked_until).getTime() - Date.now()) / 60000);
-                if (passErr) passErr.innerText = `Account is locked. Try again in ${mins} minutes`;
-                return;
             }
 
             const hashedInput = await Auth.hashPassword(password, email);
-            const legacyHashedInput = await window.legacyHashPassword(password);
+            const sid = SessionManager.getSessionId();
 
-            let authenticated = false;
-            if (user.password === hashedInput) {
-                authenticated = true;
-            } else if (user.password === legacyHashedInput || user.password === password) {
-                // Migrate to new salted hash
-                user.password = hashedInput;
-                authenticated = true;
-            }
+            try {
+                const authResult = await SupabaseDB.authenticateUser(email, hashedInput, sid);
 
-            if (!authenticated) {
-                user.failed_attempts++;
-                if (user.failed_attempts >= 5) {
-                    user.locked_until = new Date(Date.now() + 30 * 60000).toISOString();
-                    user.failed_attempts = 0;
-                    user.lockouts++;
-                    if (user.lockouts >= 3) user.flagged = true;
-                    if (passErr) passErr.innerText = 'Too many failed attempts. Account locked for 30 minutes';
-                } else {
-                    const remain = 5 - user.failed_attempts;
-                    if (passErr) passErr.innerText = `Invalid password. ${remain} attempts remaining`;
+                if (!authResult.success) {
+                    if (passErr) passErr.innerText = authResult.message || 'Login failed';
+                    return;
                 }
-                await SupabaseDB.saveUser(user);
-                return;
+
+                const authUser = authResult.user;
+
+                // Handle approved reset redirection
+                if (authUser.reset_request && authUser.reset_request.status === 'approved') {
+                    await SessionManager.setCurrentUser(authUser);
+                    window.setSupabaseSession(sid);
+                    Auth.showNewPassword();
+                    return;
+                }
+
+                // Normal Login
+                await SessionManager.setCurrentUser(authUser);
+                window.setSupabaseSession(sid);
+
+                alert(`Welcome back ${authUser.full_name}!`);
+                Auth.redirectByRole(authUser.role);
+
+            } catch (err) {
+                console.error('Auth error:', err);
+                if (passErr) passErr.innerText = 'An error occurred during login. Please try again.';
             }
-
-            user.failed_attempts = 0;
-            user.locked_until = null;
-
-            // Generate and persist new session ID on login
-            sessionStorage.removeItem('sessionId');
-            user.session_id = SessionManager.getSessionId();
-
-            await SupabaseDB.saveUser(user);
-            await SessionManager.setCurrentUser(user);
-
-            alert(`Welcome back ${user.full_name}!`);
-            Auth.redirectByRole(user.role);
         });
     }
 
@@ -644,6 +614,10 @@ document.addEventListener('DOMContentLoaded', () => {
             sessionStorage.removeItem('sessionId');
             freshUser.session_id = SessionManager.getSessionId();
 
+            // Establish RLS session context
+            window.setSupabaseSession(freshUser.session_id);
+
+            // Update password in secrets and clear reset request
             await Promise.all([
                 SupabaseDB.saveUser(freshUser),
                 SupabaseDB.createNotification(

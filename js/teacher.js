@@ -838,6 +838,7 @@ async function gradeSubmission(assignmentId, studentEmail) {
         late_penalty_applied: latePenalty,
         feedback: document.getElementById('feedback').value,
         status: 'graded',
+        graded_at: new Date().toISOString(),
         regrade_request: null, // Clear regrade request once graded
         updated_at: new Date().toISOString()
       };

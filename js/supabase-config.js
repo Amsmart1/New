@@ -9,8 +9,40 @@ if (!window.supabase) {
     alert('Critical Error: Supabase connection could not be established.');
 }
 const { createClient } = window.supabase || { createClient: () => ({ from: () => ({ select: () => ({ eq: () => ({ single: () => ({}) }) }) }) }) };
-const supabaseClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+// Standard client options
+const clientOptions = {
+    global: {
+        headers: {}
+    }
+};
+
+// Inject current session ID into headers if it exists
+const currentSessionId = sessionStorage.getItem('sessionId');
+if (currentSessionId) {
+    clientOptions.global.headers['x-session-id'] = currentSessionId;
+}
+
+let supabaseClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, clientOptions);
 window.supabaseClient = supabaseClient;
+
+/**
+ * Updates the Supabase client with a new session ID for RLS context.
+ * Should be called after login, signup, or password reset.
+ */
+function setSupabaseSession(sessionId) {
+    if (sessionId) {
+        sessionStorage.setItem('sessionId', sessionId);
+        clientOptions.global.headers['x-session-id'] = sessionId;
+    } else {
+        sessionStorage.removeItem('sessionId');
+        delete clientOptions.global.headers['x-session-id'];
+    }
+    // Re-initialize client with updated headers
+    supabaseClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, clientOptions);
+    window.supabaseClient = supabaseClient;
+}
+window.setSupabaseSession = setSupabaseSession;
 
 const _stats = {
     totalRequests: 0,
@@ -114,12 +146,17 @@ class SupabaseDB {
     }
 
     static async saveUser(user) {
-        // Sanitize payload
+        // Handle User Creation via Secure RPC
+        const isNewUser = !user.created_at;
+        if (isNewUser) {
+            return this.createUserSecure(user);
+        }
+
+        // Handle User Update
         const payload = {
             email: user.email,
             full_name: user.full_name,
             phone: user.phone,
-            password: user.password,
             role: user.role,
             last_login: user.last_login,
             failed_attempts: user.failed_attempts,
@@ -128,21 +165,54 @@ class SupabaseDB {
             flagged: user.flagged,
             reset_request: user.reset_request,
             active: user.active,
-            session_id: user.session_id,
             notification_preferences: user.notification_preferences,
             metadata: user.metadata,
             updated_at: new Date().toISOString()
         };
-        if (user.created_at) payload.created_at = user.created_at;
 
         const { data, error } = await supabaseClient
             .from('users')
-            .upsert(payload, { onConflict: 'email' })
+            .update(payload)
+            .eq('email', user.email)
             .select();
         if (error) throw error;
+
+        // Update secrets via secure RPC if provided
+        if (user.password || user.session_id) {
+            try {
+                await supabaseClient.rpc('update_user_secret_secure', {
+                    p_email: user.email,
+                    p_password_hash: user.password || null,
+                    p_session_id: user.session_id || null
+                });
+            } catch (e) {
+                console.warn('Failed to update user secrets:', e);
+            }
+        }
+
         _cache.invalidate('users');
         _cache.invalidate(`user_${user.email}`);
         return data?.[0];
+    }
+
+    static async createUserSecure(user) {
+        const { data, error } = await supabaseClient.rpc('create_user_secure', {
+            p_email: user.email,
+            p_full_name: user.full_name,
+            p_phone: user.phone,
+            p_password_hash: user.password,
+            p_role: user.role,
+            p_session_id: user.session_id,
+            p_invite_token: user.invite_token || null,
+            p_active: user.active !== undefined ? user.active : true,
+            p_metadata: user.metadata || {}
+        });
+        if (error) throw error;
+        if (!data.success) throw new Error(data.message);
+
+        _cache.invalidate('users');
+        _cache.invalidate(`user_${user.email}`);
+        return data.user;
     }
 
     static async updateUserEmail(oldEmail, newEmail, userData) {
@@ -886,6 +956,16 @@ class SupabaseDB {
             if (error) throw error;
             return data;
         });
+    }
+
+    static async authenticateUser(email, passwordHash, sessionId) {
+        const { data, error } = await supabaseClient.rpc('authenticate_user', {
+            p_email: email,
+            p_password_hash: passwordHash,
+            p_session_id: sessionId
+        });
+        if (error) throw error;
+        return data;
     }
 
     static async invokeFunction(name, payload) {
