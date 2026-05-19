@@ -14,6 +14,11 @@ const { createClient } = window.supabase || { createClient: () => ({ from: () =>
 const clientOptions = {
     global: {
         headers: {}
+    },
+    auth: {
+        persistSession: false,
+        autoRefreshToken: false,
+        detectSessionInUrl: false
     }
 };
 
@@ -26,11 +31,16 @@ if (currentSessionId) {
 let supabaseClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, clientOptions);
 window.supabaseClient = supabaseClient;
 
+// Track last initialized session to avoid redundant client creation
+let _lastSessionId = currentSessionId;
+
 /**
  * Updates the Supabase client with a new session ID for RLS context.
  * Should be called after login, signup, or password reset.
  */
 function setSupabaseSession(sessionId) {
+    if (sessionId === _lastSessionId) return;
+
     if (sessionId) {
         sessionStorage.setItem('sessionId', sessionId);
         clientOptions.global.headers['x-session-id'] = sessionId;
@@ -38,6 +48,9 @@ function setSupabaseSession(sessionId) {
         sessionStorage.removeItem('sessionId');
         delete clientOptions.global.headers['x-session-id'];
     }
+
+    _lastSessionId = sessionId;
+
     // Re-initialize client with updated headers
     supabaseClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, clientOptions);
     window.supabaseClient = supabaseClient;

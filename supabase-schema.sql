@@ -320,6 +320,9 @@ CREATE TABLE IF NOT EXISTS violations (
 
 -- Separate top-level ALTER statements to ensure columns exist for subsequent script parsing
 ALTER TABLE broadcasts ADD COLUMN IF NOT EXISTS expires_at TIMESTAMP WITH TIME ZONE DEFAULT (NOW() + INTERVAL '30 days');
+ALTER TABLE notifications ADD COLUMN IF NOT EXISTS expires_at TIMESTAMP WITH TIME ZONE DEFAULT (NOW() + INTERVAL '90 days');
+ALTER TABLE system_logs ADD COLUMN IF NOT EXISTS user_email VARCHAR(255);
+ALTER TABLE system_logs ADD COLUMN IF NOT EXISTS expires_at TIMESTAMP WITH TIME ZONE DEFAULT (NOW() + INTERVAL '30 days');
 ALTER TABLE quiz_submissions ADD COLUMN IF NOT EXISTS attempt_number INTEGER;
 ALTER TABLE violations ADD COLUMN IF NOT EXISTS assessment_id UUID;
 ALTER TABLE violations ADD COLUMN IF NOT EXISTS assessment_type VARCHAR(50);
@@ -416,19 +419,6 @@ BEGIN
     ALTER TABLE quiz_submissions ADD COLUMN IF NOT EXISTS attempt_number INTEGER;
 
     -- Migrate quiz_submissions attempt numbers if needed
-    WITH numbered_attempts AS (
-        SELECT id, ROW_NUMBER() OVER (PARTITION BY quiz_id, student_email ORDER BY started_at ASC) as row_num
-        FROM quiz_submissions
-    )
-    UPDATE quiz_submissions
-    SET attempt_number = numbered_attempts.row_num
-    FROM numbered_attempts
-    WHERE quiz_submissions.id = numbered_attempts.id AND quiz_submissions.attempt_number IS NULL;
-
-    ALTER TABLE quiz_submissions ALTER COLUMN attempt_number SET DEFAULT 1;
-    ALTER TABLE quiz_submissions ALTER COLUMN attempt_number SET NOT NULL;
-
-    -- Migrate quiz_submissions attempt numbers if needed
     -- (Used EXECUTE to ensure it works even if attempt_number was just added)
     EXECUTE '
     WITH numbered_attempts AS (
@@ -449,11 +439,9 @@ BEGIN
 
     -- notifications
     ALTER TABLE notifications ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
-    ALTER TABLE notifications ADD COLUMN IF NOT EXISTS expires_at TIMESTAMP WITH TIME ZONE DEFAULT (NOW() + INTERVAL '90 days');
 
     -- broadcasts
     ALTER TABLE broadcasts ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
-    ALTER TABLE broadcasts ADD COLUMN IF NOT EXISTS expires_at TIMESTAMP WITH TIME ZONE DEFAULT (NOW() + INTERVAL '30 days');
 
     -- maintenance
     ALTER TABLE maintenance ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
@@ -804,6 +792,12 @@ CREATE INDEX IF NOT EXISTS idx_submissions_composite ON submissions(assignment_i
 CREATE INDEX IF NOT EXISTS idx_attendance_composite ON attendance(live_class_id, student_email);
 CREATE INDEX IF NOT EXISTS idx_quiz_submissions_composite ON quiz_submissions(quiz_id, student_email);
 
+-- Composite Indexes for Dashboard Filters
+CREATE INDEX IF NOT EXISTS idx_courses_teacher_status ON courses(teacher_email, status);
+CREATE INDEX IF NOT EXISTS idx_assignments_course_status ON assignments(course_id, status);
+CREATE INDEX IF NOT EXISTS idx_quizzes_course_status ON quizzes(course_id, status);
+CREATE INDEX IF NOT EXISTS idx_live_classes_course_status ON live_classes(course_id, status);
+
 -- JSONB GIN Indexes for Search Performance
 CREATE INDEX IF NOT EXISTS idx_users_metadata_gin ON users USING GIN (metadata);
 CREATE INDEX IF NOT EXISTS idx_courses_metadata_gin ON courses USING GIN (metadata);
@@ -814,6 +808,7 @@ CREATE INDEX IF NOT EXISTS idx_quizzes_anti_cheat_gin ON quizzes USING GIN (anti
 CREATE INDEX IF NOT EXISTS idx_submissions_answers_gin ON submissions USING GIN (answers);
 CREATE INDEX IF NOT EXISTS idx_quiz_submissions_answers_gin ON quiz_submissions USING GIN (answers);
 CREATE INDEX IF NOT EXISTS idx_quiz_submissions_analytics_gin ON quiz_submissions USING GIN (analytics);
+CREATE INDEX IF NOT EXISTS idx_violations_details_gin ON violations USING GIN (details);
 
 -- 7. Helper Functions
 
