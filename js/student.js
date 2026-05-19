@@ -1,4 +1,5 @@
 let activeCountdowns = [];
+let quizTimer = null;
 
 function showLoading(containerId = 'pageContent') {
     UI.showLoading(containerId);
@@ -1525,35 +1526,123 @@ async function renderAntiCheat() {
     const user = await SessionManager.getCurrentUser();
     const violations = await SupabaseDB.getViolations(null, user.email);
 
+    const stats = calculateAntiCheatStats(violations);
+    const browser = getBrowserInfo();
+    const device = getDeviceInfo();
+
     content.innerHTML = `
-      <div class="card flex-between">
-        <h2 class="m-0">My Security Record</h2>
-        <button class="button w-auto secondary" onclick="renderAntiCheat()">Refresh</button>
+      <div class="flex-between mb-20">
+        <h2 class="m-0">Security & Integrity Dashboard</h2>
+        <button class="button w-auto secondary" onclick="renderAntiCheat()">Refresh Data</button>
       </div>
-      <div class="card mt-20">
+
+      <div class="card mb-20">
+        <h2>Session Information</h2>
+        <div class="stats-grid">
+          <div class="stat-card">
+            <h4>Assessment Type</h4>
+            <div class="value" id="assessmentType" style="font-size: 1.2rem">${violations.length > 0 ? escapeHtml(violations[0].assessment_type.charAt(0).toUpperCase() + violations[0].assessment_type.slice(1)) : 'None'}</div>
+          </div>
+          <div class="stat-card">
+            <h4>Session Time</h4>
+            <div class="value" id="sessionTime" style="font-size: 1.2rem">${violations.length > 0 ? new Date(violations[violations.length - 1].timestamp).toLocaleTimeString() + ' - ' + new Date(violations[0].timestamp).toLocaleTimeString() : 'N/A'}</div>
+          </div>
+          <div class="stat-card">
+            <h4>Session Duration</h4>
+            <div class="value" id="sessionDuration" style="font-size: 1.2rem">${violations.length > 0 ? Math.round((new Date(violations[0].timestamp) - new Date(violations[violations.length - 1].timestamp)) / 60000) + ' min' : '0 min'}</div>
+          </div>
+          <div class="stat-card">
+            <h4>Device</h4>
+            <div class="value" id="deviceInfo" style="font-size: 1.2rem">${device}</div>
+          </div>
+          <div class="stat-card">
+            <h4>Browser</h4>
+            <div class="value" id="browserInfo" style="font-size: 1.2rem">${browser}</div>
+          </div>
+          <div class="stat-card">
+            <h4>Page Visibility</h4>
+            <div class="value" id="pageVisibility" style="font-size: 1.2rem">${document.hidden ? 'Hidden' : 'Visible'}</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card mb-20">
+        <h2>Statistics</h2>
+        <div class="stats-grid">
+          <div class="stat-card">
+            <h4>Total Violations</h4>
+            <div class="value" id="totalCount">${stats.totalCount}</div>
+          </div>
+          <div class="stat-card">
+            <h4>Violation Score</h4>
+            <div class="value" id="totalScore">${stats.totalScore}</div>
+          </div>
+          <div class="stat-card">
+            <h4>Risk Level</h4>
+            <div class="value"><span id="riskLevel" class="badge ${stats.riskLevel === 'Low' ? 'badge-active' : (stats.riskLevel === 'Medium' ? 'badge-warn' : 'badge-inactive')}">${stats.riskLevel}</span></div>
+          </div>
+          <div class="stat-card">
+            <h4>Last Violation</h4>
+            <div class="value" id="lastViolation" style="font-size: 1.1rem">${escapeHtml(stats.lastViolation)}</div>
+          </div>
+          <div class="stat-card">
+            <h4>Most Frequent Violation</h4>
+            <div class="value" id="topViolation" style="font-size: 1.1rem">${escapeHtml(stats.topViolation)}</div>
+          </div>
+          <div class="stat-card">
+            <h4>Tab Switches</h4>
+            <div class="value" id="tabSwitchCount">${stats.tabSwitchCount}</div>
+          </div>
+          <div class="stat-card">
+            <h4>Blocked Actions</h4>
+            <div class="value" id="blockedActionCount">${stats.blockedActionCount}</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
         <h3>Violation History</h3>
-        <p class="small">The following actions were flagged as potential integrity violations during your assessments.</p>
-        <div class="p-0 mt-15" style="overflow-x:auto">
-            <table>
-              <thead>
-                <tr>
-                  <th>Timestamp</th>
-                  <th>Assessment</th>
-                  <th>Type</th>
-                  <th>Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                ${violations.map(v => `
+        <div id="violationHistoryContainer">
+          ${violations.length === 0 ? `
+            <div class="no-violations" id="noViolationsMsg" style="padding: 40px; text-align: center; color: #718096;">
+              No violations detected yet.
+            </div>
+          ` : `
+            <div style="overflow-x: auto;">
+              <table class="violation-table" id="violationTable">
+                <thead>
                   <tr>
-                    <td class="small">${new Date(v.timestamp).toLocaleString()}</td>
-                    <td class="small">${v.assessment_type.toUpperCase()}</td>
-                    <td><span class="badge badge-warn">${escapeHtml(v.type)}</span></td>
-                    <td><span class="tiny text-muted">LOGGED</span></td>
+                    <th>#</th>
+                    <th>Time</th>
+                    <th>Violation Type</th>
+                    <th>Severity</th>
+                    <th>Score</th>
+                    <th>Visibility State</th>
+                    <th>Details</th>
+                    <th>Status</th>
                   </tr>
-                `).join('') || '<tr><td colspan="4" class="empty">Your record is clean! Keep up the good work.</td></tr>'}
-              </tbody>
-            </table>
+                </thead>
+                <tbody id="violationTableBody">
+                  ${violations.map((v, i) => {
+                    const weight = getViolationWeight(v.type);
+                    const severity = weight >= 40 ? 'Critical' : (weight >= 15 ? 'High' : 'Low');
+                    return `
+                      <tr>
+                        <td>${violations.length - i}</td>
+                        <td class="small">${new Date(v.timestamp).toLocaleTimeString()}</td>
+                        <td><span class="bold">${escapeHtml(v.type.replace(/_/g, ' '))}</span></td>
+                        <td><span class="badge ${severity === 'Critical' ? 'badge-inactive' : (severity === 'High' ? 'badge-warn' : 'badge-active')}">${severity}</span></td>
+                        <td>${weight}</td>
+                        <td>${v.details?.visibilityState || 'N/A'}</td>
+                        <td class="small">${escapeHtml(JSON.stringify(v.details || {}))}</td>
+                        <td><span class="tiny text-muted">LOGGED</span></td>
+                      </tr>
+                    `;
+                  }).join('')}
+                </tbody>
+              </table>
+            </div>
+          `}
         </div>
       </div>
     `;
@@ -1562,7 +1651,90 @@ async function renderAntiCheat() {
     content.innerHTML = `<div class="card danger-border"><h3>Error Loading Record</h3></div>`;
   }
 }
+
+function calculateAntiCheatStats(violations) {
+    const stats = {
+        totalCount: violations.length,
+        totalScore: 0,
+        riskLevel: 'Low',
+        lastViolation: 'None',
+        topViolation: 'None',
+        tabSwitchCount: 0,
+        blockedActionCount: 0
+    };
+
+    if (violations.length === 0) return stats;
+
+    const counts = {};
+    violations.forEach(v => {
+        const type = v.type;
+        counts[type] = (counts[type] || 0) + 1;
+        stats.totalScore += getViolationWeight(type);
+
+        if (type === 'TAB_SWITCH') stats.tabSwitchCount++;
+        if (type.includes('_ATTEMPT') || type.includes('BLOCK_')) stats.blockedActionCount++;
+    });
+
+    stats.lastViolation = violations[0].type.replace(/_/g, ' ');
+
+    let maxCount = 0;
+    for (const type in counts) {
+        if (counts[type] > maxCount) {
+            maxCount = counts[type];
+            stats.topViolation = type.replace(/_/g, ' ');
+        }
+    }
+
+    if (stats.totalScore > 100) stats.riskLevel = 'High';
+    else if (stats.totalScore > 40) stats.riskLevel = 'Medium';
+
+    return stats;
+}
+
+function getViolationWeight(type) {
+    const weights = {
+        'TAB_SWITCH': 10,
+        'DEVTOOLS_OPEN': 50,
+        'DEVTOOLS_ATTEMPT': 20,
+        'VIEW_SOURCE_ATTEMPT': 20,
+        'SCREENSHOT_ATTEMPT': 15,
+        'RIGHT_CLICK': 5,
+        'COPY_ATTEMPT': 5,
+        'PASTE_ATTEMPT': 5,
+        'CUT_ATTEMPT': 5,
+        'DRAG_ATTEMPT': 5,
+        'DROP_ATTEMPT': 5,
+        'EXIT_FULLSCREEN': 15,
+        'MULTIPLE_TABS': 40,
+        'LONG_PRESS': 5,
+        'TEXT_SELECTION': 5
+    };
+    return weights[type] || 5;
+}
+
+function getBrowserInfo() {
+    const ua = navigator.userAgent;
+    if (ua.includes("Firefox")) return "Firefox";
+    if (ua.includes("SamsungBrowser")) return "Samsung Browser";
+    if (ua.includes("Opera") || ua.includes("OPR")) return "Opera";
+    if (ua.includes("Trident")) return "Internet Explorer";
+    if (ua.includes("Edge")) return "Edge";
+    if (ua.includes("Chrome")) return "Chrome";
+    if (ua.includes("Safari")) return "Safari";
+    return "Unknown Browser";
+}
+
+function getDeviceInfo() {
+    const ua = navigator.userAgent;
+    if (/(tablet|ipad|playbook|silk)|(android(?!.*mobi))/i.test(ua)) return "Tablet";
+    if (/Mobile|Android|iP(hone|od)|IEMobile|BlackBerry|Kindle|Silk-Accelerated|(hpw|web)OS|Opera M(obi|ini)/.test(ua)) return "Mobile";
+    return "Desktop";
+}
 window.renderAntiCheat = renderAntiCheat;
+window.calculateAntiCheatStats = calculateAntiCheatStats;
+window.getViolationWeight = getViolationWeight;
+window.getBrowserInfo = getBrowserInfo;
+window.getDeviceInfo = getDeviceInfo;
 
 async function renderQuizzes(openId = null) {
   showLoading();
@@ -1689,7 +1861,6 @@ async function renderQuizzes(openId = null) {
   }
 }
 
-let quizTimer = null;
 let currentQuiz = null;
 let currentSubmission = null;
 
