@@ -128,6 +128,7 @@ class SupabaseDB {
             flagged: user.flagged,
             reset_request: user.reset_request,
             active: user.active,
+            session_id: user.session_id,
             notification_preferences: user.notification_preferences,
             metadata: user.metadata,
             updated_at: new Date().toISOString()
