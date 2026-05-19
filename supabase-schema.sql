@@ -176,7 +176,7 @@ CREATE TABLE IF NOT EXISTS quiz_submissions (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   quiz_id UUID REFERENCES quizzes(id) ON DELETE CASCADE,
   student_email VARCHAR(255) REFERENCES users(email) ON UPDATE CASCADE ON DELETE CASCADE,
-  attempt_number INTEGER NOT NULL,
+  attempt_number INTEGER NOT NULL DEFAULT 1,
   score INTEGER,
   total_points INTEGER,
   answers JSONB DEFAULT '{}'::jsonb,
@@ -311,8 +311,9 @@ CREATE TABLE IF NOT EXISTS violations (
   type VARCHAR(100) NOT NULL,
   details JSONB DEFAULT '{}'::jsonb,
   timestamp TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-  expires_at TIMESTAMP WITH TIME ZONE DEFAULT (NOW() + INTERVAL '365 days'),
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  expires_at TIMESTAMP WITH TIME ZONE DEFAULT (NOW() + INTERVAL '90 days')
 );
 
 -- 2. Migrations for existing tables (Idempotent)
@@ -404,17 +405,18 @@ BEGIN
     ALTER TABLE quiz_submissions ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
     ALTER TABLE quiz_submissions ADD COLUMN IF NOT EXISTS attempt_number INTEGER;
 
-    -- Populate attempt_number for existing rows (Safe default)
-    UPDATE quiz_submissions SET attempt_number = 1 WHERE attempt_number IS NULL;
+    -- Migrate quiz_submissions attempt numbers if needed
+    WITH numbered_attempts AS (
+        SELECT id, ROW_NUMBER() OVER (PARTITION BY quiz_id, student_email ORDER BY started_at ASC) as row_num
+        FROM quiz_submissions
+    )
+    UPDATE quiz_submissions
+    SET attempt_number = numbered_attempts.row_num
+    FROM numbered_attempts
+    WHERE quiz_submissions.id = numbered_attempts.id AND quiz_submissions.attempt_number IS NULL;
 
-    -- Now enforce NOT NULL
+    ALTER TABLE quiz_submissions ALTER COLUMN attempt_number SET DEFAULT 1;
     ALTER TABLE quiz_submissions ALTER COLUMN attempt_number SET NOT NULL;
-
-    DO $$ BEGIN
-        IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'quiz_submissions_quiz_id_student_email_attempt_number_key') THEN
-            ALTER TABLE quiz_submissions ADD CONSTRAINT quiz_submissions_quiz_id_student_email_attempt_number_key UNIQUE(quiz_id, student_email, attempt_number);
-        END IF;
-    EXCEPTION WHEN OTHERS THEN NULL; END $$;
 
     -- materials
     ALTER TABLE materials ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
@@ -446,21 +448,16 @@ BEGIN
 
     -- invites
     ALTER TABLE invites ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
-    ALTER TABLE invites ADD COLUMN IF NOT EXISTS created_by VARCHAR(255) REFERENCES users(email) ON UPDATE CASCADE ON DELETE SET NULL;
-
-    -- discussions
-    ALTER TABLE discussions ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
-
-    -- system_logs
-    ALTER TABLE system_logs ADD COLUMN IF NOT EXISTS expires_at TIMESTAMP WITH TIME ZONE DEFAULT (NOW() + INTERVAL '30 days');
 
     -- violations
     ALTER TABLE violations ADD COLUMN IF NOT EXISTS assessment_id UUID;
     ALTER TABLE violations ADD COLUMN IF NOT EXISTS assessment_type VARCHAR(50);
     ALTER TABLE violations ADD COLUMN IF NOT EXISTS type VARCHAR(100);
-    ALTER TABLE violations ADD COLUMN IF NOT EXISTS expires_at TIMESTAMP WITH TIME ZONE DEFAULT (NOW() + INTERVAL '365 days');
-
-    -- Add missing indexes (Idempotent outside DO block)
+    ALTER TABLE violations ADD COLUMN IF NOT EXISTS details JSONB DEFAULT '{}'::jsonb;
+    ALTER TABLE violations ADD COLUMN IF NOT EXISTS timestamp TIMESTAMP WITH TIME ZONE DEFAULT NOW();
+    ALTER TABLE violations ADD COLUMN IF NOT EXISTS created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
+    ALTER TABLE violations ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
+    ALTER TABLE violations ADD COLUMN IF NOT EXISTS expires_at TIMESTAMP WITH TIME ZONE DEFAULT (NOW() + INTERVAL '90 days');
 END $$;
 
 -- Ensure composite unique constraints exist for idempotent upserts
@@ -476,6 +473,12 @@ DO $$ BEGIN
     END IF;
 EXCEPTION WHEN OTHERS THEN NULL; END $$;
 
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'quiz_submissions_composite_key') THEN
+        ALTER TABLE quiz_submissions ADD CONSTRAINT quiz_submissions_composite_key UNIQUE(quiz_id, student_email, attempt_number);
+    END IF;
+EXCEPTION WHEN OTHERS THEN NULL; END $$;
+
 -- 3. Triggers for updated_at
 
 DO $$
@@ -486,7 +489,7 @@ BEGIN
         SELECT table_name
         FROM information_schema.tables
         WHERE table_schema = 'public'
-        AND table_name IN ('users', 'user_secrets', 'courses', 'lessons', 'enrollments', 'assignments', 'submissions', 'live_classes', 'attendance', 'quizzes', 'quiz_submissions', 'materials', 'discussions', 'notifications', 'broadcasts', 'maintenance', 'planner', 'certificates', 'study_sessions', 'invites', 'system_logs', 'violations')
+        AND table_name IN ('users', 'user_secrets', 'courses', 'lessons', 'enrollments', 'assignments', 'submissions', 'live_classes', 'attendance', 'quizzes', 'quiz_submissions', 'materials', 'discussions', 'notifications', 'broadcasts', 'maintenance', 'planner', 'certificates', 'study_sessions', 'invites', 'violations')
     LOOP
         EXECUTE format('DROP TRIGGER IF EXISTS update_%I_updated_at ON %I', t, t);
         EXECUTE format('CREATE TRIGGER update_%I_updated_at BEFORE UPDATE ON %I FOR EACH ROW EXECUTE PROCEDURE update_updated_at_column()', t, t);
@@ -1007,40 +1010,49 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
-CREATE OR REPLACE FUNCTION purge_expired_records() RETURNS VOID AS $$
+CREATE OR REPLACE FUNCTION get_current_session_id()
+RETURNS VARCHAR AS $$
+DECLARE
+    v_session_id VARCHAR;
+    v_email VARCHAR;
 BEGIN
-  DELETE FROM broadcasts WHERE expires_at < NOW();
-  DELETE FROM notifications WHERE expires_at < NOW();
-  DELETE FROM system_logs WHERE expires_at < NOW();
-  DELETE FROM violations WHERE expires_at < NOW();
+    v_email := get_auth_email();
+    IF v_email IS NULL THEN RETURN NULL; END IF;
+
+    SELECT session_id INTO v_session_id FROM user_secrets WHERE email = v_email;
+    RETURN v_session_id;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
-
--- Trigger to periodically purge expired records
-CREATE OR REPLACE FUNCTION tr_call_purge_expired() RETURNS TRIGGER AS $$
-BEGIN
-  -- Run purge approximately 1% of the time to minimize overhead
-  IF random() < 0.01 THEN
-    PERFORM purge_expired_records();
-  END IF;
-  RETURN NULL;
-END;
-$$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS tr_purge_maintenance ON system_logs;
-CREATE TRIGGER tr_purge_maintenance
-  AFTER INSERT ON system_logs
-  FOR EACH STATEMENT EXECUTE PROCEDURE tr_call_purge_expired();
-
-DROP TRIGGER IF EXISTS tr_purge_maintenance_notify ON notifications;
-CREATE TRIGGER tr_purge_maintenance_notify
-  AFTER INSERT ON notifications
-  FOR EACH STATEMENT EXECUTE PROCEDURE tr_call_purge_expired();
+$$ LANGUAGE plpgsql STABLE SECURITY DEFINER;
 
 CREATE OR REPLACE FUNCTION get_server_time()
 RETURNS TIMESTAMP WITH TIME ZONE AS $$
   SELECT NOW();
 $$ LANGUAGE sql STABLE;
+
+-- Periodic Purge Function
+CREATE OR REPLACE FUNCTION purge_expired_records()
+RETURNS TRIGGER AS $$
+BEGIN
+    DELETE FROM broadcasts WHERE expires_at < NOW();
+    DELETE FROM notifications WHERE created_at < (NOW() - INTERVAL '60 days') AND is_read = TRUE;
+    DELETE FROM violations WHERE expires_at < NOW();
+    DELETE FROM system_logs WHERE created_at < (NOW() - INTERVAL '30 days');
+    RETURN NULL;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Attach purge trigger to high-frequency tables
+DROP TRIGGER IF EXISTS tr_purge_broadcasts ON broadcasts;
+CREATE TRIGGER tr_purge_broadcasts AFTER INSERT ON broadcasts FOR EACH STATEMENT EXECUTE PROCEDURE purge_expired_records();
+
+DROP TRIGGER IF EXISTS tr_purge_notifications ON notifications;
+CREATE TRIGGER tr_purge_notifications AFTER INSERT ON notifications FOR EACH STATEMENT EXECUTE PROCEDURE purge_expired_records();
+
+DROP TRIGGER IF EXISTS tr_purge_violations ON violations;
+CREATE TRIGGER tr_purge_violations AFTER INSERT ON violations FOR EACH STATEMENT EXECUTE PROCEDURE purge_expired_records();
+
+DROP TRIGGER IF EXISTS tr_purge_logs ON system_logs;
+CREATE TRIGGER tr_purge_logs AFTER INSERT ON system_logs FOR EACH STATEMENT EXECUTE PROCEDURE purge_expired_records();
 
 CREATE OR REPLACE FUNCTION enroll_in_course(p_course_id UUID, p_student_email VARCHAR, p_enrollment_id VARCHAR DEFAULT NULL)
 RETURNS VOID AS $$

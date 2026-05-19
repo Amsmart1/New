@@ -348,7 +348,6 @@ class SupabaseDB {
             allowed_extensions: assignment.allowed_extensions,
             questions: assignment.questions,
             attachments: assignment.attachments,
-            anti_cheat_config: assignment.anti_cheat_config,
             status: assignment.status
         };
         if (assignment.id) payload.id = assignment.id;
@@ -883,7 +882,6 @@ class SupabaseDB {
             passing_score: quiz.passing_score,
             questions: quiz.questions,
             shuffle_questions: quiz.shuffle_questions,
-            anti_cheat_config: quiz.anti_cheat_config,
             status: quiz.status
         };
         if (quiz.id) payload.id = quiz.id;
@@ -959,6 +957,12 @@ class SupabaseDB {
             p_password_hash: passwordHash,
             p_session_id: sessionId
         });
+        if (error) throw error;
+        return data;
+    }
+
+    static async getCurrentSessionId() {
+        const { data, error } = await supabaseClient.rpc('get_current_session_id');
         if (error) throw error;
         return data;
     }
@@ -1270,8 +1274,7 @@ class SupabaseDB {
             enabled: maintenance.enabled,
             manual_until: maintenance.manual_until,
             message: maintenance.message,
-            schedules: maintenance.schedules,
-            updated_at: new Date().toISOString()
+            schedules: maintenance.schedules
         };
         if (maintenance.id) payload.id = maintenance.id;
         if (maintenance.created_at) payload.created_at = maintenance.created_at;
