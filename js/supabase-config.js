@@ -349,6 +349,7 @@ class SupabaseDB {
             allowed_extensions: assignment.allowed_extensions,
             questions: assignment.questions,
             attachments: assignment.attachments,
+            anti_cheat_config: assignment.anti_cheat_config,
             status: assignment.status,
             updated_at: new Date().toISOString()
         };
@@ -889,6 +890,7 @@ class SupabaseDB {
             passing_score: quiz.passing_score,
             questions: quiz.questions,
             shuffle_questions: quiz.shuffle_questions,
+            anti_cheat_config: quiz.anti_cheat_config,
             status: quiz.status,
             updated_at: new Date().toISOString()
         };
