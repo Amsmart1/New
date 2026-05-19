@@ -441,6 +441,18 @@ async function showAssignmentForm(assignmentId) {
   if (!formWrap) return;
   formWrap.classList.remove('hidden');
   formWrap.style.display = 'block'; // Ensure it shows even if it was hidden via style
+
+  // Initialize Anti-Cheat if configured
+  if (a.anti_cheat_config && Object.values(a.anti_cheat_config).some(v => v === true)) {
+    AntiCheat.init(a.id, 'assignment', user.email, {
+        ...a.anti_cheat_config,
+        callbacks: {
+            onViolation: (v) => {
+                UI.showNotification(`Security Violation: ${v.type.replace(/_/g, ' ')} detected and logged.`, 'danger');
+            }
+        }
+    });
+  }
   const dueDate = new Date(a.due_date);
   const isLate = now > dueDate;
 
@@ -448,7 +460,7 @@ async function showAssignmentForm(assignmentId) {
     <div class="card">
       <div class="flex-between">
         <h3 class="m-0">${submission ? 'Review' : 'Submit'}: ${escapeHtml(a.title)}</h3>
-        <button class="button secondary w-auto small" onclick="const f=document.getElementById('assignmentForm'); f.classList.add('hidden'); f.style.display='none';">Close</button>
+        <button class="button secondary w-auto small" onclick="const f=document.getElementById('assignmentForm'); f.classList.add('hidden'); f.style.display='none'; AntiCheat.destroy();">Close</button>
       </div>
 
       ${submission && submission.status === 'submitted' ? `
@@ -1503,6 +1515,55 @@ async function renderSettings() {
     NotificationManager.renderSettings('Settings', 'Enable real-time desktop notifications even when the app is closed.');
 }
 
+async function renderAntiCheat() {
+  showLoading();
+  const content = document.getElementById('pageContent');
+  if (!content) return;
+  clearActiveCountdowns();
+
+  try {
+    const user = await SessionManager.getCurrentUser();
+    const violations = await SupabaseDB.getViolations(null, user.email);
+
+    content.innerHTML = `
+      <div class="card flex-between">
+        <h2 class="m-0">My Security Record</h2>
+        <button class="button w-auto secondary" onclick="renderAntiCheat()">Refresh</button>
+      </div>
+      <div class="card mt-20">
+        <h3>Violation History</h3>
+        <p class="small">The following actions were flagged as potential integrity violations during your assessments.</p>
+        <div class="p-0 mt-15" style="overflow-x:auto">
+            <table>
+              <thead>
+                <tr>
+                  <th>Timestamp</th>
+                  <th>Assessment</th>
+                  <th>Type</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${violations.map(v => `
+                  <tr>
+                    <td class="small">${new Date(v.timestamp).toLocaleString()}</td>
+                    <td class="small">${v.assessment_type.toUpperCase()}</td>
+                    <td><span class="badge badge-warn">${escapeHtml(v.type)}</span></td>
+                    <td><span class="tiny text-muted">LOGGED</span></td>
+                  </tr>
+                `).join('') || '<tr><td colspan="4" class="empty">Your record is clean! Keep up the good work.</td></tr>'}
+              </tbody>
+            </table>
+        </div>
+      </div>
+    `;
+  } catch (error) {
+    console.error('AntiCheat error:', error);
+    content.innerHTML = `<div class="card danger-border"><h3>Error Loading Record</h3></div>`;
+  }
+}
+window.renderAntiCheat = renderAntiCheat;
+
 async function renderQuizzes(openId = null) {
   showLoading();
   clearActiveCountdowns();
@@ -1679,6 +1740,19 @@ async function startQuiz(quizId) {
   const quizArea = document.getElementById('quizArea');
   if (!quizArea) return;
   quizArea.style.display = 'block';
+
+  // Initialize Anti-Cheat if configured
+  if (quiz.anti_cheat_config && Object.values(quiz.anti_cheat_config).some(v => v === true)) {
+    AntiCheat.init(quiz.id, 'quiz', user.email, {
+        ...quiz.anti_cheat_config,
+        callbacks: {
+            onViolation: (v) => {
+                UI.showNotification(`Security Violation: ${v.type.replace(/_/g, ' ')} detected and logged.`, 'danger');
+            }
+        }
+    });
+  }
+
   quizArea.innerHTML = `
     <div class="card">
       <div class="flex-between p-10 mb-20" style="position: sticky; top:0; background:#fff; z-index:10; border-bottom:1px solid var(--border)">
@@ -1819,6 +1893,7 @@ function getQuizAnswers() {
 }
 
 async function submitQuiz() {
+  AntiCheat.destroy();
   const btn = document.getElementById('submitQuizBtn');
   if (btn) btn.disabled = true;
 
@@ -2031,6 +2106,7 @@ async function deleteSubmissionById(assignmentId, studentEmail) {
   if (confirm('Delete submission?')) { try { await SupabaseDB.deleteSubmission(assignmentId, studentEmail); renderAssignments(); } catch (e) { alert('Error'); } }
 }
 async function submitAssignment(assignmentId, studentEmail) {
+  AntiCheat.destroy();
   const btn = document.getElementById('submitAssignBtn');
   if (btn) { btn.disabled = true; btn.textContent = 'Uploading...'; }
 
@@ -2118,6 +2194,7 @@ function initNav() {
         else if(page === 'analytics') renderAnalytics();
         else if(page === 'calendar') renderCalendar();
         else if(page === 'materials') renderMaterials();
+        else if(page === 'anticheat') renderAntiCheat();
         else if(page === 'discussions') renderDiscussions();
         else if(page === 'certificates') renderCertificates();
         else if(page === 'planner') renderPlanner();
