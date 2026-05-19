@@ -166,8 +166,7 @@ class SupabaseDB {
             reset_request: user.reset_request,
             active: user.active,
             notification_preferences: user.notification_preferences,
-            metadata: user.metadata,
-            updated_at: new Date().toISOString()
+            metadata: user.metadata
         };
 
         const { data, error } = await supabaseClient
@@ -350,8 +349,7 @@ class SupabaseDB {
             questions: assignment.questions,
             attachments: assignment.attachments,
             anti_cheat_config: assignment.anti_cheat_config,
-            status: assignment.status,
-            updated_at: new Date().toISOString()
+            status: assignment.status
         };
         if (assignment.id) payload.id = assignment.id;
         if (assignment.created_at) payload.created_at = assignment.created_at;
@@ -435,8 +433,7 @@ class SupabaseDB {
             feedback: submission.feedback,
             regrade_request: submission.regrade_request,
             graded_at: submission.graded_at,
-            status: submission.status,
-            updated_at: new Date().toISOString()
+            status: submission.status
         };
         if (submission.id) payload.id = submission.id;
 
@@ -681,8 +678,7 @@ class SupabaseDB {
             created_by: course.created_by,
             enrollment_id: course.enrollment_id,
             status: course.status,
-            metadata: course.metadata,
-            updated_at: new Date().toISOString()
+            metadata: course.metadata
         };
         if (course.id) payload.id = course.id;
         if (course.created_at) payload.created_at = course.created_at;
@@ -751,8 +747,7 @@ class SupabaseDB {
             title: lesson.title,
             content: lesson.content,
             video_url: lesson.video_url,
-            order_index: lesson.order_index,
-            updated_at: new Date().toISOString()
+            order_index: lesson.order_index
         };
         if (lesson.id) payload.id = lesson.id;
         if (lesson.created_at) payload.created_at = lesson.created_at;
@@ -791,8 +786,7 @@ class SupabaseDB {
             title: material.title,
             description: material.description,
             file_url: material.file_url,
-            file_type: material.file_type,
-            created_at: material.created_at || new Date().toISOString()
+            file_type: material.file_type
         };
         if (material.id) payload.id = material.id;
         const { data, error } = await supabaseClient
@@ -835,8 +829,7 @@ class SupabaseDB {
             user_email: discussion.user_email,
             parent_id: discussion.parent_id,
             title: discussion.title,
-            content: discussion.content,
-            updated_at: new Date().toISOString()
+            content: discussion.content
         };
         if (discussion.id) payload.id = discussion.id;
         if (discussion.created_at) payload.created_at = discussion.created_at;
@@ -891,8 +884,7 @@ class SupabaseDB {
             questions: quiz.questions,
             shuffle_questions: quiz.shuffle_questions,
             anti_cheat_config: quiz.anti_cheat_config,
-            status: quiz.status,
-            updated_at: new Date().toISOString()
+            status: quiz.status
         };
         if (quiz.id) payload.id = quiz.id;
         if (quiz.created_at) payload.created_at = quiz.created_at;

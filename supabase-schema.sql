@@ -404,6 +404,12 @@ BEGIN
     ALTER TABLE quiz_submissions ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
     ALTER TABLE quiz_submissions ADD COLUMN IF NOT EXISTS attempt_number INTEGER;
 
+    -- Populate attempt_number for existing rows (Safe default)
+    UPDATE quiz_submissions SET attempt_number = 1 WHERE attempt_number IS NULL;
+
+    -- Now enforce NOT NULL
+    ALTER TABLE quiz_submissions ALTER COLUMN attempt_number SET NOT NULL;
+
     DO $$ BEGIN
         IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'quiz_submissions_quiz_id_student_email_attempt_number_key') THEN
             ALTER TABLE quiz_submissions ADD CONSTRAINT quiz_submissions_quiz_id_student_email_attempt_number_key UNIQUE(quiz_id, student_email, attempt_number);
@@ -412,6 +418,7 @@ BEGIN
 
     -- materials
     ALTER TABLE materials ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
+    ALTER TABLE materials ADD COLUMN IF NOT EXISTS teacher_email VARCHAR(255) REFERENCES users(email) ON UPDATE CASCADE ON DELETE SET NULL;
 
     -- notifications
     ALTER TABLE notifications ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
@@ -419,6 +426,7 @@ BEGIN
 
     -- broadcasts
     ALTER TABLE broadcasts ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
+    ALTER TABLE broadcasts ADD COLUMN IF NOT EXISTS expires_at TIMESTAMP WITH TIME ZONE DEFAULT (NOW() + INTERVAL '30 days');
 
     -- maintenance
     ALTER TABLE maintenance ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
@@ -438,12 +446,21 @@ BEGIN
 
     -- invites
     ALTER TABLE invites ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
+    ALTER TABLE invites ADD COLUMN IF NOT EXISTS created_by VARCHAR(255) REFERENCES users(email) ON UPDATE CASCADE ON DELETE SET NULL;
+
+    -- discussions
+    ALTER TABLE discussions ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
 
     -- system_logs
     ALTER TABLE system_logs ADD COLUMN IF NOT EXISTS expires_at TIMESTAMP WITH TIME ZONE DEFAULT (NOW() + INTERVAL '30 days');
 
     -- violations
+    ALTER TABLE violations ADD COLUMN IF NOT EXISTS assessment_id UUID;
+    ALTER TABLE violations ADD COLUMN IF NOT EXISTS assessment_type VARCHAR(50);
+    ALTER TABLE violations ADD COLUMN IF NOT EXISTS type VARCHAR(100);
     ALTER TABLE violations ADD COLUMN IF NOT EXISTS expires_at TIMESTAMP WITH TIME ZONE DEFAULT (NOW() + INTERVAL '365 days');
+
+    -- Add missing indexes (Idempotent outside DO block)
 END $$;
 
 -- Ensure composite unique constraints exist for idempotent upserts
@@ -469,7 +486,7 @@ BEGIN
         SELECT table_name
         FROM information_schema.tables
         WHERE table_schema = 'public'
-        AND table_name IN ('users', 'user_secrets', 'courses', 'lessons', 'enrollments', 'assignments', 'submissions', 'live_classes', 'attendance', 'quizzes', 'quiz_submissions', 'materials', 'discussions', 'notifications', 'broadcasts', 'maintenance', 'planner', 'certificates', 'study_sessions', 'invites')
+        AND table_name IN ('users', 'user_secrets', 'courses', 'lessons', 'enrollments', 'assignments', 'submissions', 'live_classes', 'attendance', 'quizzes', 'quiz_submissions', 'materials', 'discussions', 'notifications', 'broadcasts', 'maintenance', 'planner', 'certificates', 'study_sessions', 'invites', 'system_logs', 'violations')
     LOOP
         EXECUTE format('DROP TRIGGER IF EXISTS update_%I_updated_at ON %I', t, t);
         EXECUTE format('CREATE TRIGGER update_%I_updated_at BEFORE UPDATE ON %I FOR EACH ROW EXECUTE PROCEDURE update_updated_at_column()', t, t);
@@ -1015,6 +1032,11 @@ CREATE TRIGGER tr_purge_maintenance
   AFTER INSERT ON system_logs
   FOR EACH STATEMENT EXECUTE PROCEDURE tr_call_purge_expired();
 
+DROP TRIGGER IF EXISTS tr_purge_maintenance_notify ON notifications;
+CREATE TRIGGER tr_purge_maintenance_notify
+  AFTER INSERT ON notifications
+  FOR EACH STATEMENT EXECUTE PROCEDURE tr_call_purge_expired();
+
 CREATE OR REPLACE FUNCTION get_server_time()
 RETURNS TIMESTAMP WITH TIME ZONE AS $$
   SELECT NOW();
@@ -1098,8 +1120,8 @@ CREATE POLICY "Users: No Direct Insert" ON users FOR INSERT WITH CHECK (false); 
 -- 2. Courses Table
 DROP POLICY IF EXISTS "Courses: Select" ON courses;
 CREATE POLICY "Courses: Select" ON courses FOR SELECT USING (status = 'published' OR teacher_email = get_auth_email() OR is_admin());
-DROP POLICY IF EXISTS "Courses: All for Teachers/Admins" ON courses;
-CREATE POLICY "Courses: All for Teachers/Admins" ON courses FOR ALL USING (is_teacher() OR is_admin());
+DROP POLICY IF EXISTS "Courses: Teachers Manage" ON courses;
+CREATE POLICY "Courses: Teachers Manage" ON courses FOR ALL USING (teacher_email = get_auth_email() OR is_admin());
 
 -- 3. Lessons Table
 DROP POLICY IF EXISTS "Lessons: Select" ON lessons;
@@ -1107,8 +1129,10 @@ CREATE POLICY "Lessons: Select" ON lessons FOR SELECT USING (
   EXISTS (SELECT 1 FROM enrollments WHERE course_id = lessons.course_id AND student_email = get_auth_email()) OR
   EXISTS (SELECT 1 FROM courses WHERE id = lessons.course_id AND (teacher_email = get_auth_email() OR is_admin()))
 );
-DROP POLICY IF EXISTS "Lessons: Manage for Teachers/Admins" ON lessons;
-CREATE POLICY "Lessons: Manage for Teachers/Admins" ON lessons FOR ALL USING (is_teacher() OR is_admin());
+DROP POLICY IF EXISTS "Lessons: Teachers Manage" ON lessons;
+CREATE POLICY "Lessons: Teachers Manage" ON lessons FOR ALL USING (
+  EXISTS (SELECT 1 FROM courses WHERE id = lessons.course_id AND (teacher_email = get_auth_email() OR is_admin()))
+);
 
 -- 4. Enrollments Table
 DROP POLICY IF EXISTS "Enrollments: User Access" ON enrollments;
@@ -1124,8 +1148,8 @@ CREATE POLICY "Assignments: Select" ON assignments FOR SELECT USING (
   EXISTS (SELECT 1 FROM enrollments WHERE course_id = assignments.course_id AND student_email = get_auth_email()) OR
   teacher_email = get_auth_email() OR is_admin()
 );
-DROP POLICY IF EXISTS "Assignments: Manage for Teachers/Admins" ON assignments;
-CREATE POLICY "Assignments: Manage for Teachers/Admins" ON assignments FOR ALL USING (teacher_email = get_auth_email() OR is_admin());
+DROP POLICY IF EXISTS "Assignments: Teachers Manage" ON assignments;
+CREATE POLICY "Assignments: Teachers Manage" ON assignments FOR ALL USING (teacher_email = get_auth_email() OR is_admin());
 
 -- 6. Submissions Table
 DROP POLICY IF EXISTS "Submissions: Select" ON submissions;
@@ -1147,8 +1171,8 @@ CREATE POLICY "Live Classes: Select" ON live_classes FOR SELECT USING (
   EXISTS (SELECT 1 FROM enrollments WHERE course_id = live_classes.course_id AND student_email = get_auth_email()) OR
   teacher_email = get_auth_email() OR is_admin()
 );
-DROP POLICY IF EXISTS "Live Classes: Manage for Teachers/Admins" ON live_classes;
-CREATE POLICY "Live Classes: Manage for Teachers/Admins" ON live_classes FOR ALL USING (teacher_email = get_auth_email() OR is_admin());
+DROP POLICY IF EXISTS "Live Classes: Teachers Manage" ON live_classes;
+CREATE POLICY "Live Classes: Teachers Manage" ON live_classes FOR ALL USING (teacher_email = get_auth_email() OR is_admin());
 
 -- 8. Attendance Table
 DROP POLICY IF EXISTS "Attendance: Access" ON attendance;
@@ -1162,8 +1186,8 @@ CREATE POLICY "Quizzes: Select" ON quizzes FOR SELECT USING (
   EXISTS (SELECT 1 FROM enrollments WHERE course_id = quizzes.course_id AND student_email = get_auth_email()) OR
   teacher_email = get_auth_email() OR is_admin()
 );
-DROP POLICY IF EXISTS "Quizzes: Manage for Teachers/Admins" ON quizzes;
-CREATE POLICY "Quizzes: Manage for Teachers/Admins" ON quizzes FOR ALL USING (teacher_email = get_auth_email() OR is_admin());
+DROP POLICY IF EXISTS "Quizzes: Teachers Manage" ON quizzes;
+CREATE POLICY "Quizzes: Teachers Manage" ON quizzes FOR ALL USING (teacher_email = get_auth_email() OR is_admin());
 
 -- 10. Quiz Submissions Table
 DROP POLICY IF EXISTS "Quiz Submissions: Access" ON quiz_submissions;
@@ -1180,8 +1204,8 @@ CREATE POLICY "Materials: Select" ON materials FOR SELECT USING (
   EXISTS (SELECT 1 FROM enrollments WHERE course_id = materials.course_id AND student_email = get_auth_email()) OR
   teacher_email = get_auth_email() OR is_admin()
 );
-DROP POLICY IF EXISTS "Materials: Manage for Teachers/Admins" ON materials;
-CREATE POLICY "Materials: Manage for Teachers/Admins" ON materials FOR ALL USING (teacher_email = get_auth_email() OR is_admin());
+DROP POLICY IF EXISTS "Materials: Teachers Manage" ON materials;
+CREATE POLICY "Materials: Teachers Manage" ON materials FOR ALL USING (teacher_email = get_auth_email() OR is_admin());
 
 -- 12. Discussions Table
 DROP POLICY IF EXISTS "Discussions: Access" ON discussions;
@@ -1201,8 +1225,8 @@ CREATE POLICY "Broadcasts: Access" ON broadcasts FOR SELECT USING (
   EXISTS (SELECT 1 FROM enrollments WHERE course_id = broadcasts.course_id AND student_email = get_auth_email()) OR
   EXISTS (SELECT 1 FROM courses WHERE id = broadcasts.course_id AND (teacher_email = get_auth_email() OR is_admin()))
 );
-DROP POLICY IF EXISTS "Broadcasts: Manage for Teachers/Admins" ON broadcasts;
-CREATE POLICY "Broadcasts: Manage for Teachers/Admins" ON broadcasts FOR ALL USING (is_teacher() OR is_admin());
+DROP POLICY IF EXISTS "Broadcasts: Manage" ON broadcasts;
+CREATE POLICY "Broadcasts: Manage" ON broadcasts FOR ALL USING (is_teacher() OR is_admin());
 
 -- 15. Maintenance Table
 DROP POLICY IF EXISTS "Maintenance: Select" ON maintenance;
