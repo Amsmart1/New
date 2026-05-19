@@ -660,7 +660,8 @@ async function updateMaintBanner() {
 
             // Check for session invalidation (single-session enforcement)
             const currentSid = SessionManager.getSessionId();
-            const sessionMismatch = fresh && fresh.session_id && fresh.session_id !== currentSid;
+            const dbSid = await SupabaseDB.getCurrentSessionId();
+            const sessionMismatch = dbSid && dbSid !== currentSid;
 
             if ((isMaint && user.role !== 'admin') || isRestricted || sessionMismatch) {
                 let msg = isMaint ? 'System entered maintenance mode.' : 'Your account status has changed.';
