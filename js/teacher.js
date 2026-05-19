@@ -571,6 +571,24 @@ async function showAssignmentForm(assignment = null, courseId = null) {
           <option value="draft" ${isEdit && assignment.status === 'draft' ? 'selected' : ''}>Draft</option>
           <option value="published" ${isEdit && assignment.status === 'published' ? 'selected' : ''}>Published</option>
         </select>
+
+        <div class="mt-20">
+          <button type="button" class="button secondary w-auto small" onclick="toggleAntiCheatConfig('assignment')">🛡️ Configure Anti-Cheat</button>
+          <div id="antiCheatConfigArea" class="hidden card mt-10" style="background: #f8fafc">
+            <h4 class="m-0 mb-10">Anti-Cheat Settings</h4>
+            <div class="grid-3">
+              <label class="flex-center-y gap-5"><input type="checkbox" class="ac-flag" data-flag="BLOCK_COPY" ${assignment?.anti_cheat_config?.BLOCK_COPY ? 'checked' : ''}> Block Copy</label>
+              <label class="flex-center-y gap-5"><input type="checkbox" class="ac-flag" data-flag="BLOCK_PASTE" ${assignment?.anti_cheat_config?.BLOCK_PASTE ? 'checked' : ''}> Block Paste</label>
+              <label class="flex-center-y gap-5"><input type="checkbox" class="ac-flag" data-flag="BLOCK_CUT" ${assignment?.anti_cheat_config?.BLOCK_CUT ? 'checked' : ''}> Block Cut</label>
+              <label class="flex-center-y gap-5"><input type="checkbox" class="ac-flag" data-flag="BLOCK_CONTEXT_MENU" ${assignment?.anti_cheat_config?.BLOCK_CONTEXT_MENU ? 'checked' : ''}> Block Context Menu</label>
+              <label class="flex-center-y gap-5"><input type="checkbox" class="ac-flag" data-flag="BLOCK_TAB_SWITCH" ${assignment?.anti_cheat_config?.BLOCK_TAB_SWITCH ? 'checked' : ''}> Block Tab Switch</label>
+              <label class="flex-center-y gap-5"><input type="checkbox" class="ac-flag" data-flag="BLOCK_DEVTOOLS" ${assignment?.anti_cheat_config?.BLOCK_DEVTOOLS ? 'checked' : ''}> Block DevTools</label>
+              <label class="flex-center-y gap-5"><input type="checkbox" class="ac-flag" data-flag="FULLSCREEN_REQUIRED" ${assignment?.anti_cheat_config?.FULLSCREEN_REQUIRED ? 'checked' : ''}> Require Fullscreen</label>
+              <label class="flex-center-y gap-5"><input type="checkbox" class="ac-flag" data-flag="MULTI_TAB_LOCK" ${assignment?.anti_cheat_config?.MULTI_TAB_LOCK ? 'checked' : ''}> Multi-Tab Lock</label>
+              <label class="flex-center-y gap-5"><input type="checkbox" class="ac-flag" data-flag="BLOCK_KEYBOARD_SHORTCUTS" ${assignment?.anti_cheat_config?.BLOCK_KEYBOARD_SHORTCUTS ? 'checked' : ''}> Block Shortcuts</label>
+            </div>
+          </div>
+        </div>
         <div class="mt-20">
           <h3 class="m-0">Questions</h3>
           <div id="questionsContainer" class="mt-15"></div>
@@ -647,6 +665,11 @@ async function showAssignmentForm(assignment = null, courseId = null) {
       });
       const allowedExt = document.getElementById('allowedExtensions').value.split(',').map(e => e.trim().toLowerCase()).filter(e => e);
       const selCourseId = document.getElementById('assignmentCourseId').value;
+      const acConfig = {};
+      document.querySelectorAll('#antiCheatConfigArea .ac-flag').forEach(cb => {
+          acConfig[cb.dataset.flag] = cb.checked;
+      });
+
       const assignmentData = {
         ...assignment,
         id: isEdit ? assignment.id : crypto.randomUUID(),
@@ -659,6 +682,7 @@ async function showAssignmentForm(assignment = null, courseId = null) {
         late_penalty_per_day: parseInt(document.getElementById('assignmentLatePenalty').value) || 0,
         allow_late_submissions: document.getElementById('assignmentAllowLate').value === 'true',
         status: document.getElementById('assignmentStatus').value,
+        anti_cheat_config: acConfig,
         teacher_email: user.email,
         created_at: isEdit ? assignment.created_at : new Date().toISOString(),
         updated_at: new Date().toISOString(),
@@ -1010,6 +1034,62 @@ window.renderLiveClasses = renderLiveClasses;
 window.showCertForm = showCertForm;
 window.issueCert = issueCert;
 window.renderCalendar = renderCalendar;
+
+async function renderAntiCheat() {
+  showLoading();
+  const content = document.getElementById('pageContent');
+  if (!content) return;
+  clearActiveCountdowns();
+
+  try {
+    const user = await SessionManager.getCurrentUser();
+    const [violations, courses] = await Promise.all([
+      SupabaseDB.getViolations(null, null, user.email),
+      SupabaseDB.getCourses(user.email)
+    ]);
+
+    content.innerHTML = `
+      <div class="card flex-between">
+        <h2 class="m-0">Anti-Cheat Violations</h2>
+        <button class="button w-auto secondary" onclick="renderAntiCheat()">Refresh</button>
+      </div>
+      <div class="card mt-20 p-0" style="overflow-x:auto">
+        <table>
+          <thead>
+            <tr>
+              <th>Timestamp</th>
+              <th>Student</th>
+              <th>Assessment</th>
+              <th>Type</th>
+              <th>Details</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${violations.map(v => `
+              <tr>
+                <td class="small">${new Date(v.timestamp).toLocaleString()}</td>
+                <td class="small">${escapeHtml(v.user_email)}</td>
+                <td class="small">${v.assessment_type.toUpperCase()}</td>
+                <td><span class="badge badge-warn">${escapeHtml(v.type)}</span></td>
+                <td class="small">${JSON.stringify(v.details)}</td>
+              </tr>
+            `).join('') || '<tr><td colspan="5" class="empty">No violations detected.</td></tr>'}
+          </tbody>
+        </table>
+      </div>
+    `;
+  } catch (error) {
+    console.error('AntiCheat error:', error);
+    content.innerHTML = `<div class="card danger-border"><h3>Error Loading Violations</h3></div>`;
+  }
+}
+window.renderAntiCheat = renderAntiCheat;
+
+function toggleAntiCheatConfig() {
+    const area = document.getElementById('antiCheatConfigArea');
+    if (area) area.classList.toggle('hidden');
+}
+window.toggleAntiCheatConfig = toggleAntiCheatConfig;
 
 async function renderSettings() {
     NotificationManager.renderSettings('Settings', 'Enable real-time desktop notifications even when the app is closed.');
@@ -1629,6 +1709,24 @@ async function showQuizForm(quiz = null) {
           <option value="draft" ${isEdit && quiz.status === 'draft' ? 'selected' : ''}>Draft</option>
           <option value="published" ${isEdit && quiz.status === 'published' ? 'selected' : ''}>Published</option>
         </select>
+
+        <div class="mt-20">
+          <button type="button" class="button secondary w-auto small" onclick="toggleAntiCheatConfig('quiz')">🛡️ Configure Anti-Cheat</button>
+          <div id="antiCheatConfigArea" class="hidden card mt-10" style="background: #f8fafc">
+            <h4 class="m-0 mb-10">Anti-Cheat Settings</h4>
+            <div class="grid-3">
+              <label class="flex-center-y gap-5"><input type="checkbox" class="ac-flag" data-flag="BLOCK_COPY" ${quiz?.anti_cheat_config?.BLOCK_COPY ? 'checked' : ''}> Block Copy</label>
+              <label class="flex-center-y gap-5"><input type="checkbox" class="ac-flag" data-flag="BLOCK_PASTE" ${quiz?.anti_cheat_config?.BLOCK_PASTE ? 'checked' : ''}> Block Paste</label>
+              <label class="flex-center-y gap-5"><input type="checkbox" class="ac-flag" data-flag="BLOCK_CUT" ${quiz?.anti_cheat_config?.BLOCK_CUT ? 'checked' : ''}> Block Cut</label>
+              <label class="flex-center-y gap-5"><input type="checkbox" class="ac-flag" data-flag="BLOCK_CONTEXT_MENU" ${quiz?.anti_cheat_config?.BLOCK_CONTEXT_MENU ? 'checked' : ''}> Block Context Menu</label>
+              <label class="flex-center-y gap-5"><input type="checkbox" class="ac-flag" data-flag="BLOCK_TAB_SWITCH" ${quiz?.anti_cheat_config?.BLOCK_TAB_SWITCH ? 'checked' : ''}> Block Tab Switch</label>
+              <label class="flex-center-y gap-5"><input type="checkbox" class="ac-flag" data-flag="BLOCK_DEVTOOLS" ${quiz?.anti_cheat_config?.BLOCK_DEVTOOLS ? 'checked' : ''}> Block DevTools</label>
+              <label class="flex-center-y gap-5"><input type="checkbox" class="ac-flag" data-flag="FULLSCREEN_REQUIRED" ${quiz?.anti_cheat_config?.FULLSCREEN_REQUIRED ? 'checked' : ''}> Require Fullscreen</label>
+              <label class="flex-center-y gap-5"><input type="checkbox" class="ac-flag" data-flag="MULTI_TAB_LOCK" ${quiz?.anti_cheat_config?.MULTI_TAB_LOCK ? 'checked' : ''}> Multi-Tab Lock</label>
+              <label class="flex-center-y gap-5"><input type="checkbox" class="ac-flag" data-flag="BLOCK_KEYBOARD_SHORTCUTS" ${quiz?.anti_cheat_config?.BLOCK_KEYBOARD_SHORTCUTS ? 'checked' : ''}> Block Shortcuts</label>
+            </div>
+          </div>
+        </div>
         <div class="mt-20">
           <div class="flex-between">
             <h3 class="m-0">Questions</h3>
@@ -1729,6 +1827,11 @@ window.shuffleQuizQuestions = () => {
         }
         questions.push(qData);
       });
+      const acConfig = {};
+      document.querySelectorAll('#antiCheatConfigArea .ac-flag').forEach(cb => {
+          acConfig[cb.dataset.flag] = cb.checked;
+      });
+
       await SupabaseDB.saveQuiz({
         ...quiz,
         id: isEdit ? quiz.id : crypto.randomUUID(),
@@ -1743,6 +1846,7 @@ window.shuffleQuizQuestions = () => {
         end_at: document.getElementById('quizEndAt').value ? new Date(document.getElementById('quizEndAt').value).toISOString() : null,
         shuffle_questions: document.getElementById('quizShuffle').value === 'true',
         status: document.getElementById('quizStatus').value,
+        anti_cheat_config: acConfig,
         questions,
         updated_at: new Date().toISOString()
       });
@@ -2088,6 +2192,7 @@ function initNav() {
         else if(page === 'quizzes') renderQuizzes();
         else if(page === 'live') renderLiveClasses();
         else if(page === 'calendar') renderCalendar();
+        else if(page === 'anticheat') renderAntiCheat();
         else if(page === 'settings') renderSettings();
       });
     });

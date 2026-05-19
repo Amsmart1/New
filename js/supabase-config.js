@@ -1247,6 +1247,57 @@ class SupabaseDB {
         if (error) throw error;
     }
 
+    // Violation operations
+    static async saveViolation(violation) {
+        const payload = {
+            user_email: violation.user_email,
+            assessment_id: violation.assessment_id,
+            assessment_type: violation.assessment_type,
+            type: violation.type,
+            details: violation.details,
+            timestamp: violation.timestamp
+        };
+        const { data, error } = await supabaseClient
+            .from('violations')
+            .insert([payload])
+            .select();
+        if (error) throw error;
+        return data?.[0];
+    }
+
+    static async getViolations(assessmentId = null, userEmail = null, teacherEmail = null) {
+        if (teacherEmail) {
+            // Get teacher's course IDs first
+            const courses = await this.getCourses(teacherEmail);
+            const courseIds = courses.map(c => c.id);
+            if (courseIds.length === 0) return [];
+
+            // Get assignments and quizzes for these courses
+            const [assigns, quizzes] = await Promise.all([
+                this.getAssignments(null, null, courseIds),
+                this.getQuizzes(null, null, courseIds)
+            ]);
+            const assessmentIds = [...assigns.map(a => a.id), ...quizzes.map(q => q.id)];
+            if (assessmentIds.length === 0) return [];
+
+            const { data, error } = await supabaseClient
+                .from('violations')
+                .select('*')
+                .in('assessment_id', assessmentIds)
+                .order('timestamp', { ascending: false });
+            if (error) throw error;
+            return data || [];
+        }
+
+        let query = supabaseClient.from('violations').select('*');
+        if (assessmentId) query = query.eq('assessment_id', assessmentId);
+        if (userEmail) query = query.eq('user_email', userEmail);
+
+        const { data, error } = await query.order('timestamp', { ascending: false });
+        if (error) throw error;
+        return data || [];
+    }
+
     // Storage operations
     static async uploadFile(bucket, path, file) {
         const { data, error } = await supabaseClient.storage
