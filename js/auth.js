@@ -443,11 +443,10 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             const hashedInput = await Auth.hashPassword(password, email);
-            sessionStorage.removeItem('sessionId');
-            const sid = SessionManager.getSessionId();
 
             try {
-                const authResult = await SupabaseDB.authenticateUser(email, hashedInput, sid);
+                // Perform credentials check first (passing null for session ID initially)
+                const authResult = await SupabaseDB.authenticateUser(email, hashedInput, null);
 
                 if (!authResult.success) {
                     if (passErr) passErr.innerText = authResult.message || 'Login failed';
@@ -456,17 +455,24 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 const authUser = authResult.user;
 
+                // Enforce session ID generation and persistence after successful credentials check
+                sessionStorage.removeItem('sessionId');
+                const sid = SessionManager.getSessionId();
+                authUser.session_id = sid;
+                await SupabaseDB.saveUser(authUser);
+
+                // Establish RLS session context
+                window.setSupabaseSession(sid);
+
                 // Handle approved reset redirection
                 if (authUser.reset_request && authUser.reset_request.status === 'approved') {
                     await SessionManager.setCurrentUser(authUser);
-                    window.setSupabaseSession(sid);
                     Auth.showNewPassword();
                     return;
                 }
 
                 // Normal Login
                 await SessionManager.setCurrentUser(authUser);
-                window.setSupabaseSession(sid);
 
                 alert(`Welcome back ${authUser.full_name}!`);
                 Auth.redirectByRole(authUser.role);
