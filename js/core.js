@@ -655,13 +655,19 @@ async function updateMaintBanner() {
         if (user) {
             // Bypass cache to get real-time status during polling
             const fresh = await SupabaseDB.getUser(user.email, true);
+            if (!fresh) {
+                console.warn('Could not fetch user data during polling.');
+                return;
+            }
+
             const isMaint = isActiveMaintenance(m);
-            const isRestricted = !fresh || !fresh.active || fresh.flagged || isAccountLocked(fresh);
+            const isRestricted = !fresh.active || fresh.flagged || isAccountLocked(fresh);
 
             // Check for session invalidation (single-session enforcement)
-            const currentSid = sessionStorage.getItem('sessionId');
+            // After fetching fresh user data, compare fresh.session_id with SessionManager.getSessionId().
+            const localSid = SessionManager.getSessionId();
             const dbSid = await SupabaseDB.getCurrentSessionId();
-            const sessionMismatch = currentSid && dbSid !== currentSid;
+            const sessionMismatch = dbSid && dbSid !== localSid;
 
             if ((isMaint && user.role !== 'admin') || isRestricted || sessionMismatch) {
                 let msg = isMaint ? 'System entered maintenance mode.' : 'Your account status has changed.';

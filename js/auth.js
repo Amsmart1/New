@@ -443,11 +443,13 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             const hashedInput = await Auth.hashPassword(password, email);
-            sessionStorage.removeItem('sessionId');
-            const sid = SessionManager.getSessionId();
 
             try {
-                const authResult = await SupabaseDB.authenticateUser(email, hashedInput, sid);
+                // Ensure a valid session context for authentication
+                const initialSid = SessionManager.getSessionId();
+                window.setSupabaseSession(initialSid);
+
+                const authResult = await SupabaseDB.authenticateUser(email, hashedInput, initialSid);
 
                 if (!authResult.success) {
                     if (passErr) passErr.innerText = authResult.message || 'Login failed';
@@ -456,17 +458,23 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 const authUser = authResult.user;
 
+                // After successful credentials check, clear sessionId from sessionStorage,
+                // assign SessionManager.getSessionId() to user.session_id and call await SupabaseDB.saveUser(user)
+                // before SessionManager.setCurrentUser(user).
+                sessionStorage.removeItem('sessionId');
+                const newSid = SessionManager.getSessionId();
+                authUser.session_id = newSid;
+                await SupabaseDB.saveUser(authUser);
+
+                // Establish RLS session context with new rotated session ID
+                window.setSupabaseSession(newSid);
+                await SessionManager.setCurrentUser(authUser);
+
                 // Handle approved reset redirection
                 if (authUser.reset_request && authUser.reset_request.status === 'approved') {
-                    await SessionManager.setCurrentUser(authUser);
-                    window.setSupabaseSession(sid);
                     Auth.showNewPassword();
                     return;
                 }
-
-                // Normal Login
-                await SessionManager.setCurrentUser(authUser);
-                window.setSupabaseSession(sid);
 
                 alert(`Welcome back ${authUser.full_name}!`);
                 Auth.redirectByRole(authUser.role);
@@ -607,29 +615,29 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
 
-            // update password and clear reset request
+            // Update password and clear reset request
             freshUser.password = await Auth.hashPassword(newPass, freshUser.email);
             freshUser.reset_request = null;
 
-            // Generate and persist new session ID after password change
+            // After updating the password, clear sessionId from sessionStorage,
+            // assign SessionManager.getSessionId() to freshUser.session_id and ensure it's saved in SupabaseDB.saveUser(freshUser).
             sessionStorage.removeItem('sessionId');
-            freshUser.session_id = SessionManager.getSessionId();
+            const sid = SessionManager.getSessionId();
+            freshUser.session_id = sid;
+            await SupabaseDB.saveUser(freshUser);
 
-            // Establish RLS session context
-            window.setSupabaseSession(freshUser.session_id);
-
-            // Update password in secrets and clear reset request
-            await Promise.all([
-                SupabaseDB.saveUser(freshUser),
-                SupabaseDB.createNotification(
-                    freshUser.email,
-                    'Password Updated',
-                    'Password updated after reset.',
-                    null,
-                    'password_updated'
-                )
-            ]);
+            // Establish RLS session context and persist updated user data
+            window.setSupabaseSession(sid);
             await SessionManager.setCurrentUser(freshUser);
+
+            // Notify user of update
+            await SupabaseDB.createNotification(
+                freshUser.email,
+                'Password Updated',
+                'Password updated after reset.',
+                null,
+                'password_updated'
+            );
 
             alert('Password successfully reset. You can now login with your new password.');
             Auth.showLogin();
