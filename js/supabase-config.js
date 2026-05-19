@@ -1363,3 +1363,6 @@ class SessionManager {
         return sid;
     }
 }
+
+window.SupabaseDB = SupabaseDB;
+window.SessionManager = SessionManager;
