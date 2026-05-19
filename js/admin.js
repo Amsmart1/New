@@ -914,9 +914,9 @@ function showUserForm(user = null) {
           phone: document.getElementById('phone').value,
           password: hashedPassword,
           role: document.getElementById('role').value,
-          active: document.getElementById('active').checked,
-          created_at: isEdit ? user.created_at : new Date().toISOString()
+          active: document.getElementById('active').checked
       };
+      if (isEdit) userData.created_at = user.created_at;
       if (isEdit && user.email !== userData.email) {
           if (await SupabaseDB.updateUserEmail(user.email, userData.email, userData)) {
               alert('Updated including email!');

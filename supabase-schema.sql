@@ -23,7 +23,6 @@ CREATE TABLE IF NOT EXISTS users (
   email VARCHAR(255) PRIMARY KEY,
   full_name VARCHAR(255) NOT NULL,
   phone VARCHAR(50),
-  password VARCHAR(255) NOT NULL,
   role VARCHAR(50) NOT NULL CHECK (role IN ('student', 'teacher', 'admin')),
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
@@ -34,9 +33,16 @@ CREATE TABLE IF NOT EXISTS users (
   flagged BOOLEAN DEFAULT FALSE,
   reset_request JSONB,
   active BOOLEAN DEFAULT TRUE,
-  session_id VARCHAR(255),
   notification_preferences JSONB DEFAULT '{"email": true, "push": true, "inApp": true}'::jsonb,
   metadata JSONB DEFAULT '{}'::jsonb
+);
+
+-- Table for sensitive authentication data (Hidden from public SELECT)
+CREATE TABLE IF NOT EXISTS user_secrets (
+  email VARCHAR(255) PRIMARY KEY REFERENCES users(email) ON UPDATE CASCADE ON DELETE CASCADE,
+  password_hash VARCHAR(255) NOT NULL,
+  session_id VARCHAR(255),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
 CREATE TABLE IF NOT EXISTS courses (
@@ -307,11 +313,22 @@ CREATE TABLE IF NOT EXISTS violations (
 
 DO $$
 BEGIN
-    -- users
+    -- users (Move sensitive data if it exists)
     ALTER TABLE users ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
-    ALTER TABLE users ADD COLUMN IF NOT EXISTS session_id VARCHAR(255);
     ALTER TABLE users ADD COLUMN IF NOT EXISTS notification_preferences JSONB DEFAULT '{"email": true, "push": true, "inApp": true}'::jsonb;
     ALTER TABLE users ADD COLUMN IF NOT EXISTS metadata JSONB DEFAULT '{}'::jsonb;
+
+    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'users' AND column_name = 'password') THEN
+        INSERT INTO user_secrets (email, password_hash, session_id)
+        SELECT email, password, session_id FROM users
+        ON CONFLICT (email) DO NOTHING;
+
+        ALTER TABLE users DROP COLUMN IF EXISTS password;
+        ALTER TABLE users DROP COLUMN IF EXISTS session_id;
+    END IF;
+
+    -- user_secrets
+    ALTER TABLE user_secrets ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
 
     -- courses
     ALTER TABLE courses ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
@@ -334,9 +351,21 @@ BEGIN
     ALTER TABLE submissions ADD COLUMN IF NOT EXISTS question_feedback JSONB DEFAULT '{}'::jsonb;
     ALTER TABLE submissions ADD COLUMN IF NOT EXISTS question_scores JSONB DEFAULT '{}'::jsonb;
     ALTER TABLE submissions ADD COLUMN IF NOT EXISTS late_penalty_applied INTEGER DEFAULT 0;
-    -- Note: submissions already had a composite PK, adding id might need care if it doesn't exist
+
+    -- Ensure UUID PK for submissions
     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'submissions' AND column_name = 'id') THEN
         ALTER TABLE submissions ADD COLUMN id UUID DEFAULT uuid_generate_v4();
+    END IF;
+
+    -- Migration to UUID PK if it's still composite
+    IF EXISTS (
+        SELECT 1 FROM information_schema.table_constraints tc
+        JOIN information_schema.key_column_usage kcu ON tc.constraint_name = kcu.constraint_name
+        WHERE tc.table_name = 'submissions' AND tc.constraint_type = 'PRIMARY KEY'
+        GROUP BY tc.constraint_name HAVING COUNT(*) > 1
+    ) THEN
+        ALTER TABLE submissions DROP CONSTRAINT submissions_pkey;
+        ALTER TABLE submissions ADD PRIMARY KEY (id);
     END IF;
 
     -- live_classes
@@ -400,7 +429,7 @@ BEGIN
         SELECT table_name
         FROM information_schema.tables
         WHERE table_schema = 'public'
-        AND table_name IN ('users', 'courses', 'lessons', 'enrollments', 'assignments', 'submissions', 'live_classes', 'attendance', 'quizzes', 'quiz_submissions', 'materials', 'discussions', 'notifications', 'broadcasts', 'maintenance', 'planner', 'certificates', 'study_sessions', 'invites')
+        AND table_name IN ('users', 'user_secrets', 'courses', 'lessons', 'enrollments', 'assignments', 'submissions', 'live_classes', 'attendance', 'quizzes', 'quiz_submissions', 'materials', 'discussions', 'notifications', 'broadcasts', 'maintenance', 'planner', 'certificates', 'study_sessions', 'invites')
     LOOP
         EXECUTE format('DROP TRIGGER IF EXISTS update_%I_updated_at ON %I', t, t);
         EXECUTE format('CREATE TRIGGER update_%I_updated_at BEFORE UPDATE ON %I FOR EACH ROW EXECUTE PROCEDURE update_updated_at_column()', t, t);
@@ -578,6 +607,61 @@ CREATE TRIGGER tr_validate_quiz_submission_time
 BEFORE INSERT OR UPDATE ON quiz_submissions
 FOR EACH ROW EXECUTE PROCEDURE validate_quiz_submission_time();
 
+CREATE OR REPLACE FUNCTION validate_quiz_attempts()
+RETURNS TRIGGER AS $$
+DECLARE
+    v_attempts_allowed INTEGER;
+    v_current_attempts INTEGER;
+BEGIN
+    SELECT attempts_allowed INTO v_attempts_allowed FROM quizzes WHERE id = NEW.quiz_id;
+
+    IF v_attempts_allowed IS NOT NULL AND v_attempts_allowed > 0 THEN
+        SELECT COUNT(*) INTO v_current_attempts FROM quiz_submissions WHERE quiz_id = NEW.quiz_id AND student_email = NEW.student_email;
+        IF v_current_attempts >= v_attempts_allowed THEN
+            RAISE EXCEPTION 'You have reached the maximum number of attempts allowed for this quiz.';
+        END IF;
+    END IF;
+
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS tr_validate_quiz_attempts ON quiz_submissions;
+CREATE TRIGGER tr_validate_quiz_attempts
+BEFORE INSERT ON quiz_submissions
+FOR EACH ROW EXECUTE PROCEDURE validate_quiz_attempts();
+
+-- JSONB Validation Functions
+CREATE OR REPLACE FUNCTION validate_jsonb_metadata() RETURNS TRIGGER AS $$
+BEGIN
+    IF NEW.metadata IS NOT NULL AND jsonb_typeof(NEW.metadata) != 'object' THEN
+        RAISE EXCEPTION 'metadata must be a JSON object';
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION validate_jsonb_questions() RETURNS TRIGGER AS $$
+BEGIN
+    IF NEW.questions IS NOT NULL AND jsonb_typeof(NEW.questions) != 'array' THEN
+        RAISE EXCEPTION 'questions must be a JSON array';
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS tr_validate_users_metadata ON users;
+CREATE TRIGGER tr_validate_users_metadata BEFORE INSERT OR UPDATE ON users FOR EACH ROW EXECUTE PROCEDURE validate_jsonb_metadata();
+
+DROP TRIGGER IF EXISTS tr_validate_courses_metadata ON courses;
+CREATE TRIGGER tr_validate_courses_metadata BEFORE INSERT OR UPDATE ON courses FOR EACH ROW EXECUTE PROCEDURE validate_jsonb_metadata();
+
+DROP TRIGGER IF EXISTS tr_validate_assignments_questions ON assignments;
+CREATE TRIGGER tr_validate_assignments_questions BEFORE INSERT OR UPDATE ON assignments FOR EACH ROW EXECUTE PROCEDURE validate_jsonb_questions();
+
+DROP TRIGGER IF EXISTS tr_validate_quizzes_questions ON quizzes;
+CREATE TRIGGER tr_validate_quizzes_questions BEFORE INSERT OR UPDATE ON quizzes FOR EACH ROW EXECUTE PROCEDURE validate_jsonb_questions();
+
 -- 6. Indexes
 
 CREATE INDEX IF NOT EXISTS idx_users_role ON users(role);
@@ -603,6 +687,9 @@ CREATE INDEX IF NOT EXISTS idx_quizzes_status ON quizzes(status);
 CREATE INDEX IF NOT EXISTS idx_assignments_status ON assignments(status);
 CREATE INDEX IF NOT EXISTS idx_violations_assessment ON violations(assessment_id);
 CREATE INDEX IF NOT EXISTS idx_violations_user ON violations(user_email);
+
+-- Index for performant RLS identity resolution
+CREATE INDEX IF NOT EXISTS idx_user_secrets_session_id ON user_secrets(session_id);
 
 -- Composite Indexes for Foreign Key Pairs & Common Lookups
 CREATE INDEX IF NOT EXISTS idx_enrollments_composite ON enrollments(course_id, student_email);
@@ -638,7 +725,7 @@ BEGIN
   -- 2. Try custom x-session-id header (Custom SessionManager)
   v_session_id := current_setting('request.headers', true)::jsonb->>'x-session-id';
   IF v_session_id IS NOT NULL THEN
-    SELECT email INTO v_email FROM users WHERE session_id = v_session_id;
+    SELECT email INTO v_email FROM user_secrets WHERE session_id = v_session_id;
     RETURN v_email;
   END IF;
 
@@ -660,7 +747,10 @@ BEGIN
   -- 2. Try custom x-session-id header
   v_session_id := current_setting('request.headers', true)::jsonb->>'x-session-id';
   IF v_session_id IS NOT NULL THEN
-    SELECT role INTO v_role FROM users WHERE session_id = v_session_id;
+    SELECT u.role INTO v_role
+    FROM users u
+    JOIN user_secrets s ON u.email = s.email
+    WHERE s.session_id = v_session_id;
     RETURN v_role;
   END IF;
 
@@ -675,6 +765,137 @@ $$ LANGUAGE sql STABLE;
 CREATE OR REPLACE FUNCTION is_teacher() RETURNS BOOLEAN AS $$
   SELECT get_auth_role() = 'teacher';
 $$ LANGUAGE sql STABLE;
+
+-- Secure Auth Logic
+CREATE OR REPLACE FUNCTION authenticate_user(p_email VARCHAR, p_password_hash VARCHAR, p_session_id VARCHAR)
+RETURNS JSONB AS $$
+DECLARE
+  v_user users;
+  v_secret user_secrets;
+BEGIN
+  SELECT * INTO v_user FROM users WHERE email = p_email;
+  IF NOT FOUND THEN
+    RETURN jsonb_build_object('success', false, 'message', 'Account not found');
+  END IF;
+
+  IF NOT v_user.active THEN
+    RETURN jsonb_build_object('success', false, 'message', 'Account deactivated');
+  END IF;
+
+  IF v_user.flagged THEN
+    RETURN jsonb_build_object('success', false, 'message', 'Account flagged');
+  END IF;
+
+  IF v_user.locked_until IS NOT NULL AND v_user.locked_until > NOW() THEN
+    RETURN jsonb_build_object('success', false, 'message', 'Account locked until ' || v_user.locked_until);
+  END IF;
+
+  SELECT * INTO v_secret FROM user_secrets WHERE email = p_email;
+
+  IF v_secret.password_hash = p_password_hash THEN
+    -- Update session and login stats
+    UPDATE user_secrets SET session_id = p_session_id WHERE email = p_email;
+    UPDATE users SET last_login = NOW(), failed_attempts = 0, locked_until = NULL WHERE email = p_email;
+
+    RETURN jsonb_build_object('success', true, 'user', to_jsonb(v_user));
+  ELSE
+    -- Increment failed attempts
+    UPDATE users SET failed_attempts = failed_attempts + 1 WHERE email = p_email;
+
+    -- Lock account if too many attempts
+    IF v_user.failed_attempts + 1 >= 5 THEN
+        UPDATE users SET locked_until = NOW() + INTERVAL '30 minutes', failed_attempts = 0, lockouts = lockouts + 1 WHERE email = p_email;
+        -- Flag if too many lockouts
+        IF v_user.lockouts + 1 >= 3 THEN
+            UPDATE users SET flagged = TRUE WHERE email = p_email;
+        END IF;
+        RETURN jsonb_build_object('success', false, 'message', 'Too many failed attempts. Account locked for 30 minutes.');
+    END IF;
+
+    RETURN jsonb_build_object('success', false, 'message', 'Invalid password. ' || (5 - (v_user.failed_attempts + 1)) || ' attempts remaining.');
+  END IF;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Secure User Creation RPC
+CREATE OR REPLACE FUNCTION create_user_secure(
+    p_email VARCHAR,
+    p_full_name VARCHAR,
+    p_phone VARCHAR,
+    p_password_hash VARCHAR,
+    p_role VARCHAR,
+    p_session_id VARCHAR,
+    p_invite_token VARCHAR DEFAULT NULL,
+    p_active BOOLEAN DEFAULT TRUE,
+    p_metadata JSONB DEFAULT '{}'::jsonb
+) RETURNS JSONB AS $$
+DECLARE
+    v_actual_role VARCHAR := 'student';
+    v_invite JSONB;
+BEGIN
+    -- 1. Check if user already exists
+    IF EXISTS (SELECT 1 FROM users WHERE email = p_email) THEN
+        RETURN jsonb_build_object('success', false, 'message', 'User with this email already exists');
+    END IF;
+
+    -- 2. Role Validation
+    IF p_role IN ('admin', 'teacher') THEN
+        IF is_admin() THEN
+            -- Admins can create any role
+            v_actual_role := p_role;
+        ELSIF p_invite_token IS NULL THEN
+            -- Public signups for admin/teacher limited to 3
+            IF (SELECT COUNT(*) FROM users WHERE role = p_role) >= 3 THEN
+                RETURN jsonb_build_object('success', false, 'message', 'Maximum number of ' || p_role || ' accounts reached. Invitation required.');
+            END IF;
+            v_actual_role := p_role;
+        ELSE
+            -- Validate invite
+            SELECT to_jsonb(i.*) INTO v_invite FROM invites i WHERE token = p_invite_token AND (email IS NULL OR email = p_email) AND used_at IS NULL AND expires_at > NOW();
+            IF v_invite IS NULL THEN
+                RETURN jsonb_build_object('success', false, 'message', 'Invalid or expired invitation');
+            END IF;
+            v_actual_role := v_invite->>'role';
+            -- Mark invite as used
+            UPDATE invites SET used_at = NOW() WHERE token = p_invite_token;
+        END IF;
+    ELSE
+        v_actual_role := 'student';
+    END IF;
+
+    -- 3. Create User
+    INSERT INTO users (email, full_name, phone, role, active, metadata)
+    VALUES (p_email, p_full_name, p_phone, v_actual_role, p_active, p_metadata);
+
+    -- 4. Create Secrets
+    INSERT INTO user_secrets (email, password_hash, session_id)
+    VALUES (p_email, p_password_hash, p_session_id);
+
+    RETURN jsonb_build_object('success', true, 'user', (SELECT to_jsonb(u.*) FROM users u WHERE email = p_email));
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Secure Secret Update RPC
+CREATE OR REPLACE FUNCTION update_user_secret_secure(
+    p_email VARCHAR,
+    p_password_hash VARCHAR DEFAULT NULL,
+    p_session_id VARCHAR DEFAULT NULL
+) RETURNS VOID AS $$
+BEGIN
+    -- Check permissions: User can only update own secret unless admin
+    IF NOT (is_admin() OR get_auth_email() = p_email) THEN
+        RAISE EXCEPTION 'Unauthorized to update secrets for this user.';
+    END IF;
+
+    IF p_password_hash IS NOT NULL THEN
+        UPDATE user_secrets SET password_hash = p_password_hash WHERE email = p_email;
+    END IF;
+
+    IF p_session_id IS NOT NULL THEN
+        UPDATE user_secrets SET session_id = p_session_id WHERE email = p_email;
+    END IF;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
 
 CREATE OR REPLACE FUNCTION get_server_time()
 RETURNS TIMESTAMP WITH TIME ZONE AS $$
@@ -725,7 +946,6 @@ INSERT INTO maintenance (enabled, schedules)
 SELECT false, '[]'::jsonb
 WHERE NOT EXISTS (SELECT 1 FROM maintenance);
 
--- 9. Permissions
 -- 9. Permissions & RLS
 
 -- SECURE DEFAULT: Enable RLS on all tables
@@ -737,7 +957,7 @@ BEGIN
         SELECT table_name
         FROM information_schema.tables
         WHERE table_schema = 'public'
-        AND table_name IN ('users', 'courses', 'lessons', 'enrollments', 'assignments', 'submissions', 'live_classes', 'attendance', 'quizzes', 'quiz_submissions', 'materials', 'discussions', 'notifications', 'broadcasts', 'maintenance', 'planner', 'certificates', 'study_sessions', 'invites', 'system_logs', 'violations')
+        AND table_name IN ('users', 'user_secrets', 'courses', 'lessons', 'enrollments', 'assignments', 'submissions', 'live_classes', 'attendance', 'quizzes', 'quiz_submissions', 'materials', 'discussions', 'notifications', 'broadcasts', 'maintenance', 'planner', 'certificates', 'study_sessions', 'invites', 'system_logs', 'violations')
     LOOP
         EXECUTE format('ALTER TABLE %I ENABLE ROW LEVEL SECURITY', t);
     END LOOP;
@@ -745,13 +965,17 @@ END $$;
 
 -- RLS POLICIES
 
+-- 0. User Secrets (Strictly restricted)
+DROP POLICY IF EXISTS "Secrets: No Public Access" ON user_secrets;
+CREATE POLICY "Secrets: No Public Access" ON user_secrets FOR ALL USING (false);
+
 -- 1. Users Table
 DROP POLICY IF EXISTS "Users: Select" ON users;
-CREATE POLICY "Users: Select" ON users FOR SELECT USING (true); -- Publicly searchable for enrollment/collab
+CREATE POLICY "Users: Select" ON users FOR SELECT USING (true);
 DROP POLICY IF EXISTS "Users: Update" ON users;
 CREATE POLICY "Users: Update" ON users FOR UPDATE USING (email = get_auth_email() OR is_admin());
-DROP POLICY IF EXISTS "Users: Insert" ON users;
-CREATE POLICY "Users: Insert" ON users FOR INSERT WITH CHECK (true); -- Allow signup
+DROP POLICY IF EXISTS "Users: No Direct Insert" ON users;
+CREATE POLICY "Users: No Direct Insert" ON users FOR INSERT WITH CHECK (false); -- Force use of create_user_secure RPC
 
 -- 2. Courses Table
 DROP POLICY IF EXISTS "Courses: Select" ON courses;
