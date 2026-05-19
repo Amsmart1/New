@@ -785,8 +785,7 @@ class SupabaseDB {
             title: material.title,
             description: material.description,
             file_url: material.file_url,
-            file_type: material.file_type,
-            created_at: material.created_at || new Date().toISOString()
+            file_type: material.file_type
         };
         if (material.id) payload.id = material.id;
         const { data, error } = await supabaseClient
@@ -920,6 +919,7 @@ class SupabaseDB {
         const payload = {
             quiz_id: submission.quiz_id,
             student_email: submission.student_email,
+            attempt_number: submission.attempt_number,
             score: submission.score,
             total_points: submission.total_points,
             answers: submission.answers,
