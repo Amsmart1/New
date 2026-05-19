@@ -20,6 +20,7 @@ $$ language 'plpgsql';
 -- 1. Tables Creation (With all columns integrated)
 
 CREATE TABLE IF NOT EXISTS users (
+  id UUID DEFAULT uuid_generate_v4() UNIQUE,
   email VARCHAR(255) PRIMARY KEY,
   full_name VARCHAR(255) NOT NULL,
   phone VARCHAR(50),
@@ -27,9 +28,9 @@ CREATE TABLE IF NOT EXISTS users (
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   last_login TIMESTAMP WITH TIME ZONE,
-  failed_attempts INTEGER DEFAULT 0,
+  failed_attempts INTEGER DEFAULT 0 CHECK (failed_attempts >= 0),
   locked_until TIMESTAMP WITH TIME ZONE,
-  lockouts INTEGER DEFAULT 0,
+  lockouts INTEGER DEFAULT 0 CHECK (lockouts >= 0),
   flagged BOOLEAN DEFAULT FALSE,
   reset_request JSONB,
   active BOOLEAN DEFAULT TRUE,
@@ -74,7 +75,7 @@ CREATE TABLE IF NOT EXISTS enrollments (
   student_email VARCHAR(255) REFERENCES users(email) ON UPDATE CASCADE ON DELETE CASCADE,
   enrolled_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-  progress INTEGER DEFAULT 0,
+  progress INTEGER DEFAULT 0 CHECK (progress BETWEEN 0 AND 100),
   completed BOOLEAN DEFAULT FALSE,
   completed_lessons JSONB DEFAULT '[]'::jsonb,
   PRIMARY KEY (course_id, student_email)
@@ -88,7 +89,7 @@ CREATE TABLE IF NOT EXISTS assignments (
   teacher_email VARCHAR(255) REFERENCES users(email) ON UPDATE CASCADE ON DELETE SET NULL,
   start_at TIMESTAMP WITH TIME ZONE,
   due_date TIMESTAMP WITH TIME ZONE,
-  points_possible INTEGER DEFAULT 100,
+  points_possible INTEGER DEFAULT 100 CHECK (points_possible > 0),
   allow_late_submissions BOOLEAN DEFAULT TRUE,
   late_penalty_per_day INTEGER DEFAULT 0,
   allowed_extensions TEXT[] DEFAULT '{pdf, doc, docx, zip, jpg, png}',
@@ -127,7 +128,7 @@ CREATE TABLE IF NOT EXISTS live_classes (
   title VARCHAR(255) NOT NULL,
   description TEXT,
   start_at TIMESTAMP WITH TIME ZONE NOT NULL,
-  end_at TIMESTAMP WITH TIME ZONE NOT NULL,
+  end_at TIMESTAMP WITH TIME ZONE NOT NULL CHECK (end_at > start_at),
   room_name VARCHAR(255) NOT NULL,
   meeting_url TEXT,
   recording_url TEXT,
@@ -158,11 +159,11 @@ CREATE TABLE IF NOT EXISTS quizzes (
   teacher_email VARCHAR(255) REFERENCES users(email) ON UPDATE CASCADE ON DELETE SET NULL,
   title VARCHAR(255) NOT NULL,
   description TEXT,
-  time_limit INTEGER DEFAULT 0,
+  time_limit INTEGER DEFAULT 0 CHECK (time_limit >= 0),
   start_at TIMESTAMP WITH TIME ZONE,
-  end_at TIMESTAMP WITH TIME ZONE,
-  attempts_allowed INTEGER DEFAULT 1,
-  passing_score INTEGER DEFAULT 60,
+  end_at TIMESTAMP WITH TIME ZONE CHECK (end_at > start_at),
+  attempts_allowed INTEGER DEFAULT 1 CHECK (attempts_allowed > 0),
+  passing_score INTEGER DEFAULT 60 CHECK (passing_score BETWEEN 0 AND 100),
   questions JSONB DEFAULT '[]'::jsonb,
   shuffle_questions BOOLEAN DEFAULT FALSE,
   status VARCHAR(50) DEFAULT 'draft' CHECK (status IN ('draft', 'published', 'archived')),
@@ -175,6 +176,7 @@ CREATE TABLE IF NOT EXISTS quiz_submissions (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   quiz_id UUID REFERENCES quizzes(id) ON DELETE CASCADE,
   student_email VARCHAR(255) REFERENCES users(email) ON UPDATE CASCADE ON DELETE CASCADE,
+  attempt_number INTEGER NOT NULL,
   score INTEGER,
   total_points INTEGER,
   answers JSONB DEFAULT '{}'::jsonb,
@@ -183,7 +185,8 @@ CREATE TABLE IF NOT EXISTS quiz_submissions (
   time_spent INTEGER DEFAULT 0,
   started_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   submitted_at TIMESTAMP WITH TIME ZONE,
-  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  UNIQUE (quiz_id, student_email, attempt_number)
 );
 
 CREATE TABLE IF NOT EXISTS materials (
@@ -217,6 +220,7 @@ CREATE TABLE IF NOT EXISTS notifications (
   link TEXT,
   type VARCHAR(50) DEFAULT 'system',
   is_read BOOLEAN DEFAULT FALSE,
+  expires_at TIMESTAMP WITH TIME ZONE DEFAULT (NOW() + INTERVAL '90 days'),
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
@@ -270,7 +274,7 @@ CREATE TABLE IF NOT EXISTS study_sessions (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   user_email VARCHAR(255) REFERENCES users(email) ON UPDATE CASCADE ON DELETE CASCADE,
   course_id UUID REFERENCES courses(id) ON DELETE CASCADE,
-  duration INTEGER NOT NULL,
+  duration INTEGER NOT NULL CHECK (duration > 0),
   started_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   ended_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
@@ -295,6 +299,7 @@ CREATE TABLE IF NOT EXISTS system_logs (
   message TEXT,
   metadata JSONB DEFAULT '{}'::jsonb,
   user_email VARCHAR(255),
+  expires_at TIMESTAMP WITH TIME ZONE DEFAULT (NOW() + INTERVAL '30 days'),
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
@@ -306,6 +311,7 @@ CREATE TABLE IF NOT EXISTS violations (
   type VARCHAR(100) NOT NULL,
   details JSONB DEFAULT '{}'::jsonb,
   timestamp TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  expires_at TIMESTAMP WITH TIME ZONE DEFAULT (NOW() + INTERVAL '365 days'),
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
@@ -314,9 +320,12 @@ CREATE TABLE IF NOT EXISTS violations (
 DO $$
 BEGIN
     -- users (Move sensitive data if it exists)
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS id UUID DEFAULT uuid_generate_v4() UNIQUE;
     ALTER TABLE users ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
     ALTER TABLE users ADD COLUMN IF NOT EXISTS notification_preferences JSONB DEFAULT '{"email": true, "push": true, "inApp": true}'::jsonb;
     ALTER TABLE users ADD COLUMN IF NOT EXISTS metadata JSONB DEFAULT '{}'::jsonb;
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS failed_attempts INTEGER DEFAULT 0 CHECK (failed_attempts >= 0);
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS lockouts INTEGER DEFAULT 0 CHECK (lockouts >= 0);
 
     IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'users' AND column_name = 'password') THEN
         INSERT INTO user_secrets (email, password_hash, session_id)
@@ -341,9 +350,11 @@ BEGIN
 
     -- enrollments
     ALTER TABLE enrollments ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
+    ALTER TABLE enrollments ADD COLUMN IF NOT EXISTS progress INTEGER DEFAULT 0 CHECK (progress BETWEEN 0 AND 100);
 
     -- assignments
     ALTER TABLE assignments ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
+    ALTER TABLE assignments ADD COLUMN IF NOT EXISTS points_possible INTEGER DEFAULT 100 CHECK (points_possible > 0);
     ALTER TABLE assignments ADD COLUMN IF NOT EXISTS anti_cheat_config JSONB DEFAULT '{}'::jsonb;
 
     -- submissions
@@ -370,22 +381,41 @@ BEGIN
 
     -- live_classes
     ALTER TABLE live_classes ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
+    ALTER TABLE live_classes ADD COLUMN IF NOT EXISTS end_at TIMESTAMP WITH TIME ZONE;
+    -- Note: Adding CHECK constraints to existing columns via ALTER TABLE
+    BEGIN
+        ALTER TABLE live_classes ADD CONSTRAINT live_classes_end_at_check CHECK (end_at > start_at);
+    EXCEPTION WHEN OTHERS THEN NULL; END;
 
     -- attendance
     ALTER TABLE attendance ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
 
     -- quizzes
     ALTER TABLE quizzes ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
+    ALTER TABLE quizzes ADD COLUMN IF NOT EXISTS time_limit INTEGER DEFAULT 0 CHECK (time_limit >= 0);
+    ALTER TABLE quizzes ADD COLUMN IF NOT EXISTS attempts_allowed INTEGER DEFAULT 1 CHECK (attempts_allowed > 0);
+    ALTER TABLE quizzes ADD COLUMN IF NOT EXISTS passing_score INTEGER DEFAULT 60 CHECK (passing_score BETWEEN 0 AND 100);
     ALTER TABLE quizzes ADD COLUMN IF NOT EXISTS anti_cheat_config JSONB DEFAULT '{}'::jsonb;
+    BEGIN
+        ALTER TABLE quizzes ADD CONSTRAINT quizzes_end_at_check CHECK (end_at > start_at);
+    EXCEPTION WHEN OTHERS THEN NULL; END;
 
     -- quiz_submissions
     ALTER TABLE quiz_submissions ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
+    ALTER TABLE quiz_submissions ADD COLUMN IF NOT EXISTS attempt_number INTEGER;
+
+    DO $$ BEGIN
+        IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'quiz_submissions_quiz_id_student_email_attempt_number_key') THEN
+            ALTER TABLE quiz_submissions ADD CONSTRAINT quiz_submissions_quiz_id_student_email_attempt_number_key UNIQUE(quiz_id, student_email, attempt_number);
+        END IF;
+    EXCEPTION WHEN OTHERS THEN NULL; END $$;
 
     -- materials
     ALTER TABLE materials ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
 
     -- notifications
     ALTER TABLE notifications ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
+    ALTER TABLE notifications ADD COLUMN IF NOT EXISTS expires_at TIMESTAMP WITH TIME ZONE DEFAULT (NOW() + INTERVAL '90 days');
 
     -- broadcasts
     ALTER TABLE broadcasts ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
@@ -401,9 +431,19 @@ BEGIN
 
     -- study_sessions
     ALTER TABLE study_sessions ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
+    ALTER TABLE study_sessions ADD COLUMN IF NOT EXISTS duration INTEGER;
+    BEGIN
+        ALTER TABLE study_sessions ADD CONSTRAINT study_sessions_duration_check CHECK (duration > 0);
+    EXCEPTION WHEN OTHERS THEN NULL; END;
 
     -- invites
     ALTER TABLE invites ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
+
+    -- system_logs
+    ALTER TABLE system_logs ADD COLUMN IF NOT EXISTS expires_at TIMESTAMP WITH TIME ZONE DEFAULT (NOW() + INTERVAL '30 days');
+
+    -- violations
+    ALTER TABLE violations ADD COLUMN IF NOT EXISTS expires_at TIMESTAMP WITH TIME ZONE DEFAULT (NOW() + INTERVAL '365 days');
 END $$;
 
 -- Ensure composite unique constraints exist for idempotent upserts
@@ -611,15 +651,24 @@ CREATE OR REPLACE FUNCTION validate_quiz_attempts()
 RETURNS TRIGGER AS $$
 DECLARE
     v_attempts_allowed INTEGER;
-    v_current_attempts INTEGER;
+    v_next_attempt INTEGER;
 BEGIN
-    SELECT attempts_allowed INTO v_attempts_allowed FROM quizzes WHERE id = NEW.quiz_id;
+    -- Only handle attempt allocation on INSERT
+    IF (TG_OP = 'INSERT') THEN
+        SELECT attempts_allowed INTO v_attempts_allowed FROM quizzes WHERE id = NEW.quiz_id;
 
-    IF v_attempts_allowed IS NOT NULL AND v_attempts_allowed > 0 THEN
-        SELECT COUNT(*) INTO v_current_attempts FROM quiz_submissions WHERE quiz_id = NEW.quiz_id AND student_email = NEW.student_email;
-        IF v_current_attempts >= v_attempts_allowed THEN
-            RAISE EXCEPTION 'You have reached the maximum number of attempts allowed for this quiz.';
+        -- Atomically allocate next attempt number
+        SELECT COALESCE(MAX(attempt_number), 0) + 1 INTO v_next_attempt
+        FROM quiz_submissions
+        WHERE quiz_id = NEW.quiz_id AND student_email = NEW.student_email;
+
+        IF v_attempts_allowed IS NOT NULL AND v_attempts_allowed > 0 THEN
+            IF v_next_attempt > v_attempts_allowed THEN
+                RAISE EXCEPTION 'You have reached the maximum number of attempts allowed for this quiz.';
+            END IF;
         END IF;
+
+        NEW.attempt_number := v_next_attempt;
     END IF;
 
     RETURN NEW;
@@ -681,12 +730,31 @@ CREATE INDEX IF NOT EXISTS idx_submissions_assignment ON submissions(assignment_
 CREATE INDEX IF NOT EXISTS idx_materials_course ON materials(course_id);
 CREATE INDEX IF NOT EXISTS idx_planner_user_date ON planner(user_email, due_date);
 CREATE INDEX IF NOT EXISTS idx_broadcasts_expiry ON broadcasts(expires_at);
+CREATE INDEX IF NOT EXISTS idx_notifications_expiry ON notifications(expires_at);
+CREATE INDEX IF NOT EXISTS idx_system_logs_expiry ON system_logs(expires_at);
+CREATE INDEX IF NOT EXISTS idx_violations_expiry ON violations(expires_at);
 CREATE INDEX IF NOT EXISTS idx_courses_status ON courses(status);
 CREATE INDEX IF NOT EXISTS idx_live_classes_status ON live_classes(status);
 CREATE INDEX IF NOT EXISTS idx_quizzes_status ON quizzes(status);
 CREATE INDEX IF NOT EXISTS idx_assignments_status ON assignments(status);
 CREATE INDEX IF NOT EXISTS idx_violations_assessment ON violations(assessment_id);
 CREATE INDEX IF NOT EXISTS idx_violations_user ON violations(user_email);
+
+-- Missing Foreign-Key Indexes
+CREATE INDEX IF NOT EXISTS idx_assignments_teacher_email ON assignments(teacher_email);
+CREATE INDEX IF NOT EXISTS idx_live_classes_course_id ON live_classes(course_id);
+CREATE INDEX IF NOT EXISTS idx_live_classes_teacher_email ON live_classes(teacher_email);
+CREATE INDEX IF NOT EXISTS idx_attendance_student_email ON attendance(student_email);
+CREATE INDEX IF NOT EXISTS idx_quizzes_course_id ON quizzes(course_id);
+CREATE INDEX IF NOT EXISTS idx_quizzes_teacher_email ON quizzes(teacher_email);
+CREATE INDEX IF NOT EXISTS idx_materials_teacher_email ON materials(teacher_email);
+CREATE INDEX IF NOT EXISTS idx_discussions_course_id ON discussions(course_id);
+CREATE INDEX IF NOT EXISTS idx_discussions_user_email ON discussions(user_email);
+CREATE INDEX IF NOT EXISTS idx_broadcasts_course_id ON broadcasts(course_id);
+CREATE INDEX IF NOT EXISTS idx_certificates_course_id ON certificates(course_id);
+CREATE INDEX IF NOT EXISTS idx_certificates_student_email ON certificates(student_email);
+CREATE INDEX IF NOT EXISTS idx_study_sessions_course_id ON study_sessions(course_id);
+CREATE INDEX IF NOT EXISTS idx_invites_created_by ON invites(created_by);
 
 -- Index for performant RLS identity resolution
 CREATE INDEX IF NOT EXISTS idx_user_secrets_session_id ON user_secrets(session_id);
@@ -770,10 +838,15 @@ $$ LANGUAGE sql STABLE;
 CREATE OR REPLACE FUNCTION authenticate_user(p_email VARCHAR, p_password_hash VARCHAR, p_session_id VARCHAR)
 RETURNS JSONB AS $$
 DECLARE
-  v_user users;
-  v_secret user_secrets;
+  v_user RECORD;
+  v_secret RECORD;
 BEGIN
-  SELECT * INTO v_user FROM users WHERE email = p_email;
+  SELECT
+    id, email, full_name, phone, role, created_at, updated_at, last_login,
+    failed_attempts, locked_until, lockouts, flagged, reset_request,
+    active, notification_preferences, metadata
+  INTO v_user FROM users WHERE email = p_email;
+
   IF NOT FOUND THEN
     RETURN jsonb_build_object('success', false, 'message', 'Account not found');
   END IF;
@@ -790,14 +863,34 @@ BEGIN
     RETURN jsonb_build_object('success', false, 'message', 'Account locked until ' || v_user.locked_until);
   END IF;
 
-  SELECT * INTO v_secret FROM user_secrets WHERE email = p_email;
+  SELECT password_hash, session_id INTO v_secret FROM user_secrets WHERE email = p_email;
 
   IF v_secret.password_hash = p_password_hash THEN
     -- Update session and login stats
     UPDATE user_secrets SET session_id = p_session_id WHERE email = p_email;
     UPDATE users SET last_login = NOW(), failed_attempts = 0, locked_until = NULL WHERE email = p_email;
 
-    RETURN jsonb_build_object('success', true, 'user', to_jsonb(v_user));
+    RETURN jsonb_build_object(
+      'success', true,
+      'user', jsonb_build_object(
+        'id', v_user.id,
+        'email', v_user.email,
+        'full_name', v_user.full_name,
+        'phone', v_user.phone,
+        'role', v_user.role,
+        'created_at', v_user.created_at,
+        'updated_at', v_user.updated_at,
+        'last_login', v_user.last_login,
+        'failed_attempts', 0,
+        'locked_until', NULL,
+        'lockouts', v_user.lockouts,
+        'flagged', v_user.flagged,
+        'reset_request', v_user.reset_request,
+        'active', v_user.active,
+        'notification_preferences', v_user.notification_preferences,
+        'metadata', v_user.metadata
+      )
+    );
   ELSE
     -- Increment failed attempts
     UPDATE users SET failed_attempts = failed_attempts + 1 WHERE email = p_email;
@@ -896,6 +989,31 @@ BEGIN
     END IF;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
+
+CREATE OR REPLACE FUNCTION purge_expired_records() RETURNS VOID AS $$
+BEGIN
+  DELETE FROM broadcasts WHERE expires_at < NOW();
+  DELETE FROM notifications WHERE expires_at < NOW();
+  DELETE FROM system_logs WHERE expires_at < NOW();
+  DELETE FROM violations WHERE expires_at < NOW();
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Trigger to periodically purge expired records
+CREATE OR REPLACE FUNCTION tr_call_purge_expired() RETURNS TRIGGER AS $$
+BEGIN
+  -- Run purge approximately 1% of the time to minimize overhead
+  IF random() < 0.01 THEN
+    PERFORM purge_expired_records();
+  END IF;
+  RETURN NULL;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS tr_purge_maintenance ON system_logs;
+CREATE TRIGGER tr_purge_maintenance
+  AFTER INSERT ON system_logs
+  FOR EACH STATEMENT EXECUTE PROCEDURE tr_call_purge_expired();
 
 CREATE OR REPLACE FUNCTION get_server_time()
 RETURNS TIMESTAMP WITH TIME ZONE AS $$

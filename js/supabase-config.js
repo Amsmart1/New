@@ -927,6 +927,7 @@ class SupabaseDB {
         const payload = {
             quiz_id: submission.quiz_id,
             student_email: submission.student_email,
+            attempt_number: submission.attempt_number,
             score: submission.score,
             total_points: submission.total_points,
             answers: submission.answers,
