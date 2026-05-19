@@ -38,6 +38,7 @@ CREATE TABLE IF NOT EXISTS users (
   flagged BOOLEAN DEFAULT FALSE,
   reset_request JSONB,
   active BOOLEAN DEFAULT TRUE,
+  session_id VARCHAR(255),
   notification_preferences JSONB DEFAULT '{"email": true, "push": true, "inApp": true}'::jsonb,
   metadata JSONB DEFAULT '{}'::jsonb
 );
@@ -68,6 +69,7 @@ ALTER TABLE courses ADD COLUMN IF NOT EXISTS enrollment_id VARCHAR(255);
 ALTER TABLE courses ADD COLUMN IF NOT EXISTS metadata JSONB DEFAULT '{}'::jsonb;
 
 -- Migration: Ensure new columns exist for existing users table
+ALTER TABLE users ADD COLUMN IF NOT EXISTS session_id VARCHAR(255);
 ALTER TABLE users ADD COLUMN IF NOT EXISTS notification_preferences JSONB DEFAULT '{"email": true, "push": true, "inApp": true}'::jsonb;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS metadata JSONB DEFAULT '{}'::jsonb;
 
@@ -944,6 +946,41 @@ DROP TRIGGER IF EXISTS tr_validate_quiz_submission_time ON quiz_submissions;
 CREATE TRIGGER tr_validate_quiz_submission_time
 BEFORE INSERT OR UPDATE ON quiz_submissions
 FOR EACH ROW EXECUTE PROCEDURE validate_quiz_submission_time();
+
+-- 3. validate_quiz_attempts() for the quiz_submissions table
+CREATE OR REPLACE FUNCTION validate_quiz_attempts()
+RETURNS TRIGGER AS $$
+DECLARE
+    v_attempts_allowed INTEGER;
+    v_completed_count INTEGER;
+BEGIN
+    SELECT attempts_allowed
+    INTO v_attempts_allowed
+    FROM quizzes
+    WHERE id = NEW.quiz_id;
+
+    -- Only validate when a student creates a new attempt (status starts as 'draft' or 'submitted')
+    -- We specifically want to prevent students from creating new rows if they reached the limit.
+    -- If it's a teacher updating an existing submission (grading), we don't block.
+    IF (TG_OP = 'INSERT') THEN
+        SELECT COUNT(*)
+        INTO v_completed_count
+        FROM quiz_submissions
+        WHERE quiz_id = NEW.quiz_id AND student_email = NEW.student_email AND status = 'submitted';
+
+        IF v_attempts_allowed > 0 AND v_completed_count >= v_attempts_allowed THEN
+            RAISE EXCEPTION 'Maximum attempts reached for this quiz.';
+        END IF;
+    END IF;
+
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS tr_validate_quiz_attempts ON quiz_submissions;
+CREATE TRIGGER tr_validate_quiz_attempts
+BEFORE INSERT ON quiz_submissions
+FOR EACH ROW EXECUTE PROCEDURE validate_quiz_attempts();
 
 -- Insert default maintenance record idempotently
 INSERT INTO maintenance (enabled, schedules)

@@ -1719,9 +1719,16 @@ async function startQuiz(quizId) {
       return;
   }
 
-  // Check for existing draft
+  // Check for existing draft and attempt limits
   const subs = await SupabaseDB.getQuizSubmissions(quizId, user.email);
   const draft = subs.find(s => s.status === 'draft');
+  const completedCount = subs.filter(s => s.status === 'submitted').length;
+
+  if (!draft && quiz.attempts_allowed > 0 && completedCount >= quiz.attempts_allowed) {
+      alert(`You have already reached the maximum allowed attempts (${quiz.attempts_allowed}) for this quiz.`);
+      if (listBtn) { listBtn.disabled = true; listBtn.textContent = 'Attempts Reached'; }
+      return;
+  }
 
   if (draft && !confirm('You have an unfinished attempt. Resume it?')) {
     // If they don't want to resume, we could delete it, but better to just let them start fresh and we'll create a new one.
@@ -1842,9 +1849,6 @@ async function startQuiz(quizId) {
   }
 
   // Start Timer
-  // Initialize Anti-Cheat if configured
-  if (quiz.anti_cheat_config && Object.values(quiz.anti_cheat_config).some(v => v === true)) {
-
   if (quiz.time_limit > 0) {
     const startTs = new Date(currentSubmission.started_at).getTime();
     const endTime = startTs + (quiz.time_limit * 60 * 1000);

@@ -658,8 +658,13 @@ async function updateMaintBanner() {
             const isMaint = isActiveMaintenance(m);
             const isRestricted = !fresh || !fresh.active || fresh.flagged || isAccountLocked(fresh);
 
-            if ((isMaint && user.role !== 'admin') || isRestricted) {
+            // Session ID Check
+            const localSid = SessionManager.getSessionId();
+            const sessionExpired = fresh && fresh.session_id && fresh.session_id !== localSid;
+
+            if ((isMaint && user.role !== 'admin') || isRestricted || sessionExpired) {
                 let msg = isMaint ? 'System entered maintenance mode.' : 'Your account status has changed.';
+                if (sessionExpired) msg = 'Your session has expired because you logged in from another device.';
                 await SessionManager.clearCurrentUser();
                 if (!window.location.href.includes('index.html')) {
                     alert(msg + ' Logging out.');
