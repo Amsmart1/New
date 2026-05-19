@@ -318,6 +318,16 @@ CREATE TABLE IF NOT EXISTS violations (
 
 -- 2. Migrations for existing tables (Idempotent)
 
+-- Separate top-level ALTER statements to ensure columns exist for subsequent script parsing
+ALTER TABLE broadcasts ADD COLUMN IF NOT EXISTS expires_at TIMESTAMP WITH TIME ZONE DEFAULT (NOW() + INTERVAL '30 days');
+ALTER TABLE quiz_submissions ADD COLUMN IF NOT EXISTS attempt_number INTEGER;
+ALTER TABLE violations ADD COLUMN IF NOT EXISTS assessment_id UUID;
+ALTER TABLE violations ADD COLUMN IF NOT EXISTS assessment_type VARCHAR(50);
+ALTER TABLE violations ADD COLUMN IF NOT EXISTS type VARCHAR(100);
+ALTER TABLE violations ADD COLUMN IF NOT EXISTS details JSONB DEFAULT '{}'::jsonb;
+ALTER TABLE violations ADD COLUMN IF NOT EXISTS timestamp TIMESTAMP WITH TIME ZONE DEFAULT NOW();
+ALTER TABLE violations ADD COLUMN IF NOT EXISTS expires_at TIMESTAMP WITH TIME ZONE DEFAULT (NOW() + INTERVAL '90 days');
+
 DO $$
 BEGIN
     -- users (Move sensitive data if it exists)
@@ -418,6 +428,21 @@ BEGIN
     ALTER TABLE quiz_submissions ALTER COLUMN attempt_number SET DEFAULT 1;
     ALTER TABLE quiz_submissions ALTER COLUMN attempt_number SET NOT NULL;
 
+    -- Migrate quiz_submissions attempt numbers if needed
+    -- (Used EXECUTE to ensure it works even if attempt_number was just added)
+    EXECUTE '
+    WITH numbered_attempts AS (
+        SELECT id, ROW_NUMBER() OVER (PARTITION BY quiz_id, student_email ORDER BY started_at ASC) as row_num
+        FROM quiz_submissions
+    )
+    UPDATE quiz_submissions
+    SET attempt_number = numbered_attempts.row_num
+    FROM numbered_attempts
+    WHERE quiz_submissions.id = numbered_attempts.id AND quiz_submissions.attempt_number IS NULL';
+
+    ALTER TABLE quiz_submissions ALTER COLUMN attempt_number SET DEFAULT 1;
+    ALTER TABLE quiz_submissions ALTER COLUMN attempt_number SET NOT NULL;
+
     -- materials
     ALTER TABLE materials ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
     ALTER TABLE materials ADD COLUMN IF NOT EXISTS teacher_email VARCHAR(255) REFERENCES users(email) ON UPDATE CASCADE ON DELETE SET NULL;
@@ -450,14 +475,8 @@ BEGIN
     ALTER TABLE invites ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
 
     -- violations
-    ALTER TABLE violations ADD COLUMN IF NOT EXISTS assessment_id UUID;
-    ALTER TABLE violations ADD COLUMN IF NOT EXISTS assessment_type VARCHAR(50);
-    ALTER TABLE violations ADD COLUMN IF NOT EXISTS type VARCHAR(100);
-    ALTER TABLE violations ADD COLUMN IF NOT EXISTS details JSONB DEFAULT '{}'::jsonb;
-    ALTER TABLE violations ADD COLUMN IF NOT EXISTS timestamp TIMESTAMP WITH TIME ZONE DEFAULT NOW();
     ALTER TABLE violations ADD COLUMN IF NOT EXISTS created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
     ALTER TABLE violations ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
-    ALTER TABLE violations ADD COLUMN IF NOT EXISTS expires_at TIMESTAMP WITH TIME ZONE DEFAULT (NOW() + INTERVAL '90 days');
 END $$;
 
 -- Ensure composite unique constraints exist for idempotent upserts
