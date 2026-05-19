@@ -269,8 +269,13 @@ async function toggleUserStatus(email, currentStatus) {
     if (user) {
       user.active = !currentStatus;
       await SupabaseDB.saveUser(user);
-      UI.showNotification(`User ${user.active ? 'activated' : 'deactivated'}`);
-      renderUsers();
+      UI.showNotification(`User ${user.active ? 'activated' : 'deactivated'}`, 'success');
+
+      // Update local state if filtered
+      const idx = allUsers.findIndex(u => u.email === email);
+      if (idx !== -1) allUsers[idx].active = user.active;
+
+      filterUsers(); // Refresh display with current filters
     }
   } catch (e) { alert('Error: ' + e.message); }
 }
@@ -316,8 +321,13 @@ async function toggleUserFlag(email, currentFlag) {
     if (user) {
       user.flagged = !currentFlag;
       await SupabaseDB.saveUser(user);
-      UI.showNotification(`User ${user.flagged ? 'flagged' : 'unflagged'}`);
-      renderUsers();
+      UI.showNotification(`User ${user.flagged ? 'flagged' : 'unflagged'}`, user.flagged ? 'warn' : 'success');
+
+      // Update local state
+      const idx = allUsers.findIndex(u => u.email === email);
+      if (idx !== -1) allUsers[idx].flagged = user.flagged;
+
+      filterUsers();
     }
   } catch (e) { alert('Error: ' + e.message); }
 }
