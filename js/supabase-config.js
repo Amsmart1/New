@@ -266,7 +266,6 @@ class SupabaseDB {
     static async saveAssignment(assignment) {
         // Sanitize payload to avoid 400 error from extra fields (e.g. from joins)
         const payload = {
-            id: assignment.id,
             course_id: assignment.course_id,
             title: assignment.title,
             description: assignment.description,
@@ -282,6 +281,7 @@ class SupabaseDB {
             status: assignment.status,
             updated_at: new Date().toISOString()
         };
+        if (assignment.id) payload.id = assignment.id;
         if (assignment.created_at) payload.created_at = assignment.created_at;
 
         const { data, error } = await supabaseClient
@@ -1159,7 +1159,7 @@ class SupabaseDB {
         if (attendance.id) payload.id = attendance.id;
         const { data, error } = await supabaseClient
             .from('attendance')
-            .upsert(payload, { onConflict: 'id' })
+            .upsert(payload, { onConflict: 'live_class_id,student_email' })
             .select();
         if (error) throw error;
         return data?.[0];

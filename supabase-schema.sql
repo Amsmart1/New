@@ -150,6 +150,19 @@ ALTER TABLE submissions ADD COLUMN IF NOT EXISTS question_scores JSONB DEFAULT '
 ALTER TABLE submissions ADD COLUMN IF NOT EXISTS late_penalty_applied INTEGER DEFAULT 0;
 ALTER TABLE submissions ADD COLUMN IF NOT EXISTS id UUID DEFAULT uuid_generate_v4();
 
+-- Ensure composite unique constraints exist for idempotent upserts
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'submissions_assignment_id_student_email_key') THEN
+        ALTER TABLE submissions ADD CONSTRAINT submissions_assignment_id_student_email_key UNIQUE(assignment_id, student_email);
+    END IF;
+EXCEPTION WHEN OTHERS THEN NULL; END $$;
+
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'attendance_live_class_id_student_email_key') THEN
+        ALTER TABLE attendance ADD CONSTRAINT attendance_live_class_id_student_email_key UNIQUE(live_class_id, student_email);
+    END IF;
+EXCEPTION WHEN OTHERS THEN NULL; END $$;
+
 CREATE TABLE IF NOT EXISTS live_classes (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   course_id UUID REFERENCES courses(id) ON DELETE CASCADE,
