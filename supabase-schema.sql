@@ -115,7 +115,8 @@ CREATE TABLE IF NOT EXISTS assignments (
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   questions JSONB DEFAULT '[]'::jsonb,
   attachments JSONB DEFAULT '[]'::jsonb,
-  status VARCHAR(50) DEFAULT 'draft' CHECK (status IN ('draft', 'published', 'archived'))
+  status VARCHAR(50) DEFAULT 'draft' CHECK (status IN ('draft', 'published', 'archived')),
+  anti_cheat_config JSONB DEFAULT '{}'::jsonb
 );
 
 DROP TRIGGER IF EXISTS update_assignments_updated_at ON assignments;
@@ -215,6 +216,7 @@ CREATE TABLE IF NOT EXISTS quizzes (
   questions JSONB DEFAULT '[]'::jsonb,
   shuffle_questions BOOLEAN DEFAULT FALSE,
   status VARCHAR(50) DEFAULT 'draft' CHECK (status IN ('draft', 'published', 'archived')),
+  anti_cheat_config JSONB DEFAULT '{}'::jsonb,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
@@ -376,6 +378,17 @@ CREATE TABLE IF NOT EXISTS system_logs (
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS violations (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  user_email VARCHAR(255) REFERENCES users(email) ON UPDATE CASCADE ON DELETE CASCADE,
+  assessment_id UUID NOT NULL,
+  assessment_type VARCHAR(50) NOT NULL CHECK (assessment_type IN ('assignment', 'quiz')),
+  type VARCHAR(100) NOT NULL,
+  details JSONB DEFAULT '{}'::jsonb,
+  timestamp TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
 -- Performance Indexes (Idempotent)
 CREATE INDEX IF NOT EXISTS idx_users_role ON users(role);
 CREATE INDEX IF NOT EXISTS idx_users_active ON users(active);
@@ -398,6 +411,8 @@ CREATE INDEX IF NOT EXISTS idx_courses_status ON courses(status);
 CREATE INDEX IF NOT EXISTS idx_live_classes_status ON live_classes(status);
 CREATE INDEX IF NOT EXISTS idx_quizzes_status ON quizzes(status);
 CREATE INDEX IF NOT EXISTS idx_assignments_status ON assignments(status);
+CREATE INDEX IF NOT EXISTS idx_violations_assessment ON violations(assessment_id);
+CREATE INDEX IF NOT EXISTS idx_violations_user ON violations(user_email);
 
 -- Row Level Security (RLS) Functions
 -- These helpers are designed for standard Supabase Auth (JWT).
@@ -448,6 +463,7 @@ DO $$ BEGIN ALTER TABLE certificates ENABLE ROW LEVEL SECURITY; EXCEPTION WHEN O
 DO $$ BEGIN ALTER TABLE study_sessions ENABLE ROW LEVEL SECURITY; EXCEPTION WHEN OTHERS THEN NULL; END $$;
 DO $$ BEGIN ALTER TABLE invites ENABLE ROW LEVEL SECURITY; EXCEPTION WHEN OTHERS THEN NULL; END $$;
 DO $$ BEGIN ALTER TABLE system_logs ENABLE ROW LEVEL SECURITY; EXCEPTION WHEN OTHERS THEN NULL; END $$;
+DO $$ BEGIN ALTER TABLE violations ENABLE ROW LEVEL SECURITY; EXCEPTION WHEN OTHERS THEN NULL; END $$;
 
 -- CUSTOM AUTH COMPATIBILITY POLICIES
 -- PRODUCTION HARDENED POLICIES
@@ -567,6 +583,14 @@ DROP POLICY IF EXISTS "Custom Auth: system_logs" ON system_logs;
 DROP POLICY IF EXISTS "System Logs: Admin Access" ON system_logs;
 CREATE POLICY "System Logs: Select" ON system_logs FOR SELECT USING (true);
 CREATE POLICY "System Logs: Insert" ON system_logs FOR INSERT WITH CHECK (true);
+
+-- 12. Violations:
+-- Permissive for custom auth system as per project patterns, but ideally restricted to relevant parties.
+-- Given the SessionManager architecture, we keep it consistent with other tables.
+DROP POLICY IF EXISTS "Violations: Select" ON violations;
+CREATE POLICY "Violations: Select" ON violations FOR SELECT USING (true);
+DROP POLICY IF EXISTS "Violations: Insert" ON violations;
+CREATE POLICY "Violations: Insert" ON violations FOR INSERT WITH CHECK (true);
 
 -- 9. Planner & Study Sessions (Private Data):
 DROP POLICY IF EXISTS "Custom Auth: planner" ON planner;
