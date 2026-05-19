@@ -269,7 +269,7 @@ async function stopAndNavigateToViewCourse(courseId, fromMyCourses) {
   viewCourse(courseId, fromMyCourses);
 }
 window.stopAndNavigateToViewCourse = stopAndNavigateToViewCourse;
-async function renderAssignments(){
+async function renderAssignments(openId = null){
   showLoading();
   const container = document.getElementById('pageContent');
   if (!container) return;
@@ -400,10 +400,18 @@ async function renderAssignments(){
           showProgress: true,
           compact: true,
           label: 'Due in:',
-          onEnd: () => renderAssignments()
+          onEnd: () => {
+              if (!document.getElementById('assignmentForm') || document.getElementById('assignmentForm').classList.contains('hidden')) {
+                  renderAssignments();
+              }
+          }
       });
       activeCountdowns.push(c);
   });
+
+  if (openId) {
+      showAssignmentForm(openId);
+  }
 
   } catch (error) {
     console.error('Assignments error:', error);
@@ -630,7 +638,7 @@ async function renderDashboardOverview() {
                   <div class="tiny text-muted mb-5">Due: ${new Date(a.due_date).toLocaleDateString()}</div>
                   <div class="dashboard-assign-countdown" data-target="${new Date(a.due_date).getTime()}" data-start="${a.start_at || (a.created_at ? new Date(a.created_at).getTime() : Date.now())}"></div>
                 </div>
-                <button class="button small w-auto mt-10" style="width: 80px" onclick="showAssignmentForm('${a.id}')">Submit</button>
+                <button class="button small w-auto mt-10" style="width: 80px" onclick="renderAssignments('${a.id}')">Submit</button>
               </div>
             `).join('') || '<p class="small">No pending assignments! Good job.</p>'}
             ${pendingAssignments.length > 5 ? `<button class="button secondary small w-100 mt-10" onclick="renderAssignments()">View All Assignments</button>` : ''}
@@ -748,29 +756,38 @@ async function startStudySession(courseId) {
 async function stopStudySession() {
     if (!studyInterval) return;
 
-    clearInterval(studyInterval);
+    const _interval = studyInterval;
+    const _startTime = studyStartTime;
+    const _courseId = currentStudyCourseId;
+
+    clearInterval(_interval);
     studyInterval = null;
+    studyStartTime = null;
+    currentStudyCourseId = null;
+
     const endTime = new Date();
-    const duration = Math.floor((endTime - studyStartTime) / 1000);
+    const duration = Math.floor((endTime - _startTime) / 1000);
 
     if (duration > 10) { // Only save if more than 10 seconds
         const user = await SessionManager.getCurrentUser();
-        const courseId = currentStudyCourseId;
-        await SupabaseDB.saveStudySession({
-            user_email: user.email,
-            course_id: courseId,
-            duration: duration,
-            started_at: studyStartTime.toISOString(),
-            ended_at: endTime.toISOString()
-        });
-        UI.showNotification(`Study session saved: ${Math.floor(duration/60)} minutes logged!`, 'success');
+        if (user && _courseId) {
+            try {
+                await SupabaseDB.saveStudySession({
+                    user_email: user.email,
+                    course_id: _courseId,
+                    duration: duration,
+                    started_at: _startTime.toISOString(),
+                    ended_at: endTime.toISOString()
+                });
+                UI.showNotification(`Study session saved: ${Math.floor(duration/60)} minutes logged!`, 'success');
 
-        // Update Progress
-        await SupabaseDB.updateCourseProgress(courseId, user.email);
+                // Update Progress
+                await SupabaseDB.updateCourseProgress(_courseId, user.email);
+            } catch (e) {
+                console.warn('Failed to save study session:', e);
+            }
+        }
     }
-
-    currentStudyCourseId = null;
-    studyStartTime = null;
 }
 
 window.startStudySession = startStudySession;
@@ -1486,7 +1503,7 @@ async function renderSettings() {
     NotificationManager.renderSettings('Settings', 'Enable real-time desktop notifications even when the app is closed.');
 }
 
-async function renderQuizzes() {
+async function renderQuizzes(openId = null) {
   showLoading();
   clearActiveCountdowns();
   const container = document.getElementById('pageContent');
@@ -1589,10 +1606,18 @@ async function renderQuizzes() {
             startTime: start,
             showProgress: true,
             label: label,
-            onEnd: () => renderQuizzes()
+            onEnd: () => {
+                if (!document.getElementById('quizForm')) {
+                    renderQuizzes();
+                }
+            }
         });
         activeCountdowns.push(c);
     });
+
+    if (openId) {
+        startQuiz(openId);
+    }
   } catch (error) {
     console.error('Quizzes error:', error);
     container.innerHTML = `<div class="stat-card danger">
@@ -1645,8 +1670,12 @@ async function startQuiz(quizId) {
   currentQuiz = quiz;
   const content = document.getElementById('pageContent');
   if (!content) return;
-  const card = content.querySelector('.card');
-  if (card) card.style.display = 'none';
+
+  // Hide other content
+  Array.from(content.children).forEach(c => {
+      if (c.id !== 'quizArea') c.style.display = 'none';
+  });
+
   const quizArea = document.getElementById('quizArea');
   if (!quizArea) return;
   quizArea.style.display = 'block';
@@ -1854,8 +1883,9 @@ async function submitQuiz() {
   if (quizArea) quizArea.style.display = 'none';
   const pageContent = document.getElementById('pageContent');
   if (pageContent) {
-    const cards = pageContent.querySelectorAll('.card');
-    cards.forEach(c => c.style.display = 'block');
+    Array.from(pageContent.children).forEach(c => {
+        if (c.id !== 'quizArea') c.style.display = '';
+    });
   }
 
   // Update Progress
@@ -2073,11 +2103,11 @@ function initNav() {
   const studentNav = document.getElementById('studentNav');
   if (studentNav) {
     studentNav.querySelectorAll('button').forEach(button => {
-      button.addEventListener('click', (e) => {
+      button.addEventListener('click', async (e) => {
         studentNav.querySelectorAll('button').forEach(b => b.classList.remove('active'));
         button.classList.add('active');
         const page = button.dataset.page;
-        if (studyInterval) stopStudySession();
+        if (studyInterval) await stopStudySession();
         if(page === 'courses') renderCourses();
         else if(page === 'my-courses') renderMyCourses();
         else if(page === 'assignments') renderAssignments();
@@ -2125,7 +2155,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     updateMaintBanner();
     const logoutBtn = document.getElementById('logoutBtn');
     if (logoutBtn) {
-      logoutBtn.addEventListener('click', async () => { 
+      logoutBtn.addEventListener('click', async () => {
+        if (typeof stopStudySession === 'function') await stopStudySession();
         await SessionManager.clearCurrentUser(); 
         window.location.href = 'index.html'; 
       });

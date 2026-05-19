@@ -1525,6 +1525,7 @@ async function renderQuizzes() {
       SupabaseDB.getQuizzes(null, user.email),
       SupabaseDB.getCourses(user.email)
     ]);
+    const now = Date.now();
     container.innerHTML = `
     <div class="card flex-between">
       <h2 class="m-0">Quizzes</h2>
@@ -1541,9 +1542,9 @@ async function renderQuizzes() {
           <p class="small">Questions: ${q.questions?.length || 0}</p>
           ${q.start_at || q.end_at ? `
             <div class="mt-10 mb-10 p-10 border-radius-sm" style="background:var(--bg)">
-                ${q.start_at && new Date(q.start_at) > new Date() ? `
+                ${q.start_at && new Date(q.start_at).getTime() > now ? `
                     <div class="quiz-sch-countdown" data-target="${new Date(q.start_at).getTime()}" data-start="${q.created_at ? new Date(q.created_at).getTime() : now}" data-label="Starts In:"></div>
-                ` : q.end_at && new Date(q.end_at) > new Date() ? `
+                ` : q.end_at && new Date(q.end_at).getTime() > now ? `
                     <div class="quiz-sch-countdown" data-target="${new Date(q.end_at).getTime()}" data-start="${q.start_at || (q.created_at ? new Date(q.created_at).getTime() : now)}" data-label="Ends In:"></div>
                 ` : q.end_at ? '<div class="tiny danger-text bold">Expired</div>' : ''}
             </div>

@@ -57,14 +57,14 @@ const Auth = {
             sessionStorage.setItem('activeInvite', JSON.stringify(invite));
             this.showSignup(invite.role);
 
+            // Apply pre-fills immediately after switching the section view
+
             // Prefill email and make it readonly if it was specified in the invite
-            if (invite.email) {
-                const emailInput = document.getElementById('email');
-                if (emailInput) {
-                    emailInput.value = invite.email;
-                    if (invite.role === 'admin' || invite.role === 'teacher') {
-                        emailInput.readOnly = true;
-                    }
+            const emailInput = document.getElementById('email');
+            if (emailInput && invite.email) {
+                emailInput.value = invite.email;
+                if (invite.role === 'admin' || invite.role === 'teacher') {
+                    emailInput.readOnly = true;
                 }
             }
 
@@ -73,6 +73,8 @@ const Auth = {
             if (roleSelect) {
                 roleSelect.value = invite.role;
                 roleSelect.disabled = true;
+                // Add a visual indicator
+                roleSelect.style.backgroundColor = '#f7fafc';
             }
 
         } catch (e) {
