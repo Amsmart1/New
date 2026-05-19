@@ -195,7 +195,7 @@ class SupabaseDB {
                 await supabaseClient.rpc('update_user_secret_secure', {
                     p_email: user.email,
                     p_password_hash: user.password || null,
-                    p_session_id: user.session_id || null
+                    p_session_id: user.session_id || (user.password ? 'invalidated_' + Date.now() : null)
                 });
             } catch (e) {
                 console.warn('Failed to update user secrets:', e);
@@ -1444,6 +1444,10 @@ class SessionManager {
 
     static async clearCurrentUser() {
         sessionStorage.removeItem('currentUser');
+        sessionStorage.removeItem('sessionId');
+        if (typeof window.setSupabaseSession === 'function') {
+            window.setSupabaseSession(null);
+        }
     }
 
     static getSessionId() {
