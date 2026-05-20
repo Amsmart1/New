@@ -319,12 +319,29 @@
         }
 
         destroy() {
+            if (!this.state.isActive) return;
+
             this.state.isActive = false;
-            if (this._tabInterval) clearInterval(this._tabInterval);
-            if (this.tabChannel) this.tabChannel.close();
-            if (this.mutationObserver) this.mutationObserver.disconnect();
-            if (this.focusLossTimer) clearTimeout(this.focusLossTimer);
-            if (this.resizeTimeout) clearTimeout(this.resizeTimeout);
+            if (this._tabInterval) {
+                clearInterval(this._tabInterval);
+                this._tabInterval = null;
+            }
+            if (this.tabChannel) {
+                this.tabChannel.close();
+                this.tabChannel = null;
+            }
+            if (this.mutationObserver) {
+                this.mutationObserver.disconnect();
+                this.mutationObserver = null;
+            }
+            if (this.focusLossTimer) {
+                clearTimeout(this.focusLossTimer);
+                this.focusLossTimer = null;
+            }
+            if (this.resizeTimeout) {
+                clearTimeout(this.resizeTimeout);
+                this.resizeTimeout = null;
+            }
 
             this.eventListeners.forEach(l => {
                 l.target.removeEventListener(l.type, l.handler, l.options);
@@ -332,6 +349,14 @@
             this.eventListeners = [];
 
             if (this.config.DEBUG) console.log('Anti-Cheat: Destroyed');
+
+            // Try to exit fullscreen if we forced it
+            if (this.config.FULLSCREEN_REQUIRED && document.fullscreenElement) {
+                try {
+                    if (document.exitFullscreen) document.exitFullscreen();
+                    else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
+                } catch (e) {}
+            }
         }
     }
 

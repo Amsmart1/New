@@ -41,16 +41,18 @@
 
   <main class="main">
     <header class="dashboard-header">
-      <div class="flex-center" style="gap:10px">
-        <button id="sidebarToggle" class="button" style="width:auto; background:transparent; border:none; color:inherit; font-size:24px; padding:5px 10px; cursor:pointer;">☰</button>
-        <div class="header-title" style="font-size:18px; font-weight:800">Admin Dashboard</div>
+      <div class="flex-center-y gap-10">
+        <button id="sidebarToggle" class="button small">☰</button>
+        <h1 class="m-0" style="font-size: 1.2rem;">Admin Dashboard</h1>
       </div>
-      <div class="notif-bell-container" style="position:relative; margin-left: auto; margin-right: 20px;">
-        <div id="notifBell" style="cursor:pointer;font-size:20px">🔔</div>
-        <div id="unreadCount" class="unread-count" style="display:none">0</div>
-        <div id="notifList" class="notif-list"></div>
+      <div class="header-right flex-center-y gap-20 ml-auto">
+        <div class="notif-bell-container">
+          <div id="notifBell" style="cursor:pointer;font-size:20px">🔔</div>
+          <div id="unreadCount" class="unread-count" style="display:none">0</div>
+          <div id="notifList" class="notif-list"></div>
+        </div>
+        <button id="logoutBtn" class="button secondary small w-auto">Logout</button>
       </div>
-      <button id="logoutBtn" class="button" style="width:auto; padding:5px 15px;">Logout</button>
     </header>
 
     <div class="content-area">

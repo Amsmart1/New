@@ -570,21 +570,9 @@ async function showAssignmentForm(assignment = null, courseId = null) {
         </select>
 
         <div class="mt-20">
-          <button type="button" class="button secondary w-auto small" onclick="toggleAntiCheatConfig('assignment')">🛡️ Configure Anti-Cheat</button>
-          <div id="antiCheatConfigArea" class="hidden card mt-10" style="background: #f8fafc">
-            <h4 class="m-0 mb-10">Anti-Cheat Settings</h4>
-            <div class="grid-3">
-              <label class="flex-center-y gap-5"><input type="checkbox" class="ac-flag" data-flag="BLOCK_COPY" ${assignment?.anti_cheat_config?.BLOCK_COPY ? 'checked' : ''}> Block Copy</label>
-              <label class="flex-center-y gap-5"><input type="checkbox" class="ac-flag" data-flag="BLOCK_PASTE" ${assignment?.anti_cheat_config?.BLOCK_PASTE ? 'checked' : ''}> Block Paste</label>
-              <label class="flex-center-y gap-5"><input type="checkbox" class="ac-flag" data-flag="BLOCK_CUT" ${assignment?.anti_cheat_config?.BLOCK_CUT ? 'checked' : ''}> Block Cut</label>
-              <label class="flex-center-y gap-5"><input type="checkbox" class="ac-flag" data-flag="BLOCK_CONTEXT_MENU" ${assignment?.anti_cheat_config?.BLOCK_CONTEXT_MENU ? 'checked' : ''}> Block Context Menu</label>
-              <label class="flex-center-y gap-5"><input type="checkbox" class="ac-flag" data-flag="BLOCK_TAB_SWITCH" ${assignment?.anti_cheat_config?.BLOCK_TAB_SWITCH ? 'checked' : ''}> Block Tab Switch</label>
-              <label class="flex-center-y gap-5"><input type="checkbox" class="ac-flag" data-flag="BLOCK_DEVTOOLS" ${assignment?.anti_cheat_config?.BLOCK_DEVTOOLS ? 'checked' : ''}> Block DevTools</label>
-              <label class="flex-center-y gap-5"><input type="checkbox" class="ac-flag" data-flag="FULLSCREEN_REQUIRED" ${assignment?.anti_cheat_config?.FULLSCREEN_REQUIRED ? 'checked' : ''}> Require Fullscreen</label>
-              <label class="flex-center-y gap-5"><input type="checkbox" class="ac-flag" data-flag="MULTI_TAB_LOCK" ${assignment?.anti_cheat_config?.MULTI_TAB_LOCK ? 'checked' : ''}> Multi-Tab Lock</label>
-              <label class="flex-center-y gap-5"><input type="checkbox" class="ac-flag" data-flag="BLOCK_KEYBOARD_SHORTCUTS" ${assignment?.anti_cheat_config?.BLOCK_KEYBOARD_SHORTCUTS ? 'checked' : ''}> Block Shortcuts</label>
-            </div>
-          </div>
+          <button type="button" class="button secondary w-auto small" onclick="openAntiCheatModal('assignment')">🛡️ Configure Anti-Cheat</button>
+          <div id="ac-preview" class="small mt-10 text-muted"></div>
+          <input type="hidden" id="antiCheatConfigData" value='${JSON.stringify(assignment?.anti_cheat_config || {})}'>
         </div>
         <div class="mt-20">
           <h3 class="m-0">Questions</h3>
@@ -633,18 +621,20 @@ async function showAssignmentForm(assignment = null, courseId = null) {
     container.appendChild(div);
 
     // Auto-update total points when individual question points change
-    div.querySelector('.q-points').addEventListener('input', updateAssignmentTotalPoints);
+    div.querySelector('.q-points').addEventListener('input', window.updateAssignmentTotalPoints);
+    div.querySelector('.q-points').addEventListener('change', window.updateAssignmentTotalPoints);
 
-    updateAssignmentTotalPoints();
+    window.updateAssignmentTotalPoints();
   };
 
   window.updateAssignmentTotalPoints = () => {
     const total = Array.from(document.querySelectorAll('#questionsContainer .q-points'))
-        .reduce((sum, input) => sum + (parseInt(input.value) || 0), 0);
+        .reduce((sum, input) => sum + (parseFloat(input.value) || 0), 0);
     const pointsInput = document.getElementById('assignmentPoints');
     if (pointsInput) pointsInput.value = total;
   };
   if (isEdit && assignment.questions) { assignment.questions.forEach(q => window.addQuestionField(q)); }
+  updateACPreview();
   document.getElementById('assignmentForm').addEventListener('submit', async (e) => {
     e.preventDefault();
     try {
@@ -662,10 +652,7 @@ async function showAssignmentForm(assignment = null, courseId = null) {
       });
       const allowedExt = document.getElementById('allowedExtensions').value.split(',').map(e => e.trim().toLowerCase()).filter(e => e);
       const selCourseId = document.getElementById('assignmentCourseId').value;
-      const acConfig = {};
-      document.querySelectorAll('#antiCheatConfigArea .ac-flag').forEach(cb => {
-          acConfig[cb.dataset.flag] = cb.checked;
-      });
+      const acConfig = JSON.parse(document.getElementById('antiCheatConfigData').value || '{}');
 
       const assignmentData = {
         ...assignment,
@@ -681,8 +668,6 @@ async function showAssignmentForm(assignment = null, courseId = null) {
         status: document.getElementById('assignmentStatus').value,
         anti_cheat_config: acConfig,
         teacher_email: user.email,
-        created_at: isEdit ? assignment.created_at : new Date().toISOString(),
-        updated_at: new Date().toISOString(),
         questions: questions,
         allowed_extensions: allowedExt,
         attachments: isEdit ? assignment.attachments : []
@@ -836,8 +821,7 @@ async function gradeSubmission(assignmentId, studentEmail) {
         feedback: document.getElementById('feedback').value,
         status: 'graded',
         graded_at: new Date().toISOString(),
-        regrade_request: null, // Clear regrade request once graded
-        updated_at: new Date().toISOString()
+        regrade_request: null // Clear regrade request once graded
       };
       if (await SupabaseDB.saveSubmission(updatedSubmission)) {
         alert('Graded!');
@@ -1083,11 +1067,103 @@ async function renderAntiCheat() {
 }
 window.renderAntiCheat = renderAntiCheat;
 
-function toggleAntiCheatConfig() {
-    const area = document.getElementById('antiCheatConfigArea');
-    if (area) area.classList.toggle('hidden');
+function openAntiCheatModal(type) {
+    const input = document.getElementById('antiCheatConfigData');
+    const currentConfig = JSON.parse(input.value || '{}');
+
+    const backdrop = document.createElement('div');
+    backdrop.className = 'modal-backdrop';
+    backdrop.style.display = 'flex';
+
+    const flags = [
+        { key: 'BLOCK_COPY', label: 'Block Copy', desc: 'Prevents students from copying text from the assessment.', category: 'Interaction' },
+        { key: 'BLOCK_PASTE', label: 'Block Paste', desc: 'Prevents students from pasting text into the assessment.', category: 'Interaction' },
+        { key: 'BLOCK_CUT', label: 'Block Cut', desc: 'Prevents students from cutting text.', category: 'Interaction' },
+        { key: 'BLOCK_CONTEXT_MENU', label: 'Block Right-Click', desc: 'Disables the right-click context menu.', category: 'Interaction' },
+        { key: 'BLOCK_KEYBOARD_SHORTCUTS', label: 'Block Shortcuts', desc: 'Blocks common shortcuts like Ctrl+C, Ctrl+V, Ctrl+U, F12.', category: 'Interaction' },
+        { key: 'BLOCK_DRAG', label: 'Block Drag & Drop', desc: 'Prevents dragging items into or out of the assessment.', category: 'Interaction' },
+
+        { key: 'BLOCK_TAB_SWITCH', label: 'Block Tab Switching', desc: 'Logs a violation if the student switches tabs or windows.', category: 'Environment' },
+        { key: 'BLOCK_DEVTOOLS', label: 'Block DevTools', desc: 'Attempts to detect and block browser developer tools.', category: 'Environment' },
+        { key: 'FULLSCREEN_REQUIRED', label: 'Require Fullscreen', desc: 'Forces the assessment to stay in fullscreen mode.', category: 'Environment' },
+        { key: 'MULTI_TAB_LOCK', label: 'Multi-Tab Lock', desc: 'Prevents the assessment from being opened in multiple tabs.', category: 'Environment' },
+
+        { key: 'BLOCK_LONG_PRESS', label: 'Block Long Press', desc: 'Prevents long-press actions on touch devices.', category: 'Input' },
+        { key: 'BLOCK_TEXT_SELECTION', label: 'Block Text Selection', desc: 'Disables the ability to highlight/select text.', category: 'Input' }
+    ];
+
+    const categories = ['Interaction', 'Environment', 'Input'];
+
+    backdrop.innerHTML = `
+        <div class="modal" style="max-width: 700px">
+            <div class="flex-between mb-20">
+                <h3 class="m-0">🛡️ Anti-Cheat Configuration</h3>
+                <button class="button secondary tiny w-auto" onclick="this.closest('.modal-backdrop').remove()">✕</button>
+            </div>
+
+            <p class="small mb-20">Select the security measures you want to enable for this ${type}. Active measures will log violations and notify you.</p>
+
+            <div class="ac-modal-content">
+                ${categories.map(cat => `
+                    <div class="mb-20">
+                        <h4 class="mb-10" style="border-bottom: 1px solid var(--border); padding-bottom: 5px; color: var(--purple)">${cat} Control</h4>
+                        <div class="grid-2">
+                            ${flags.filter(f => f.category === cat).map(f => `
+                                <div class="flex gap-10 p-10 border-radius-sm" style="background: var(--bg); align-items: flex-start">
+                                    <input type="checkbox" class="ac-modal-flag w-auto m-0 mt-4" data-flag="${f.key}" ${currentConfig[f.key] ? 'checked' : ''}>
+                                    <div>
+                                        <label class="m-0 bold small" style="cursor: pointer" onclick="this.parentElement.previousElementSibling.click()">${f.label}</label>
+                                        <div class="tiny text-muted mt-4">${f.desc}</div>
+                                    </div>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+                `).join('')}
+            </div>
+
+            <div class="flex gap-10 mt-30">
+                <button class="button w-auto px-40" id="saveACBtn">Apply Settings</button>
+                <button class="button secondary w-auto px-40" onclick="this.closest('.modal-backdrop').remove()">Cancel</button>
+            </div>
+        </div>
+    `;
+
+    document.body.appendChild(backdrop);
+
+    document.getElementById('saveACBtn').onclick = () => {
+        const newConfig = {};
+        backdrop.querySelectorAll('.ac-modal-flag').forEach(cb => {
+            newConfig[cb.dataset.flag] = cb.checked;
+        });
+        input.value = JSON.stringify(newConfig);
+        updateACPreview();
+        backdrop.remove();
+        UI.showNotification('Anti-cheat configuration updated locally. Save the assessment to persist changes.', 'info');
+    };
 }
-window.toggleAntiCheatConfig = toggleAntiCheatConfig;
+
+function updateACPreview() {
+    const input = document.getElementById('antiCheatConfigData');
+    const preview = document.getElementById('ac-preview');
+    if (!input || !preview) return;
+
+    try {
+        const config = JSON.parse(input.value || '{}');
+        const active = Object.entries(config).filter(([k, v]) => v === true).map(([k, v]) => k.replace('BLOCK_', '').replace(/_/g, ' '));
+
+        if (active.length === 0) {
+            preview.textContent = 'No anti-cheat measures active.';
+        } else {
+            preview.innerHTML = `<strong>Active:</strong> ${active.join(', ')}`;
+        }
+    } catch (e) {
+        preview.textContent = '';
+    }
+}
+
+window.openAntiCheatModal = openAntiCheatModal;
+window.updateACPreview = updateACPreview;
 
 async function renderSettings() {
     NotificationManager.renderSettings('Settings', 'Enable real-time desktop notifications even when the app is closed.');
@@ -1685,7 +1761,8 @@ async function showQuizForm(quiz = null) {
           <div><label class="small">Available From:</label><input type="datetime-local" id="quizStartAt" value="${isEdit && quiz.start_at ? new Date(quiz.start_at).toISOString().slice(0, 16) : ''}"></div>
           <div><label class="small">Available Until:</label><input type="datetime-local" id="quizEndAt" value="${isEdit && quiz.end_at ? new Date(quiz.end_at).toISOString().slice(0, 16) : ''}"></div>
         </div>
-        <div class="grid-2 mt-10">
+        <div class="grid-3 mt-10">
+          <div><label class="small">Total Points:</label><input type="number" id="quizTotalPoints" value="0" readonly style="background:#f0f0f0"></div>
           <div><label class="small">Passing Score (%):</label><input type="number" id="quizPassingScore" value="${isEdit ? quiz.passing_score : 60}" min="0" max="100"></div>
           <div>
             <label class="small">Shuffle Questions?</label>
@@ -1709,21 +1786,9 @@ async function showQuizForm(quiz = null) {
         </select>
 
         <div class="mt-20">
-          <button type="button" class="button secondary w-auto small" onclick="toggleAntiCheatConfig('quiz')">🛡️ Configure Anti-Cheat</button>
-          <div id="antiCheatConfigArea" class="hidden card mt-10" style="background: #f8fafc">
-            <h4 class="m-0 mb-10">Anti-Cheat Settings</h4>
-            <div class="grid-3">
-              <label class="flex-center-y gap-5"><input type="checkbox" class="ac-flag" data-flag="BLOCK_COPY" ${quiz?.anti_cheat_config?.BLOCK_COPY ? 'checked' : ''}> Block Copy</label>
-              <label class="flex-center-y gap-5"><input type="checkbox" class="ac-flag" data-flag="BLOCK_PASTE" ${quiz?.anti_cheat_config?.BLOCK_PASTE ? 'checked' : ''}> Block Paste</label>
-              <label class="flex-center-y gap-5"><input type="checkbox" class="ac-flag" data-flag="BLOCK_CUT" ${quiz?.anti_cheat_config?.BLOCK_CUT ? 'checked' : ''}> Block Cut</label>
-              <label class="flex-center-y gap-5"><input type="checkbox" class="ac-flag" data-flag="BLOCK_CONTEXT_MENU" ${quiz?.anti_cheat_config?.BLOCK_CONTEXT_MENU ? 'checked' : ''}> Block Context Menu</label>
-              <label class="flex-center-y gap-5"><input type="checkbox" class="ac-flag" data-flag="BLOCK_TAB_SWITCH" ${quiz?.anti_cheat_config?.BLOCK_TAB_SWITCH ? 'checked' : ''}> Block Tab Switch</label>
-              <label class="flex-center-y gap-5"><input type="checkbox" class="ac-flag" data-flag="BLOCK_DEVTOOLS" ${quiz?.anti_cheat_config?.BLOCK_DEVTOOLS ? 'checked' : ''}> Block DevTools</label>
-              <label class="flex-center-y gap-5"><input type="checkbox" class="ac-flag" data-flag="FULLSCREEN_REQUIRED" ${quiz?.anti_cheat_config?.FULLSCREEN_REQUIRED ? 'checked' : ''}> Require Fullscreen</label>
-              <label class="flex-center-y gap-5"><input type="checkbox" class="ac-flag" data-flag="MULTI_TAB_LOCK" ${quiz?.anti_cheat_config?.MULTI_TAB_LOCK ? 'checked' : ''}> Multi-Tab Lock</label>
-              <label class="flex-center-y gap-5"><input type="checkbox" class="ac-flag" data-flag="BLOCK_KEYBOARD_SHORTCUTS" ${quiz?.anti_cheat_config?.BLOCK_KEYBOARD_SHORTCUTS ? 'checked' : ''}> Block Shortcuts</label>
-            </div>
-          </div>
+          <button type="button" class="button secondary w-auto small" onclick="openAntiCheatModal('quiz')">🛡️ Configure Anti-Cheat</button>
+          <div id="ac-preview" class="small mt-10 text-muted"></div>
+          <input type="hidden" id="antiCheatConfigData" value='${JSON.stringify(quiz?.anti_cheat_config || {})}'>
         </div>
         <div class="mt-20">
           <div class="flex-between">
@@ -1780,14 +1845,17 @@ async function showQuizForm(quiz = null) {
     `;
     container.appendChild(div);
     div.querySelector('.q-points').addEventListener('input', window.updateQuizTotalPoints);
+    div.querySelector('.q-points').addEventListener('change', window.updateQuizTotalPoints);
     window.updateQuizTotalPoints();
   };
 
   window.updateQuizTotalPoints = () => {
-    // This could be used to show a total points label if needed, or for validation
     const total = Array.from(document.querySelectorAll('#quizQuestionsContainer .q-points'))
-        .reduce((sum, input) => sum + (parseInt(input.value) || 0), 0);
+        .reduce((sum, input) => sum + (parseFloat(input.value) || 0), 0);
+    const pointsInput = document.getElementById('quizTotalPoints');
+    if (pointsInput) pointsInput.value = total;
   };
+  updateACPreview();
   window.renderQuizOptions = (q) => {
     if (q?.type === 'tf') return `<select class="q-correct"><option value="True" ${q.correct === 'True' ? 'selected' : ''}>True</option><option value="False" ${q.correct === 'False' ? 'selected' : ''}>False</option></select>`;
     if (q?.type === 'short') return `<input type="text" class="q-correct" placeholder="Correct Answer (Exact Match)" value="${q.correct || ''}">`;
@@ -1825,10 +1893,7 @@ window.shuffleQuizQuestions = () => {
         }
         questions.push(qData);
       });
-      const acConfig = {};
-      document.querySelectorAll('#antiCheatConfigArea .ac-flag').forEach(cb => {
-          acConfig[cb.dataset.flag] = cb.checked;
-      });
+      const acConfig = JSON.parse(document.getElementById('antiCheatConfigData').value || '{}');
 
       await SupabaseDB.saveQuiz({
         ...quiz,
@@ -1845,8 +1910,7 @@ window.shuffleQuizQuestions = () => {
         shuffle_questions: document.getElementById('quizShuffle').value === 'true',
         status: document.getElementById('quizStatus').value,
         anti_cheat_config: acConfig,
-        questions,
-        updated_at: new Date().toISOString()
+        questions
       });
       renderQuizzes();
     } catch (err) {
@@ -2036,8 +2100,7 @@ async function gradeQuizSubmission(submissionId, quizId) {
         analytics: {
             ...submission.analytics,
             manual_scores: manualScoresMap
-        },
-        updated_at: new Date().toISOString()
+        }
       };
 
       await SupabaseDB.saveQuizSubmission(updatedSubmission);

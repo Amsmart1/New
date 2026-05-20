@@ -8,7 +8,7 @@ body.landing-page {
 header.landing-header {
     background: #fff;
     border-bottom: 1px solid #e5e7eb;
-    padding: 1rem 2rem;
+    padding: 1.25rem 2.5rem;
     display: flex;
     justify-content: space-between;
     align-items: center;
@@ -18,18 +18,18 @@ header.landing-header {
 }
 
 .landing-header .logo {
-    font-size: 1.5rem;
+    font-size: 1.6rem;
     font-weight: 800;
     color: var(--p);
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: 0.6rem;
     text-decoration: none;
 }
 
 .landing-header .nav-links {
     display: flex;
-    gap: 2rem;
+    gap: 2.5rem;
 }
 
 .landing-header .nav-links a {
@@ -49,45 +49,47 @@ header.landing-header {
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    padding: 4rem 2rem;
+    padding: 6rem 2rem;
     text-align: center;
     background: radial-gradient(circle at top right, #f5f3ff, transparent), radial-gradient(circle at bottom left, #eff6ff, transparent);
 }
 
 .hero h1 {
-    font-size: 3.5rem;
+    font-size: 4rem;
     font-weight: 900;
-    margin-bottom: 1rem;
-    letter-spacing: -0.025em;
+    margin-bottom: 1.5rem;
+    letter-spacing: -0.03em;
     line-height: 1.1;
-    max-width: 900px;
+    max-width: 1000px;
+    color: var(--text-dark);
 }
 
 .hero p {
-    font-size: 1.25rem;
+    font-size: 1.35rem;
     color: #4b5563;
-    max-width: 600px;
-    margin-bottom: 2.5rem;
+    max-width: 700px;
+    margin-bottom: 3.5rem;
+    line-height: 1.6;
 }
 
 .role-grid {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
-    gap: 1.5rem;
-    max-width: 800px;
+    gap: 2rem;
+    max-width: 900px;
     width: 100%;
-    margin-bottom: 3rem;
+    margin-bottom: 5rem;
 }
 
 .role-btn {
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 1rem;
-    padding: 2rem;
+    gap: 1.2rem;
+    padding: 2.5rem;
     background: #fff;
     border: 2px solid #e5e7eb;
-    border-radius: 1.25rem;
+    border-radius: 1.5rem;
     text-decoration: none;
     font-weight: 700;
     transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
@@ -96,90 +98,92 @@ header.landing-header {
 }
 
 .role-btn .icon {
-    font-size: 3rem;
+    font-size: 3.5rem;
 }
 
 .role-btn span {
-    font-size: 1.125rem;
-    color: var(--text);
+    font-size: 1.25rem;
+    color: var(--text-dark);
 }
 
 .role-btn:hover {
     border-color: var(--p);
     background: #f5f3ff;
-    transform: translateY(-8px);
-    box-shadow: 0 20px 25px -5px rgba(0,0,0,0.1);
+    transform: translateY(-10px);
+    box-shadow: 0 25px 30px -10px rgba(0, 0, 0, 0.15);
 }
 
 .features {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-    gap: 2rem;
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    gap: 2.5rem;
     max-width: 1200px;
     width: 100%;
-    margin: 4rem 0;
+    margin: 5rem 0;
     padding: 0 1rem;
     box-sizing: border-box;
 }
 
 .feat-card {
     background: #fff;
-    padding: 2rem;
-    border-radius: 1rem;
+    padding: 2.5rem;
+    border-radius: 1.25rem;
     border: 1px solid #e5e7eb;
-    transition: transform 0.2s, box-shadow 0.2s;
+    transition: all 0.3s ease;
     text-align: left;
 }
 
 .feat-card:hover {
-    transform: translateY(-5px);
-    box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1);
+    transform: translateY(-8px);
+    box-shadow: 0 15px 20px -5px rgba(0, 0, 0, 0.1);
+    border-color: var(--p);
 }
 
 .feat-card .icon {
-    font-size: 2rem;
-    margin-bottom: 1rem;
+    font-size: 2.5rem;
+    margin-bottom: 1.25rem;
 }
 
 .feat-card h3 {
-    margin: 0 0 0.5rem 0;
-    font-size: 1.25rem;
+    margin: 0 0 0.75rem 0;
+    font-size: 1.4rem;
+    color: var(--text-dark);
 }
 
 .feat-card p {
-    font-size: 0.95rem;
+    font-size: 1rem;
     color: #6b7280;
     margin: 0;
-    line-height: 1.6;
+    line-height: 1.7;
 }
 
 .about-section {
-    padding: 4rem 2rem;
+    padding: 6rem 2rem;
     background: #f9fafb;
     text-align: center;
 }
 
 .about-content {
-    max-width: 800px;
+    max-width: 900px;
     margin: 0 auto;
 }
 
 .about-content h2 {
-    font-size: 2.5rem;
-    margin-bottom: 1.5rem;
+    font-size: 2.8rem;
+    margin-bottom: 2rem;
+    font-weight: 800;
 }
 
 .about-content p {
-    font-size: 1.125rem;
+    font-size: 1.2rem;
     color: #4b5563;
-    line-height: 1.8;
+    line-height: 1.9;
 }
 
-/* Footer styles duplicated here to be specific if needed, but components.css can handle common parts */
 footer.landing-footer {
     background: #111827;
     color: #fff;
-    padding: 4rem 2rem 2rem;
+    padding: 5rem 2rem 3rem;
     margin-top: auto;
 }
 
@@ -187,28 +191,30 @@ footer.landing-footer {
     max-width: 1200px;
     margin: 0 auto;
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-    gap: 3rem;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 4rem;
 }
 
 .footer-brand h4 {
-    font-size: 1.25rem;
-    margin: 0 0 1rem 0;
+    font-size: 1.4rem;
+    margin: 0 0 1.25rem 0;
     color: #fff;
+    font-weight: 700;
 }
 
 .footer-brand p {
     color: #9ca3af;
-    font-size: 0.875rem;
-    line-height: 1.5;
+    font-size: 0.95rem;
+    line-height: 1.7;
 }
 
 .footer-links h5 {
-    font-size: 0.875rem;
+    font-size: 0.9rem;
     text-transform: uppercase;
-    letter-spacing: 0.05em;
+    letter-spacing: 0.08em;
     color: #6b7280;
-    margin-bottom: 1.25rem;
+    margin-bottom: 1.5rem;
+    font-weight: 800;
 }
 
 .footer-links ul {
@@ -218,13 +224,13 @@ footer.landing-footer {
 }
 
 .footer-links li {
-    margin-bottom: 0.75rem;
+    margin-bottom: 1rem;
 }
 
 .footer-links a {
     color: #9ca3af;
     text-decoration: none;
-    font-size: 0.875rem;
+    font-size: 0.95rem;
     transition: color 0.2s;
 }
 
@@ -234,45 +240,105 @@ footer.landing-footer {
 
 .social-links {
     display: flex;
-    gap: 1rem;
-    margin-top: 1.5rem;
+    gap: 1.25rem;
+    margin-top: 2rem;
 }
 
 .social-links a {
-    width: 2.5rem;
-    height: 2.5rem;
+    width: 2.8rem;
+    height: 2.8rem;
     background: #374151;
-    border-radius: 0.5rem;
+    border-radius: 0.75rem;
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 1.25rem;
-    transition: background 0.2s;
+    font-size: 1.4rem;
+    transition: all 0.2s;
     text-decoration: none;
     color: white;
 }
 
 .social-links a:hover {
     background: var(--p);
+    transform: scale(1.1);
 }
 
 .footer-bottom {
     max-width: 1200px;
-    margin: 3rem auto 0;
-    padding-top: 2rem;
+    margin: 4rem auto 0;
+    padding-top: 2.5rem;
     border-top: 1px solid #374151;
     text-align: center;
     color: #6b7280;
-    font-size: 0.875rem;
+    font-size: 0.9rem;
+}
+
+/* Auth Containers Overlay */
+.overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.6);
+    backdrop-filter: blur(8px);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 2000;
+    padding: 1.5rem;
+}
+
+.overlay.active {
+    display: flex !important;
+}
+
+.overlay .container {
+    width: 100%;
+    max-width: 450px;
+    background: #fff;
+    padding: 3rem;
+    border-radius: 2rem;
+    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+    position: relative;
+    display: none;
+}
+
+.overlay h2 {
+    text-align: center;
+    margin-top: 0;
+    margin-bottom: 2rem;
+    font-weight: 800;
+    font-size: 1.8rem;
+    color: var(--text-dark);
+}
+
+.overlay .note {
+    text-align: center;
+    font-size: 0.95rem;
+    color: #6b7280;
+    margin-top: 1.5rem;
+}
+
+.overlay .note a {
+    color: var(--p);
+    text-decoration: none;
+    font-weight: 700;
+}
+
+.overlay .error {
+    color: var(--danger);
+    font-size: 0.9rem;
+    margin-top: 0.75rem;
+    min-height: 1.5rem;
+    text-align: center;
+    font-weight: 500;
 }
 
 /* Mobile Adjustments */
 @media (max-width: 768px) {
-    .landing-header {
-        padding: 0.75rem;
+    header.landing-header {
+        padding: 1rem;
         flex-wrap: wrap;
         justify-content: center;
-        gap: 0.75rem;
+        gap: 1rem;
     }
 
     .landing-header .logo {
@@ -282,101 +348,28 @@ footer.landing-footer {
     }
 
     .landing-header .nav-links {
-        display: flex;
-        gap: 1rem;
-        font-size: 0.9rem;
+        gap: 1.5rem;
+        font-size: 0.95rem;
     }
 
-    .hero h1 {
-        font-size: 2.25rem;
-    }
+    .hero { padding: 4rem 1.5rem; }
+    .hero h1 { font-size: 2.8rem; }
+    .hero p { font-size: 1.15rem; margin-bottom: 2.5rem; }
 
     .role-grid {
         grid-template-columns: 1fr;
-        max-width: 300px;
-        gap: 1rem;
+        max-width: 350px;
+        gap: 1.5rem;
+        margin-bottom: 4rem;
     }
+
+    .role-btn { padding: 2rem; }
+    .role-btn .icon { font-size: 3rem; }
 
     .features {
         grid-template-columns: 1fr;
+        gap: 2rem;
     }
-}
 
-/* Auth Containers Overlay */
-.overlay {
-    position: fixed;
-    inset: 0;
-    background: rgba(0, 0, 0, 0.5);
-    backdrop-filter: blur(4px);
-    display: none;
-    align-items: center;
-    justify-content: center;
-    z-index: 1000;
-    padding: 1rem;
-}
-
-.overlay.active {
-    display: flex !important;
-}
-
-.overlay .container {
-    width: 100%;
-    max-width: 420px;
-    background: #fff;
-    padding: 2.5rem;
-    border-radius: 1.5rem;
-    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
-    position: relative;
-    display: none;
-}
-
-.close-btn {
-    position: absolute;
-    top: 1rem;
-    right: 1rem;
-    background: #f3f4f6;
-    border: none;
-    width: 2.5rem;
-    height: 2.5rem;
-    border-radius: 50%;
-    cursor: pointer;
-    font-size: 1.5rem;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transition: background 0.2s;
-    color: #333;
-    z-index: 10;
-}
-
-.close-btn:hover {
-    background: #e5e7eb;
-}
-
-.overlay h2 {
-    text-align: center;
-    margin-top: 0;
-    margin-bottom: 1.5rem;
-    color: var(--text);
-}
-
-.overlay .note {
-    text-align: center;
-    font-size: 0.875rem;
-    color: #6b7280;
-    margin-top: 1rem;
-}
-
-.overlay .note a {
-    color: var(--p);
-    text-decoration: none;
-    font-weight: 600;
-}
-
-.overlay .error {
-    color: #ef4444;
-    font-size: 0.875rem;
-    margin-top: 0.5rem;
-    min-height: 1.25rem;
-    text-align: center;
+    .overlay .container { padding: 2rem; }
 }

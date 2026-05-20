@@ -50,20 +50,22 @@
   </aside>
   <main class="main">
     <header class="dashboard-header">
-      <div class="flex" style="align-items:center; gap:10px">
-        <button id="sidebarToggle" class="button" style="width:auto; background:transparent; border:none; color:inherit; font-size:24px; padding:5px 10px; cursor:pointer;">☰</button>
-        <div style="font-weight:700">Hi, <span id="profileName">Student</span>!</div>
+      <div class="flex-center-y gap-10">
+        <button id="sidebarToggle" class="button small">☰</button>
+        <h1 class="m-0" style="font-size: 1.2rem;">Hi, <span id="profileName">Student</span>!</h1>
       </div>
-      <div class="header-stats">
+      <div class="header-stats ml-auto">
         <div class="stat-item"><div class="stat-label">Courses</div><div class="stat-val" id="statCourses">0</div></div>
         <div class="stat-item"><div class="stat-label">Due Soon</div><div class="stat-val" id="statDue">0</div></div>
       </div>
-      <div class="notif-bell-container" style="position:relative; margin-left: auto;">
-        <div id="notifBell" style="cursor:pointer;font-size:20px">🔔</div>
-        <div id="unreadCount" class="unread-count" style="display:none">0</div>
-        <div id="notifList" class="notif-list"></div>
+      <div class="header-right flex-center-y gap-20 ml-auto">
+        <div class="notif-bell-container">
+          <div id="notifBell" style="cursor:pointer;font-size:20px">🔔</div>
+          <div id="unreadCount" class="unread-count" style="display:none">0</div>
+          <div id="notifList" class="notif-list"></div>
+        </div>
+        <button id="logoutBtn" class="button secondary small w-auto">Logout</button>
       </div>
-      <button id="logoutBtn" class="button secondary" style="width:auto; background:#e2e8f0; color:#333; margin-left:10px; padding:5px 12px">Logout</button>
     </header>
     <div class="content-area">
       <div id="maintBanner" class="badge-warn" style="display:none; border-radius:6px; padding:6px 10px; margin-bottom:16px; text-align:center; font-size:13px"></div>

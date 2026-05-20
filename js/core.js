@@ -562,7 +562,27 @@ const NotificationManager = {
     },
 
     async sendBrowserNotification(title, body) {
-        // Push notifications disabled per request
+        if (!('Notification' in window) || Notification.permission !== 'granted') return;
+
+        try {
+            const options = {
+                body,
+                icon: 'favicon.ico',
+                badge: 'favicon.ico',
+                tag: 'smartlms-notif',
+                renotify: true
+            };
+
+            // Try to use service worker registration if available
+            if ('serviceWorker' in navigator) {
+                const reg = await navigator.serviceWorker.ready;
+                reg.showNotification(title, options);
+            } else {
+                new Notification(title, options);
+            }
+        } catch (e) {
+            console.warn('Failed to send browser notification:', e);
+        }
     },
 
     async subscribeToPush() {
