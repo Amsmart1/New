@@ -176,7 +176,7 @@ CREATE TABLE IF NOT EXISTS quiz_submissions (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   quiz_id UUID REFERENCES quizzes(id) ON DELETE CASCADE,
   student_email VARCHAR(255) REFERENCES users(email) ON UPDATE CASCADE ON DELETE CASCADE,
-  attempt_number INTEGER NOT NULL DEFAULT 1,
+  attempt_number INTEGER,
   score INTEGER,
   total_points INTEGER,
   answers JSONB DEFAULT '{}'::jsonb,
@@ -430,8 +430,7 @@ BEGIN
     FROM numbered_attempts
     WHERE quiz_submissions.id = numbered_attempts.id AND quiz_submissions.attempt_number IS NULL';
 
-    ALTER TABLE quiz_submissions ALTER COLUMN attempt_number SET DEFAULT 1;
-    ALTER TABLE quiz_submissions ALTER COLUMN attempt_number SET NOT NULL;
+    -- Removed forced NOT NULL/DEFAULT for attempt_number to allow drafts to have NULL attempts
 
     -- materials
     ALTER TABLE materials ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
@@ -680,22 +679,30 @@ DECLARE
     v_attempts_allowed INTEGER;
     v_next_attempt INTEGER;
 BEGIN
-    -- Only handle attempt allocation on INSERT
-    IF (TG_OP = 'INSERT') THEN
-        SELECT attempts_allowed INTO v_attempts_allowed FROM quizzes WHERE id = NEW.quiz_id;
+    -- Force attempt_number to NULL if it's a draft
+    IF (NEW.status = 'draft') THEN
+        NEW.attempt_number := NULL;
+    END IF;
 
-        -- Atomically allocate next attempt number
-        SELECT COALESCE(MAX(attempt_number), 0) + 1 INTO v_next_attempt
-        FROM quiz_submissions
-        WHERE quiz_id = NEW.quiz_id AND student_email = NEW.student_email;
+    -- Only allocate attempt number when status is 'submitted'
+    IF (NEW.status = 'submitted' AND (TG_OP = 'INSERT' OR (TG_OP = 'UPDATE' AND (OLD.status IS DISTINCT FROM 'submitted')))) THEN
+        -- Only allocate if not already allocated
+        IF (NEW.attempt_number IS NULL) THEN
+            SELECT attempts_allowed INTO v_attempts_allowed FROM quizzes WHERE id = NEW.quiz_id;
 
-        IF v_attempts_allowed IS NOT NULL AND v_attempts_allowed > 0 THEN
-            IF v_next_attempt > v_attempts_allowed THEN
-                RAISE EXCEPTION 'You have reached the maximum number of attempts allowed for this quiz.';
+            -- Atomically allocate next attempt number
+            SELECT COALESCE(MAX(attempt_number), 0) + 1 INTO v_next_attempt
+            FROM quiz_submissions
+            WHERE quiz_id = NEW.quiz_id AND student_email = NEW.student_email;
+
+            IF v_attempts_allowed IS NOT NULL AND v_attempts_allowed > 0 THEN
+                IF v_next_attempt > v_attempts_allowed THEN
+                    RAISE EXCEPTION 'You have reached the maximum number of attempts allowed for this quiz.';
+                END IF;
             END IF;
-        END IF;
 
-        NEW.attempt_number := v_next_attempt;
+            NEW.attempt_number := v_next_attempt;
+        END IF;
     END IF;
 
     RETURN NEW;
@@ -704,8 +711,11 @@ $$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS tr_validate_quiz_attempts ON quiz_submissions;
 CREATE TRIGGER tr_validate_quiz_attempts
-BEFORE INSERT ON quiz_submissions
+BEFORE INSERT OR UPDATE ON quiz_submissions
 FOR EACH ROW EXECUTE PROCEDURE validate_quiz_attempts();
+
+-- Ensure only one draft exists per student per quiz
+CREATE UNIQUE INDEX IF NOT EXISTS idx_quiz_submissions_draft_unique ON quiz_submissions (quiz_id, student_email) WHERE (status = 'draft');
 
 -- JSONB Validation Functions
 CREATE OR REPLACE FUNCTION validate_jsonb_metadata() RETURNS TRIGGER AS $$

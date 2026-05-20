@@ -1865,6 +1865,7 @@ let currentQuiz = null;
 let currentSubmission = null;
 
 async function startQuiz(quizId) {
+  UI.showLoading('Preparing your quiz attempt...');
   // Immediately disable start button to prevent double clicks
   const listBtn = document.getElementById(`quiz-btn-${quizId}`);
   if (listBtn) {
@@ -1872,6 +1873,7 @@ async function startQuiz(quizId) {
       listBtn.textContent = 'Starting...';
   }
 
+  try {
   const user = await SessionManager.getCurrentUser();
   const quiz = await SupabaseDB.getQuiz(quizId);
 
@@ -1887,6 +1889,7 @@ async function startQuiz(quizId) {
   if (now > endAt) {
       alert('This quiz has ended.');
       if (listBtn) { listBtn.disabled = true; listBtn.textContent = 'Quiz Ended'; }
+      UI.hideLoading();
       return;
   }
 
@@ -2012,6 +2015,8 @@ async function startQuiz(quizId) {
     currentSubmission = sub;
   }
 
+  UI.hideLoading();
+
   // Start Timer
   if (quiz.time_limit > 0) {
     const startTs = new Date(currentSubmission.started_at).getTime();
@@ -2035,6 +2040,15 @@ async function startQuiz(quizId) {
   }
 
   quizArea.scrollIntoView({ behavior: 'smooth' });
+  } catch (err) {
+      console.error('Failed to start quiz:', err);
+      alert('Error starting quiz: ' + err.message);
+      if (listBtn) {
+          listBtn.disabled = false;
+          listBtn.textContent = 'Start New Attempt';
+      }
+      UI.hideLoading();
+  }
 }
 
 
@@ -2066,14 +2080,19 @@ function getQuizAnswers() {
 async function submitQuiz() {
   AntiCheat.destroy();
   const btn = document.getElementById('submitQuizBtn');
-  if (btn) btn.disabled = true;
+  if (btn) {
+      btn.disabled = true;
+      btn.textContent = 'Submitting...';
+  }
 
   const quizId = currentQuiz?.id;
   const listBtn = quizId ? document.getElementById(`quiz-btn-${quizId}`) : null;
   if (listBtn) {
       listBtn.disabled = true;
-      listBtn.textContent = 'Refreshing...';
+      listBtn.textContent = 'Processing...';
   }
+
+  UI.showLoading('Saving your answers and calculating score...');
 
   if (quizTimer instanceof Countdown) {
     quizTimer.destroy();
@@ -2103,6 +2122,7 @@ async function submitQuiz() {
   });
 
   const percentage = Math.round((score / totalPoints) * 100);
+  const isPassed = percentage >= (currentQuiz.passing_score || 0);
   const now = new Date();
   
   // Calculate time spent
@@ -2121,7 +2141,11 @@ async function submitQuiz() {
   } catch (err) {
       console.error('Quiz submission failed:', err);
       alert('Quiz Submission Failed: ' + (err.message || 'Unknown error'));
-      if (btn) btn.disabled = false;
+      if (btn) {
+          btn.disabled = false;
+          btn.textContent = 'Submit Quiz';
+      }
+      UI.hideLoading();
       return;
   }
 
@@ -2136,6 +2160,8 @@ async function submitQuiz() {
 
   // Update Progress
   if (currentQuiz) await SupabaseDB.updateCourseProgress(currentQuiz.course_id, user.email);
+
+  UI.hideLoading();
 
   // High-Priority UI Refresh for this specific quiz
   if (quizId) {
@@ -2192,13 +2218,16 @@ async function submitQuiz() {
       }
   }
 
-  alert(`Quiz submitted! Your score: ${percentage}%`);
+  const resultMessage = `Quiz submitted successfully!\n\nScore: ${percentage}%\nStatus: ${isPassed ? 'PASSED' : 'FAILED'}`;
+  alert(resultMessage);
+
   currentQuiz = null;
   currentSubmission = null;
   renderQuizzes();
 }
 
 async function viewQuizResults(quizId, submissionId = null) {
+  UI.showLoading();
   const user = await SessionManager.getCurrentUser();
   const quiz = await SupabaseDB.getQuiz(quizId);
   const subs = await SupabaseDB.getQuizSubmissions(quizId, user.email);
@@ -2214,14 +2243,41 @@ async function viewQuizResults(quizId, submissionId = null) {
 
   const container = document.getElementById('pageContent');
   if (!container) return;
+  const isPassed = targetSub.score >= (quiz.passing_score || 0);
+  const durationMin = Math.floor(targetSub.time_spent / 60);
+  const durationSec = targetSub.time_spent % 60;
+  const avgTimePerQ = (targetSub.time_spent / (quiz.questions?.length || 1)).toFixed(1);
+
   container.innerHTML = `
     <button class="button secondary w-auto mb-10" onclick="renderQuizzes()">← Back</button>
     <div class="card">
-      <h2 class="m-0">Results: ${escapeHtml(quiz.title)}</h2>
-      <div class="flex-between mt-10">
-        <p class="m-0"><strong>Raw Score:</strong> ${Math.round((targetSub.score / 100) * targetSub.total_points)} / ${targetSub.total_points}</p>
-        <p class="m-0"><strong>Attempt Score:</strong> <span class="bold" style="font-size:1.2rem; color:var(--purple)">${targetSub.score}%</span></p>
+      <div class="flex-between">
+          <h2 class="m-0">Results: ${escapeHtml(quiz.title)}</h2>
+          <span class="badge ${isPassed ? 'badge-active' : 'badge-inactive'}" style="font-size: 1.1rem; padding: 8px 16px;">
+            ${isPassed ? 'PASSED' : 'FAILED'}
+          </span>
       </div>
+
+      <div class="grid-3 mt-20 p-15 border-radius-sm" style="background:var(--bg)">
+        <div class="text-center">
+            <div class="small text-muted">Raw Score</div>
+            <div class="bold" style="font-size:1.2rem">${Math.round((targetSub.score / 100) * (targetSub.total_points || 0))} / ${targetSub.total_points || 0}</div>
+        </div>
+        <div class="text-center">
+            <div class="small text-muted">Final Percentage</div>
+            <div class="bold" style="font-size:1.5rem; color:var(--purple)">${targetSub.score}%</div>
+        </div>
+        <div class="text-center">
+            <div class="small text-muted">Passing Required</div>
+            <div class="bold" style="font-size:1.2rem">${quiz.passing_score || 0}%</div>
+        </div>
+      </div>
+
+      <div class="grid-2 mt-10 p-10 border-radius-sm" style="background:#f8fafc; border:1px solid var(--border)">
+          <div class="small"><strong>Total Time Spent:</strong> ${durationMin}m ${durationSec}s</div>
+          <div class="small"><strong>Avg Time per Question:</strong> ${avgTimePerQ}s</div>
+      </div>
+
       <div class="mt-20">
         ${quiz.questions.map((q, idx) => {
           const studentAnswer = targetSub.answers[idx];
