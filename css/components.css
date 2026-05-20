@@ -291,9 +291,9 @@ label {
 .notif-list {
     display: none;
     position: absolute;
-    top: 40px;
-    right: 0;
-    width: 350px;
+    top: 45px;
+    right: -10px;
+    width: 380px;
     max-width: 95vw;
     background: #fff;
     border: 1px solid var(--border);
@@ -305,10 +305,23 @@ label {
     animation: slideDown 0.2s ease-out;
 }
 
+@media (max-width: 768px) {
+    .notif-list {
+        position: fixed;
+        top: 60px;
+        right: 10px;
+        left: 10px;
+        width: auto;
+        max-width: none;
+        max-height: calc(100vh - 100px);
+    }
+}
+
 @media (max-width: 480px) {
     .notif-list {
-        right: -50px; /* Slight offset to account for bell position on small screens */
-        width: calc(100vw - 30px);
+        top: 70px;
+        right: 10px;
+        left: 10px;
     }
 }
 

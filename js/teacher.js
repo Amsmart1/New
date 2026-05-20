@@ -264,7 +264,6 @@ async function deleteCourseById(id) {
   }
 }
 async function renderAssignments() {
-  UI.showLoading();
   const content = document.getElementById('pageContent');
   if (!content) return;
   clearActiveCountdowns();
@@ -275,7 +274,6 @@ async function renderAssignments() {
       SupabaseDB.getAssignments(user.email),
       SupabaseDB.getCourses(user.email)
     ]);
-    UI.hideLoading();
 
   content.innerHTML = `
     <div class="card flex-between">
@@ -329,7 +327,6 @@ async function renderAssignments() {
   }
 }
 async function renderGrading() {
-  UI.showLoading();
   const content = document.getElementById('pageContent');
   if (!content) return;
   clearActiveCountdowns();
@@ -340,7 +337,6 @@ async function renderGrading() {
       SupabaseDB.getAssignments(user.email),
       SupabaseDB.getSubmissions(null, null, user.email)
     ]);
-    UI.hideLoading();
 
     let gradingHtml = '<h2>Grading Queue</h2>';
     let hasPending = false;
@@ -686,7 +682,6 @@ async function deleteAssignmentById(id, courseId = null) {
   if (confirm('Delete?')) { await SupabaseDB.deleteAssignment(id); if (courseId) editCourse(courseId); else renderAssignments(); }
 }
 async function gradeSubmission(assignmentId, studentEmail) {
-  UI.showLoading();
   const content = document.getElementById('pageContent');
   if (!content) return;
 
@@ -1646,7 +1641,6 @@ window.viewAttendance = viewAttendance;
 window.renderLiveClasses = renderLiveClasses;
 
 async function renderQuizzes() {
-  UI.showLoading();
   const container = document.getElementById('pageContent');
   if (!container) return;
   clearActiveCountdowns();
@@ -1657,7 +1651,6 @@ async function renderQuizzes() {
       SupabaseDB.getQuizzes(null, user.email),
       SupabaseDB.getCourses(user.email)
     ]);
-    UI.hideLoading();
     const now = Date.now();
     container.innerHTML = `
     <div class="card flex-between">
@@ -1917,12 +1910,10 @@ async function deleteQuizById(id) {
 }
 
 async function viewQuizResults(quizId) {
-  UI.showLoading();
   const [subs, quiz] = await Promise.all([
     SupabaseDB.getQuizSubmissions(quizId),
     SupabaseDB.getQuiz(quizId)
   ]);
-  UI.hideLoading();
   const container = document.getElementById('pageContent');
   if (!container) return;
 
@@ -1951,12 +1942,10 @@ async function viewQuizResults(quizId) {
 }
 
 async function gradeQuizSubmission(submissionId, quizId) {
-  UI.showLoading();
   const [quiz, submission] = await Promise.all([
     SupabaseDB.getQuiz(quizId),
     SupabaseDB.getQuizSubmissionById(submissionId)
   ]);
-  UI.hideLoading();
   const container = document.getElementById('pageContent');
   if (!container) return;
 
@@ -2098,7 +2087,6 @@ async function gradeQuizSubmission(submissionId, quizId) {
 window.gradeQuizSubmission = gradeQuizSubmission;
 
 async function renderGradeBook() {
-    UI.showLoading();
     const content = document.getElementById('pageContent');
     if (!content) return;
     clearActiveCountdowns();
@@ -2112,7 +2100,6 @@ async function renderGradeBook() {
             SupabaseDB.getSubmissions(null, null, user.email),
             SupabaseDB.getQuizSubmissions(null, null, user.email)
         ]);
-        UI.hideLoading();
 
         content.innerHTML = `
             <div class="card flex-between">

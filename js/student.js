@@ -271,7 +271,6 @@ async function stopAndNavigateToViewCourse(courseId, fromMyCourses) {
 }
 window.stopAndNavigateToViewCourse = stopAndNavigateToViewCourse;
 async function renderAssignments(openId = null){
-  UI.showLoading();
   const container = document.getElementById('pageContent');
   if (!container) return;
   clearActiveCountdowns();
@@ -288,7 +287,6 @@ async function renderAssignments(openId = null){
       SupabaseDB.getAssignments(null, null, enrolledCourseIds),
       SupabaseDB.getSubmissions(null, user.email)
     ]);
-    UI.hideLoading();
 
   const now = Date.now();
 
@@ -430,7 +428,6 @@ async function showAssignmentForm(assignmentId) {
   if (formWrap) {
       formWrap.classList.remove('hidden');
       formWrap.style.display = 'block';
-      UI.showLoading('assignmentForm', 'Loading assignment details...');
       formWrap.scrollIntoView({ behavior: 'smooth' });
   }
 
@@ -439,7 +436,6 @@ async function showAssignmentForm(assignmentId) {
     SupabaseDB.getAssignment(assignmentId),
     SupabaseDB.getSubmission(assignmentId, user.email)
   ]);
-  UI.hideLoading();
 
   const now = new Date();
   const startAt = a.start_at ? new Date(a.start_at) : null;
@@ -532,7 +528,6 @@ window.previewFile = function(input, idx) {
 };
 
 async function viewFeedback(assignmentId) {
-  UI.showLoading();
   const user = await SessionManager.getCurrentUser();
   const [assignment, submission] = await Promise.all([
     SupabaseDB.getAssignment(assignmentId),
@@ -1856,7 +1851,6 @@ window.getBrowserInfo = getBrowserInfo;
 window.getDeviceInfo = getDeviceInfo;
 
 async function renderQuizzes(openId = null) {
-  UI.showLoading();
   clearActiveCountdowns();
   const container = document.getElementById('pageContent');
   if (!container) return;
@@ -1871,7 +1865,6 @@ async function renderQuizzes(openId = null) {
       SupabaseDB.getQuizSubmissions(null, user.email),
       SupabaseDB.getEnrolledCourses(user.email)
     ]);
-    UI.hideLoading();
 
     // Only show submissions for quizzes that belong to enrolled courses
     const subs = allSubs.filter(s => enrolledCourseIds.includes(s.quizzes?.course_id));
@@ -1987,7 +1980,6 @@ let currentQuestionIndex = 0;
 let currentQuizQuestions = [];
 
 async function startQuiz(quizId) {
-  UI.showLoading();
   if (isStartingQuiz) return;
   isStartingQuiz = true;
 
@@ -2001,7 +1993,6 @@ async function startQuiz(quizId) {
   if (quizArea) {
       quizArea.classList.remove('hidden');
       quizArea.style.display = 'block';
-      UI.showLoading('quizArea', 'Preparing your quiz attempt...');
       quizArea.scrollIntoView({ behavior: 'smooth' });
   }
 
@@ -2063,7 +2054,6 @@ async function startQuiz(quizId) {
     if (inProgress) {
       currentSubmission = inProgress;
     } else {
-      UI.showLoading('quizArea', 'Creating new attempt...');
       currentSubmission = await SupabaseDB.saveQuizSubmission({
         quiz_id: quizId,
         student_email: user.email,
@@ -2076,7 +2066,6 @@ async function startQuiz(quizId) {
     renderQuizShell();
     renderQuizQuestion(0);
 
-    UI.hideLoading('pageContent');
     isStartingQuiz = false;
 
     if (quiz.time_limit > 0) {
@@ -2108,7 +2097,6 @@ async function startQuiz(quizId) {
           listBtn.disabled = false;
           listBtn.textContent = 'Start New Attempt';
       }
-      UI.hideLoading('pageContent');
   }
 }
 
@@ -2358,13 +2346,11 @@ async function submitQuiz(isAuto = false) {
           btn.disabled = false;
           btn.textContent = 'Submit Quiz';
       }
-      UI.hideLoading('pageContent');
+      UI.hideLoading('quizArea');
       return;
   }
 
   if (currentQuiz) await SupabaseDB.updateCourseProgress(currentQuiz.course_id, user.email);
-
-  UI.hideLoading('pageContent');
 
   const quizArea = document.getElementById('quizArea');
   if (quizArea) {
@@ -2412,11 +2398,9 @@ async function submitQuiz(isAuto = false) {
 }
 
 async function viewQuizResults(quizId, submissionId = null) {
-  UI.showLoading();
   const user = await SessionManager.getCurrentUser();
   const quiz = await SupabaseDB.getQuiz(quizId);
   const subs = await SupabaseDB.getQuizSubmissions(quizId, user.email);
-  UI.hideLoading();
 
   let targetSub;
   if (submissionId) {
@@ -2574,7 +2558,7 @@ async function submitAssignment(assignmentId, studentEmail) {
   } catch (e) {
     console.error('Submission failed:', e);
     alert(`Submission failed: ${e.message || 'Unknown error'}. ${e.details || ''}`);
-    UI.hideLoading('pageContent');
+    UI.hideLoading('assignmentForm');
   } finally {
     if (btn) { btn.disabled = false; btn.textContent = 'Submit Assignment'; }
   }
