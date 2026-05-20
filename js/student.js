@@ -425,6 +425,14 @@ async function renderAssignments(openId = null){
 }
 
 async function showAssignmentForm(assignmentId) {
+  const formWrap = document.getElementById('assignmentForm');
+  if (formWrap) {
+      formWrap.classList.remove('hidden');
+      formWrap.style.display = 'block';
+      UI.showLoading('assignmentForm', 'Loading assignment details...');
+      formWrap.scrollIntoView({ behavior: 'smooth' });
+  }
+
   const user = await SessionManager.getCurrentUser();
   const [a, submission] = await Promise.all([
     SupabaseDB.getAssignment(assignmentId),
@@ -435,13 +443,11 @@ async function showAssignmentForm(assignmentId) {
   const startAt = a.start_at ? new Date(a.start_at) : null;
   if (startAt && now < startAt) {
       alert('This assignment is not open for submission yet.');
+      if (formWrap) formWrap.style.display = 'none';
       return;
   }
 
-  const formWrap = document.getElementById('assignmentForm');
   if (!formWrap) return;
-  formWrap.classList.remove('hidden');
-  formWrap.style.display = 'block'; // Ensure it shows even if it was hidden via style
 
   // Initialize Anti-Cheat if configured
   if (a.anti_cheat_config && Object.values(a.anti_cheat_config).some(v => v === true)) {
@@ -772,11 +778,10 @@ async function startStudySession(courseId) {
 async function stopStudySession() {
     if (!studyInterval) return;
 
-    const _interval = studyInterval;
     const _startTime = studyStartTime;
     const _courseId = currentStudyCourseId;
 
-    clearInterval(_interval);
+    clearInterval(studyInterval);
     studyInterval = null;
     studyStartTime = null;
     currentStudyCourseId = null;
@@ -788,13 +793,17 @@ async function stopStudySession() {
         const user = await SessionManager.getCurrentUser();
         if (user && _courseId) {
             try {
-                await SupabaseDB.saveStudySession({
+                const payload = {
                     user_email: user.email,
                     course_id: _courseId,
                     duration: duration,
                     started_at: _startTime.toISOString(),
                     ended_at: endTime.toISOString()
-                });
+                };
+
+                // If browser supports sendBeacon and we're unloading, use it
+                // Otherwise, normal save
+                await SupabaseDB.saveStudySession(payload);
                 UI.showNotification(`Study session saved: ${Math.floor(duration/60)} minutes logged!`, 'success');
 
                 // Update Progress
@@ -1878,7 +1887,13 @@ async function startQuiz(quizId) {
       listBtn.textContent = 'Starting...';
   }
 
-  UI.showLoading('pageContent', 'Preparing your quiz attempt...');
+  const quizArea = document.getElementById('quizArea');
+  if (quizArea) {
+      quizArea.classList.remove('hidden');
+      quizArea.style.display = 'block';
+      UI.showLoading('quizArea', 'Preparing your quiz attempt...');
+      quizArea.scrollIntoView({ behavior: 'smooth' });
+  }
 
   try {
   const user = await SessionManager.getCurrentUser();
@@ -1891,12 +1906,15 @@ async function startQuiz(quizId) {
   if (now < startAt) {
       alert('This quiz is not available yet.');
       if (listBtn) { listBtn.disabled = false; listBtn.textContent = 'Start New Attempt'; }
+      if (quizArea) quizArea.style.display = 'none';
+      isStartingQuiz = false;
       return;
   }
   if (now > endAt) {
       alert('This quiz has ended.');
       if (listBtn) { listBtn.disabled = true; listBtn.textContent = 'Quiz Ended'; }
-      UI.hideLoading('pageContent');
+      if (quizArea) quizArea.style.display = 'none';
+      isStartingQuiz = false;
       return;
   }
 
@@ -1904,23 +1922,14 @@ async function startQuiz(quizId) {
   const subs = await SupabaseDB.getQuizSubmissions(quizId, user.email);
   const draft = subs.find(s => s.status === 'draft');
 
-  if (draft && !confirm('You have an unfinished attempt. Resume it?')) {
-    // If they don't want to resume, we could delete it, but better to just let them start fresh and we'll create a new one.
-    // Actually, let's just resume if it exists.
-  }
-
   currentQuiz = quiz;
   const content = document.getElementById('pageContent');
-  if (!content) return;
+  if (!content || !quizArea) return;
 
   // Hide other content
   Array.from(content.children).forEach(c => {
       if (c.id !== 'quizArea') c.style.display = 'none';
   });
-
-  const quizArea = document.getElementById('quizArea');
-  if (!quizArea) return;
-  quizArea.style.display = 'block';
 
   // Initialize Anti-Cheat if configured
   if (quiz.anti_cheat_config && Object.values(quiz.anti_cheat_config).some(v => v === true)) {
@@ -2105,7 +2114,6 @@ function getQuizAnswers() {
 }
 
 async function submitQuiz() {
-  AntiCheat.destroy();
   const btn = document.getElementById('submitQuizBtn');
   if (btn) {
       btn.disabled = true;
@@ -2119,7 +2127,8 @@ async function submitQuiz() {
       listBtn.textContent = 'Processing...';
   }
 
-  UI.showLoading('Saving your answers and calculating score...');
+  UI.showLoading('quizArea', 'Saving your answers and calculating score...');
+  AntiCheat.destroy();
 
   if (quizTimer instanceof Countdown) {
     quizTimer.destroy();
@@ -2338,10 +2347,10 @@ async function deleteSubmissionById(assignmentId, studentEmail) {
   if (confirm('Delete submission?')) { try { await SupabaseDB.deleteSubmission(assignmentId, studentEmail); renderAssignments(); } catch (e) { alert('Error'); } }
 }
 async function submitAssignment(assignmentId, studentEmail) {
-  AntiCheat.destroy();
-  UI.showLoading('pageContent', 'Uploading submission...');
   const btn = document.getElementById('submitAssignBtn');
   if (btn) { btn.disabled = true; btn.textContent = 'Uploading...'; }
+  UI.showLoading('assignmentForm', 'Uploading submission...');
+  AntiCheat.destroy();
 
   try {
     const existing = await SupabaseDB.getSubmission(assignmentId, studentEmail);

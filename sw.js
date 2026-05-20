@@ -16,7 +16,6 @@ const ASSETS = [
   './css/components.css',
   './css/landing.css',
   './css/layout.css',
-  './css/style.css',
   './css/themes.css',
   './manifest.json',
   'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2',

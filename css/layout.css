@@ -17,24 +17,29 @@
     left: 0;
     top: 0;
     height: 100vh;
-    z-index: 1000;
+    z-index: var(--z-sidebar);
+    transition: width 0.3s ease, left 0.3s ease;
 }
 
 .brand {
-    font-weight: 700;
+    font-weight: 800;
     color: var(--purple);
-    font-size: 18px;
-    margin-bottom: 20px;
+    font-size: 20px;
+    margin-bottom: 30px;
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 12px;
+}
+
+.brand .logo {
+    font-size: 24px;
 }
 
 /* Navigation inside Sidebar */
 nav {
     display: flex;
     flex-direction: column;
-    gap: 6px;
+    gap: 4px;
     overflow-y: auto;
     flex: 1;
     scrollbar-width: thin;
@@ -42,24 +47,43 @@ nav {
 }
 
 nav::-webkit-scrollbar {
-    display: none;
+    width: 4px;
+}
+nav::-webkit-scrollbar-thumb {
+    background: var(--border);
+    border-radius: 10px;
 }
 
 nav button {
     all: unset;
     display: flex;
     align-items: center;
-    padding: 10px;
-    border-radius: 6px;
-    color: #333;
+    padding: 12px 15px;
+    border-radius: 8px;
+    color: var(--text);
     cursor: pointer;
     box-sizing: border-box;
     width: 100%;
-    transition: background 0.2s;
+    transition: all 0.2s ease;
+    font-weight: 500;
+    font-size: 14px;
 }
 
-nav button.active,
-nav button:hover {
+nav button span {
+    margin-left: 10px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+nav button.active {
+    background: var(--p);
+    color: #fff;
+    font-weight: 600;
+    box-shadow: 0 4px 6px -1px rgba(99, 102, 241, 0.2);
+}
+
+nav button:hover:not(.active) {
     background: var(--muted-bg);
 }
 
@@ -72,25 +96,26 @@ nav button:hover {
     height: 100vh;
     overflow: hidden;
     margin-left: 260px;
+    transition: margin-left 0.3s ease;
 }
 
 /* Header within Dashboard */
 .dashboard-header {
     background: #fff;
     border-bottom: 1px solid var(--border);
-    min-height: 64px;
+    min-height: 70px;
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 0 20px;
+    padding: 0 25px;
     position: sticky;
     top: 0;
-    z-index: 1001; /* Higher than sidebar to remain visible on mobile if needed, or consistent with fixed layout */
+    z-index: var(--z-header);
 }
 
 .content-area {
-    padding: 20px;
-    max-width: 1400px;
+    padding: 25px;
+    max-width: 1600px;
     margin: 0 auto;
     width: 100%;
     box-sizing: border-box;
@@ -101,7 +126,7 @@ nav button:hover {
 /* Dashboard Header Stats */
 .header-stats {
     display: flex;
-    gap: 20px;
+    gap: 25px;
     align-items: center;
 }
 
@@ -110,14 +135,36 @@ nav button:hover {
 }
 
 .stat-label {
-    font-size: 11px;
+    font-size: 10px;
     color: var(--muted);
     text-transform: uppercase;
+    letter-spacing: 0.05em;
+    font-weight: 700;
 }
 
 .stat-val {
-    font-weight: 700;
+    font-weight: 800;
     color: var(--purple);
+    font-size: 16px;
+}
+
+/* Sidebar Toggle Button */
+#sidebarToggle {
+    background: transparent;
+    border: none;
+    color: var(--text);
+    font-size: 24px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 8px;
+    border-radius: 8px;
+    transition: background 0.2s;
+}
+
+#sidebarToggle:hover {
+    background: var(--muted-bg);
 }
 
 /* Responsive Logic */
@@ -126,7 +173,7 @@ nav button:hover {
 @media (min-width: 1025px) {
     body.sidebar-collapsed .sidebar {
         width: 80px;
-        padding: 10px;
+        padding: 18px 10px;
     }
     body.sidebar-collapsed .main {
         margin-left: 80px;
@@ -138,26 +185,18 @@ nav button:hover {
     body.sidebar-collapsed .brand,
     body.sidebar-collapsed nav button {
         justify-content: center;
+        padding: 12px 0;
     }
 }
 
 /* Tablet/Mobile View */
 @media (max-width: 1024px) {
-    .app {
-        display: block;
-        overflow-x: hidden;
-    }
     .sidebar {
-        height: 100%;
-        overflow-y: auto;
-    }
-    .sidebar {
-        transform: translateX(-100%);
-        transition: transform 0.3s ease;
-        left: 0;
+        left: -260px;
+        box-shadow: 10px 0 15px -3px rgba(0, 0, 0, 0.1);
     }
     body.sidebar-open .sidebar {
-        transform: translateX(0);
+        left: 0;
     }
     body.sidebar-open {
         overflow: hidden;
@@ -170,26 +209,17 @@ nav button:hover {
         display: none !important;
     }
     .dashboard-header {
-        padding: 0 10px !important;
-    }
-    .notif-bell-container {
-        margin-right: 10px !important;
+        padding: 0 15px;
     }
 }
 
 /* Phone Specifics */
 @media (max-width: 480px) {
-    .card {
-        padding: 10px;
+    .content-area {
+        padding: 15px;
     }
-    .stats-grid {
-        grid-template-columns: 1fr;
-    }
-    .grid-2 {
-        grid-template-columns: 1fr;
-    }
-    .dashboard-header h2 {
-        font-size: 16px;
+    .dashboard-header h1 {
+        font-size: 1rem !important;
     }
     .button.w-auto {
         width: 100% !important;
