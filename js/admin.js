@@ -1,9 +1,5 @@
-function showLoading(containerId = 'pageContent') {
-    UI.showLoading(containerId);
-}
-
 async function renderDashboard() {
-  showLoading();
+  UI.showLoading();
   NotificationManager.initPolling();
   SupabaseDB.deleteExpiredBroadcasts().catch(e => console.warn('Cleanup error:', e));
 
@@ -102,7 +98,7 @@ let allUsers = [];
 let filteredUsers = [];
 
 async function renderUsers() {
-  showLoading();
+  UI.showLoading();
   const content = document.getElementById('pageContent');
   if (!content) return;
 
@@ -409,7 +405,7 @@ function saveAutoSetting(key, val) {
 }
 
 async function renderResets() {
-  showLoading();
+  UI.showLoading();
   const content = document.getElementById('pageContent');
   if (!content) return;
 
@@ -506,7 +502,7 @@ async function denyReset(email) {
 }
 
 async function renderAnalytics() {
-  showLoading();
+  UI.showLoading();
   const content = document.getElementById('pageContent');
   if (!content) return;
 
@@ -575,7 +571,7 @@ async function renderAnalytics() {
 }
 
 async function renderMaintenance() {
-  showLoading();
+  UI.showLoading();
   const content = document.getElementById('pageContent');
   if (!content) return;
 
@@ -632,7 +628,7 @@ async function renderMaintenance() {
 }
 
 async function renderHealth() {
-  showLoading();
+  UI.showLoading();
   const content = document.getElementById('pageContent');
   if (!content) return;
 
@@ -690,7 +686,7 @@ async function renderHealth() {
 }
 
 async function renderManagement() {
-  showLoading();
+  UI.showLoading();
   const content = document.getElementById('pageContent');
   if (!content) return;
 
@@ -816,7 +812,7 @@ async function renderSettings() {
 }
 
 async function renderSystem() {
-  showLoading();
+  UI.showLoading();
   const content = document.getElementById('pageContent');
   if (!content) return;
 

@@ -1,8 +1,5 @@
 let activeCountdowns = [];
 
-function showLoading(containerId = 'pageContent') {
-    UI.showLoading(containerId);
-}
 
 function clearActiveCountdowns() {
     activeCountdowns.forEach(c => c.destroy());
@@ -14,7 +11,7 @@ function clearActiveCountdowns() {
 }
 
 async function renderDashboard() {
-  showLoading();
+  UI.showLoading();
   NotificationManager.initPolling();
   const content = document.getElementById('pageContent');
   if (!content) return;
@@ -49,7 +46,7 @@ async function renderDashboard() {
 }
 
 async function renderCourses() {
-  showLoading();
+  UI.showLoading();
   const content = document.getElementById('pageContent');
   if (!content) return;
   clearActiveCountdowns();
@@ -267,7 +264,7 @@ async function deleteCourseById(id) {
   }
 }
 async function renderAssignments() {
-  showLoading();
+  UI.showLoading();
   const content = document.getElementById('pageContent');
   if (!content) return;
   clearActiveCountdowns();
@@ -331,7 +328,7 @@ async function renderAssignments() {
   }
 }
 async function renderGrading() {
-  showLoading();
+  UI.showLoading();
   const content = document.getElementById('pageContent');
   if (!content) return;
   clearActiveCountdowns();
@@ -389,7 +386,7 @@ async function renderGrading() {
   }
 }
 async function renderStudents() {
-  showLoading();
+  UI.showLoading();
   const content = document.getElementById('pageContent');
   if (!content) return;
   clearActiveCountdowns();
@@ -860,7 +857,7 @@ async function gradeSubmission(assignmentId, studentEmail) {
   }
 }
 async function renderDiscussions() {
-  showLoading();
+  UI.showLoading();
   const container = document.getElementById('pageContent');
   if (!container) return;
   clearActiveCountdowns();
@@ -1037,7 +1034,7 @@ window.issueCert = issueCert;
 window.renderCalendar = renderCalendar;
 
 async function renderAntiCheat() {
-  showLoading();
+  UI.showLoading();
   const content = document.getElementById('pageContent');
   if (!content) return;
   clearActiveCountdowns();
@@ -1099,7 +1096,7 @@ async function renderSettings() {
 window.renderSettings = renderSettings;
 
 async function renderLiveClasses() {
-  showLoading();
+  UI.showLoading();
   const content = document.getElementById('pageContent');
   if (!content) return;
   clearActiveCountdowns();
@@ -1595,7 +1592,7 @@ window.viewAttendance = viewAttendance;
 window.renderLiveClasses = renderLiveClasses;
 
 async function renderQuizzes() {
-  showLoading();
+  UI.showLoading();
   const container = document.getElementById('pageContent');
   if (!container) return;
   clearActiveCountdowns();
@@ -2054,7 +2051,7 @@ async function gradeQuizSubmission(submissionId, quizId) {
 window.gradeQuizSubmission = gradeQuizSubmission;
 
 async function renderGradeBook() {
-    showLoading();
+    UI.showLoading();
     const content = document.getElementById('pageContent');
     if (!content) return;
     clearActiveCountdowns();
@@ -2211,7 +2208,7 @@ function initNav() {
 
 
 async function renderMaterials() {
-  showLoading();
+  UI.showLoading();
   const content = document.getElementById('pageContent');
   if (!content) return;
   clearActiveCountdowns();

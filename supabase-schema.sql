@@ -679,21 +679,23 @@ DECLARE
     v_attempts_allowed INTEGER;
     v_next_attempt INTEGER;
 BEGIN
-    -- Force attempt_number to NULL if it's a draft
+    -- Force attempt_number to NULL if it's a draft to ensure it doesn't count towards used attempts
     IF (NEW.status = 'draft') THEN
         NEW.attempt_number := NULL;
     END IF;
 
-    -- Only allocate attempt number when status is 'submitted'
+    -- Only allocate attempt number when status transition to 'submitted'
+    -- This prevents multiple attempts being registered for the same start if multiple updates happen
     IF (NEW.status = 'submitted' AND (TG_OP = 'INSERT' OR (TG_OP = 'UPDATE' AND (OLD.status IS DISTINCT FROM 'submitted')))) THEN
-        -- Only allocate if not already allocated
+        -- Only allocate if not already allocated (e.g. if explicitly provided and we want to allow that,
+        -- but usually we want the server to manage it)
         IF (NEW.attempt_number IS NULL) THEN
             SELECT attempts_allowed INTO v_attempts_allowed FROM quizzes WHERE id = NEW.quiz_id;
 
-            -- Atomically allocate next attempt number
+            -- Atomically allocate next attempt number among ALREADY SUBMITTED attempts
             SELECT COALESCE(MAX(attempt_number), 0) + 1 INTO v_next_attempt
             FROM quiz_submissions
-            WHERE quiz_id = NEW.quiz_id AND student_email = NEW.student_email;
+            WHERE quiz_id = NEW.quiz_id AND student_email = NEW.student_email AND status = 'submitted';
 
             IF v_attempts_allowed IS NOT NULL AND v_attempts_allowed > 0 THEN
                 IF v_next_attempt > v_attempts_allowed THEN
@@ -714,7 +716,8 @@ CREATE TRIGGER tr_validate_quiz_attempts
 BEFORE INSERT OR UPDATE ON quiz_submissions
 FOR EACH ROW EXECUTE PROCEDURE validate_quiz_attempts();
 
--- Ensure only one draft exists per student per quiz
+-- Ensure only one draft exists per student per quiz to prevent duplicate start records.
+-- This combined with validate_quiz_attempts ensures a clean "one-draft-at-a-time" flow.
 CREATE UNIQUE INDEX IF NOT EXISTS idx_quiz_submissions_draft_unique ON quiz_submissions (quiz_id, student_email) WHERE (status = 'draft');
 
 -- JSONB Validation Functions

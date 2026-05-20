@@ -1,9 +1,7 @@
 let activeCountdowns = [];
 let quizTimer = null;
+let isStartingQuiz = false;
 
-function showLoading(containerId = 'pageContent') {
-    UI.showLoading(containerId);
-}
 
 function clearActiveCountdowns() {
     activeCountdowns.forEach(c => c.destroy());
@@ -60,7 +58,7 @@ async function _getDueSoonCount(email) {
 window._getDueSoonCount = _getDueSoonCount;
 
 async function renderCourses() {
-  showLoading();
+  UI.showLoading();
   const container = document.getElementById('pageContent');
   if (!container) return;
   clearActiveCountdowns();
@@ -137,7 +135,7 @@ function filterCatalog() {
 }
 
 async function renderMyCourses() {
-  showLoading();
+  UI.showLoading();
   clearActiveCountdowns();
   const container = document.getElementById('pageContent');
   if (!container) return;
@@ -271,7 +269,7 @@ async function stopAndNavigateToViewCourse(courseId, fromMyCourses) {
 }
 window.stopAndNavigateToViewCourse = stopAndNavigateToViewCourse;
 async function renderAssignments(openId = null){
-  showLoading();
+  UI.showLoading();
   const container = document.getElementById('pageContent');
   if (!container) return;
   clearActiveCountdowns();
@@ -599,7 +597,7 @@ async function viewFeedback(assignmentId) {
 }
 
 async function renderDashboardOverview() {
-  showLoading();
+  UI.showLoading();
   NotificationManager.initPolling();
   clearActiveCountdowns();
   const container = document.getElementById('pageContent');
@@ -684,7 +682,7 @@ async function renderDashboardOverview() {
 }
 
 async function renderProgress() {
-  showLoading();
+  UI.showLoading();
   clearActiveCountdowns();
   const container = document.getElementById('pageContent');
   if (!container) return;
@@ -807,7 +805,7 @@ window.startStudySession = startStudySession;
 window.stopStudySession = stopStudySession;
 
 async function renderGrades() {
-  showLoading();
+  UI.showLoading();
   clearActiveCountdowns();
   const container = document.getElementById('pageContent');
   if (!container) return;
@@ -853,7 +851,7 @@ async function renderGrades() {
 }
 
 async function renderAnalytics() {
-  showLoading();
+  UI.showLoading();
   clearActiveCountdowns();
   const container = document.getElementById('pageContent');
   if (!container) return;
@@ -941,7 +939,7 @@ async function renderAnalytics() {
 
 
 async function renderMaterials() {
-  showLoading();
+  UI.showLoading();
   const content = document.getElementById('pageContent');
   if (!content) return;
   clearActiveCountdowns();
@@ -987,7 +985,7 @@ async function renderMaterials() {
 }
 
 async function renderDiscussions() {
-  showLoading();
+  UI.showLoading();
   clearActiveCountdowns();
   const container = document.getElementById('pageContent');
   if (!container) return;
@@ -1164,7 +1162,7 @@ window.filterCatalog = filterCatalog;
 window.viewStudentDiscussions = viewStudentDiscussions;
 
 async function renderCertificates() {
-  showLoading();
+  UI.showLoading();
   clearActiveCountdowns();
   const container = document.getElementById('pageContent');
   if (!container) return;
@@ -1193,7 +1191,7 @@ async function renderCertificates() {
 }
 
 async function renderPlanner() {
-  showLoading();
+  UI.showLoading();
   clearActiveCountdowns();
   const container = document.getElementById('pageContent');
   if (!container) return;
@@ -1517,7 +1515,7 @@ async function renderSettings() {
 }
 
 async function renderAntiCheat() {
-  showLoading();
+  UI.showLoading();
   const content = document.getElementById('pageContent');
   if (!content) return;
   clearActiveCountdowns();
@@ -1737,7 +1735,7 @@ window.getBrowserInfo = getBrowserInfo;
 window.getDeviceInfo = getDeviceInfo;
 
 async function renderQuizzes(openId = null) {
-  showLoading();
+  UI.showLoading();
   clearActiveCountdowns();
   const container = document.getElementById('pageContent');
   if (!container) return;
@@ -1865,13 +1863,17 @@ let currentQuiz = null;
 let currentSubmission = null;
 
 async function startQuiz(quizId) {
-  UI.showLoading('Preparing your quiz attempt...');
+  if (isStartingQuiz) return;
+  isStartingQuiz = true;
+
   // Immediately disable start button to prevent double clicks
   const listBtn = document.getElementById(`quiz-btn-${quizId}`);
   if (listBtn) {
       listBtn.disabled = true;
       listBtn.textContent = 'Starting...';
   }
+
+  UI.showLoading('pageContent', 'Preparing your quiz attempt...');
 
   try {
   const user = await SessionManager.getCurrentUser();
@@ -1889,7 +1891,7 @@ async function startQuiz(quizId) {
   if (now > endAt) {
       alert('This quiz has ended.');
       if (listBtn) { listBtn.disabled = true; listBtn.textContent = 'Quiz Ended'; }
-      UI.hideLoading();
+      UI.hideLoading('pageContent');
       return;
   }
 
@@ -1930,7 +1932,10 @@ async function startQuiz(quizId) {
   quizArea.innerHTML = `
     <div class="card">
       <div class="flex-between p-10 mb-20" style="position: sticky; top:0; background:#fff; z-index:10; border-bottom:1px solid var(--border)">
-        <h3 class="m-0">${escapeHtml(quiz.title)}</h3>
+        <div>
+            <h3 class="m-0">${escapeHtml(quiz.title)}</h3>
+            <div id="quizSaveStatus" class="small text-muted" style="height:15px"></div>
+        </div>
         <div id="quizTimerDisplay" class="bold danger-text" style="font-size:1.2rem">Time Remaining: --:--</div>
       </div>
       <form id="quizForm">
@@ -2015,7 +2020,8 @@ async function startQuiz(quizId) {
     currentSubmission = sub;
   }
 
-  UI.hideLoading();
+  UI.hideLoading('pageContent');
+  isStartingQuiz = false;
 
   // Start Timer
   if (quiz.time_limit > 0) {
@@ -2041,13 +2047,14 @@ async function startQuiz(quizId) {
 
   quizArea.scrollIntoView({ behavior: 'smooth' });
   } catch (err) {
+      isStartingQuiz = false;
       console.error('Failed to start quiz:', err);
       alert('Error starting quiz: ' + err.message);
       if (listBtn) {
           listBtn.disabled = false;
           listBtn.textContent = 'Start New Attempt';
       }
-      UI.hideLoading();
+      UI.hideLoading('pageContent');
   }
 }
 
@@ -2055,11 +2062,26 @@ async function startQuiz(quizId) {
 let quizDebounceTimer = null;
 async function autoSubmitQuiz() {
   if (!currentSubmission || currentSubmission.status !== 'draft') return;
+
+  const statusEl = document.getElementById('quizSaveStatus');
+  if (statusEl) statusEl.textContent = 'Unsaved changes...';
+
   if (quizDebounceTimer) clearTimeout(quizDebounceTimer);
   quizDebounceTimer = setTimeout(async () => {
-      const answers = getQuizAnswers();
-      currentSubmission.answers = answers;
-      await SupabaseDB.saveQuizSubmission(currentSubmission);
+      try {
+        if (statusEl) statusEl.textContent = 'Saving...';
+        const answers = getQuizAnswers();
+        currentSubmission.answers = answers;
+        const res = await SupabaseDB.saveQuizSubmission(currentSubmission);
+        if (res) currentSubmission = res;
+        if (statusEl) {
+            statusEl.textContent = 'All changes saved.';
+            setTimeout(() => { if(statusEl.textContent === 'All changes saved.') statusEl.textContent = ''; }, 3000);
+        }
+      } catch (e) {
+          console.warn('Auto-save failed:', e);
+          if (statusEl) statusEl.textContent = 'Save failed (offline?)';
+      }
   }, 1000);
 }
 
@@ -2129,7 +2151,7 @@ async function submitQuiz() {
   const timeSpent = currentSubmission ? Math.round((now - new Date(currentSubmission.started_at)) / 1000) : 0;
 
   try {
-    await SupabaseDB.saveQuizSubmission({
+    const finalSub = await SupabaseDB.saveQuizSubmission({
       ...currentSubmission,
       answers: answers,
       score: percentage,
@@ -2138,6 +2160,10 @@ async function submitQuiz() {
       time_spent: timeSpent,
       submitted_at: now.toISOString()
     });
+
+    // Update local submission with finalized data (includes attempt_number from trigger)
+    currentSubmission = finalSub;
+
   } catch (err) {
       console.error('Quiz submission failed:', err);
       alert('Quiz Submission Failed: ' + (err.message || 'Unknown error'));
@@ -2145,85 +2171,59 @@ async function submitQuiz() {
           btn.disabled = false;
           btn.textContent = 'Submit Quiz';
       }
-      UI.hideLoading();
+      UI.hideLoading('pageContent');
       return;
-  }
-
-  const quizArea = document.getElementById('quizArea');
-  if (quizArea) quizArea.style.display = 'none';
-  const pageContent = document.getElementById('pageContent');
-  if (pageContent) {
-    Array.from(pageContent.children).forEach(c => {
-        if (c.id !== 'quizArea') c.style.display = '';
-    });
   }
 
   // Update Progress
   if (currentQuiz) await SupabaseDB.updateCourseProgress(currentQuiz.course_id, user.email);
 
-  UI.hideLoading();
+  UI.hideLoading('pageContent');
 
-  // High-Priority UI Refresh for this specific quiz
-  if (quizId) {
-      const attemptsDisplay = document.getElementById(`attempts-count-${quizId}`);
-      const actionsContainer = document.getElementById(`quiz-actions-${quizId}`);
+  // Display immediate results in the quizArea
+  const quizArea = document.getElementById('quizArea');
+  if (quizArea) {
+      const durationMin = Math.floor(timeSpent / 60);
+      const durationSec = timeSpent % 60;
+      const avgTimePerQ = (timeSpent / (currentQuiz.questions?.length || 1)).toFixed(1);
 
-      if (attemptsDisplay || actionsContainer) {
-          try {
-              const [q, quizSubs] = await Promise.all([
-                  SupabaseDB.getQuiz(quizId),
-                  SupabaseDB.getQuizSubmissions(quizId, user.email)
-              ]);
+      quizArea.innerHTML = `
+        <div class="card text-center p-40">
+            <div style="font-size: 4rem; margin-bottom: 20px;">${isPassed ? '🎉' : '⏱️'}</div>
+            <h2 class="m-0">Quiz Submitted!</h2>
+            <p class="text-muted mb-30">Your attempt has been recorded successfully.</p>
 
-              const attemptsUsed = quizSubs.length;
-              if (attemptsDisplay) {
-                  attemptsDisplay.textContent = `${attemptsUsed} / ${q.attempts_allowed}`;
-              }
+            <div class="grid-3 mb-30 p-20 border-radius-sm" style="background:var(--bg)">
+                <div>
+                    <div class="small text-muted">Final Score</div>
+                    <div class="bold" style="font-size:2rem; color:var(--purple)">${percentage}%</div>
+                </div>
+                <div>
+                    <div class="small text-muted">Status</div>
+                    <div class="bold ${isPassed ? 'success-text' : 'danger-text'}" style="font-size:2rem">${isPassed ? 'PASSED' : 'FAILED'}</div>
+                </div>
+                <div>
+                    <div class="small text-muted">Required</div>
+                    <div class="bold" style="font-size:2rem">${currentQuiz.passing_score || 0}%</div>
+                </div>
+            </div>
 
-              if (actionsContainer) {
-                  const draft = quizSubs.find(s => s.status === 'draft');
-                  const nowTs = Date.now();
-                  const startAt = q.start_at ? new Date(q.start_at).getTime() : 0;
-                  const endAt = q.end_at ? new Date(q.end_at).getTime() : Infinity;
-                  const isAvailable = nowTs >= startAt && nowTs <= endAt;
-                  const canAttempt = (attemptsUsed < q.attempts_allowed || !!draft) && isAvailable;
+            <div class="grid-2 mb-30 p-15 border-radius-sm" style="background:#f8fafc; border:1px solid var(--border)">
+                <div class="small"><strong>Total Time:</strong> ${durationMin}m ${durationSec}s</div>
+                <div class="small"><strong>Avg Time/Question:</strong> ${avgTimePerQ}s</div>
+            </div>
 
-                  if (canAttempt) {
-                      actionsContainer.innerHTML = `
-                          ${endAt !== Infinity ? `
-                              <div class="mb-10 p-10 border-radius-sm" style="background:#fffcf0; border:1px solid #ffeeba">
-                                  <div class="quiz-countdown" data-target="${endAt}" data-start="${startAt}" data-label="Ends In:"></div>
-                              </div>
-                          ` : ''}
-                          <button class="button w-auto small px-20" id="quiz-btn-${q.id}" onclick="startQuiz('${q.id}')">${draft ? 'Resume Attempt' : 'Start New Attempt'}</button>
-                      `;
-                      // Re-init countdown if added
-                      const el = actionsContainer.querySelector('.quiz-countdown');
-                      if (el) {
-                          Countdown.create(el, {
-                              targetDate: parseInt(el.dataset.target),
-                              startTime: el.dataset.start,
-                              showProgress: true,
-                              label: el.dataset.label,
-                              onEnd: () => renderQuizzes()
-                          });
-                      }
-                  } else {
-                      actionsContainer.innerHTML = '<div class="badge badge-inactive w-100 text-center">No Access / Attempts Used</div>';
-                  }
-              }
-          } catch (e) {
-              console.warn('High-priority refresh failed:', e);
-          }
-      }
+            <div class="flex-center gap-10">
+                <button class="button w-auto px-40" onclick="renderQuizzes()">Back to Quizzes</button>
+                <button class="button secondary w-auto px-40" onclick="viewQuizResults('${quizId}', '${currentSubmission.id}')">View Detailed Results</button>
+            </div>
+        </div>
+      `;
+      quizArea.scrollIntoView({ behavior: 'smooth' });
   }
-
-  const resultMessage = `Quiz submitted successfully!\n\nScore: ${percentage}%\nStatus: ${isPassed ? 'PASSED' : 'FAILED'}`;
-  alert(resultMessage);
 
   currentQuiz = null;
   currentSubmission = null;
-  renderQuizzes();
 }
 
 async function viewQuizResults(quizId, submissionId = null) {
