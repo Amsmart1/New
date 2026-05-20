@@ -10,10 +10,18 @@ if (!window.supabase) {
 }
 const { createClient } = window.supabase || { createClient: () => ({ from: () => ({ select: () => ({ eq: () => ({ single: () => ({}) }) }) }) }) };
 
-// Standard client options
+// Standard client options with dynamic header injection via custom fetch
 const clientOptions = {
     global: {
-        headers: {}
+        fetch: (url, options) => {
+            const sid = sessionStorage.getItem('sessionId');
+            if (sid) {
+                options = options || {};
+                options.headers = options.headers || {};
+                options.headers['x-session-id'] = sid;
+            }
+            return fetch(url, options);
+        }
     },
     auth: {
         persistSession: false,
@@ -22,38 +30,26 @@ const clientOptions = {
     }
 };
 
-// Inject current session ID into headers if it exists
-const currentSessionId = sessionStorage.getItem('sessionId');
-if (currentSessionId) {
-    clientOptions.global.headers['x-session-id'] = currentSessionId;
-}
-
-let supabaseClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, clientOptions);
+const supabaseClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, clientOptions);
 window.supabaseClient = supabaseClient;
 
-// Track last initialized session to avoid redundant client creation
-let _lastSessionId = currentSessionId;
+// Track last initialized session
+let _lastSessionId = sessionStorage.getItem('sessionId');
 
 /**
- * Updates the Supabase client with a new session ID for RLS context.
- * Should be called after login, signup, or password reset.
+ * Updates the Supabase client session context.
+ * The custom fetch function will automatically pick up the new ID from sessionStorage.
  */
 function setSupabaseSession(sessionId) {
     if (sessionId === _lastSessionId) return;
 
     if (sessionId) {
         sessionStorage.setItem('sessionId', sessionId);
-        clientOptions.global.headers['x-session-id'] = sessionId;
     } else {
         sessionStorage.removeItem('sessionId');
-        delete clientOptions.global.headers['x-session-id'];
     }
 
     _lastSessionId = sessionId;
-
-    // Re-initialize client with updated headers
-    supabaseClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, clientOptions);
-    window.supabaseClient = supabaseClient;
 }
 window.setSupabaseSession = setSupabaseSession;
 
