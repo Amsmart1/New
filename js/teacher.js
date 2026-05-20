@@ -2032,6 +2032,7 @@ async function gradeQuizSubmission(submissionId, quizId) {
         ...submission,
         score: finalScore,
         total_points: totalPossible,
+        status: 'submitted',
         analytics: {
             ...submission.analytics,
             manual_scores: manualScoresMap
