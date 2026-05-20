@@ -1033,59 +1033,21 @@ async function viewStudentDiscussions(courseId) {
   const container = document.getElementById('pageContent');
   if (!container) return;
 
-  const renderThread = (parentId = null, depth = 0) => {
-    return disc.filter(d => d.parent_id === parentId).map(d => {
-      const isMine = d.user_email === user.email;
-      return `
-        <div class="question mb-10" style="margin-left:${depth * 20}px" id="disc-${d.id}">
-          <div class="flex-between" style="align-items:start">
-            <div class="small"><strong>${escapeHtml(d.user_email)}</strong> - ${new Date(d.created_at).toLocaleString()}</div>
-            <div class="flex gap-5">
-              <button class="button secondary tiny" onclick="showReplyForm('${escapeAttr(d.id)}', '${escapeAttr(courseId)}')">Reply</button>
-              ${isMine ? `
-                <button class="button secondary tiny" onclick="editStudentDiscussion('${escapeAttr(d.id)}', '${escapeAttr(courseId)}')">Edit</button>
-                <button class="button danger tiny" onclick="deleteStudentDiscussion('${escapeAttr(d.id)}', '${escapeAttr(courseId)}')">Delete</button>
-              ` : ''}
-            </div>
-          </div>
-          <div class="mt-5 disc-content">${escapeHtml(d.content)}</div>
-          <div id="reply-area-${d.id}"></div>
-          ${renderThread(d.id, depth + 1)}
-        </div>
-      `;
-    }).join('');
-  };
+  container.innerHTML = `<button class="button secondary w-auto mb-10" onclick="renderDiscussions()">← Back</button><div id="discussionArea"></div>`;
 
-  container.innerHTML = `
-    <button class="button secondary w-auto mb-10" onclick="renderDiscussions()">← Back</button>
-    <div class="card">
-      <h3 class="m-0">Course Discussion</h3>
-      <div id="disc-list" class="mt-20 mb-20" style="max-height:500px; overflow-y:auto">
-        ${renderThread() || '<div class="empty">No messages yet. Start the conversation!</div>'}
-      </div>
-      <div class="flex gap-10">
-        <input type="text" id="discInput" placeholder="Start a new thread..." class="m-0">
-        <button class="button w-auto" onclick="postDiscussion('${escapeAttr(courseId)}')">Post</button>
-      </div>
-    </div>
-  `;
+  UI.renderDiscussion('discussionArea', disc, user.email, {
+      onPost: (content, parentId) => postDiscussion(courseId, parentId, content),
+      onEdit: (id) => editStudentDiscussion(id, courseId),
+      onDelete: (id) => deleteStudentDiscussion(id, courseId)
+  });
 }
 
-window.showReplyForm = (parentId, courseId) => {
-  const area = document.getElementById(`reply-area-${parentId}`);
-  area.innerHTML = `
-    <div class="flex gap-10 mt-10">
-      <input type="text" id="replyInput-${parentId}" placeholder="Write a reply..." class="m-0 small p-10">
-      <button class="button small w-auto" onclick="postDiscussion('${escapeAttr(courseId)}', '${escapeAttr(parentId)}')">Reply</button>
-      <button class="button secondary small w-auto" onclick="this.parentElement.remove()">Cancel</button>
-    </div>
-  `;
-};
-
-async function postDiscussion(courseId, parentId = null) {
+async function postDiscussion(courseId, parentId = null, content = null) {
   const user = await SessionManager.getCurrentUser();
-  const inputId = parentId ? `replyInput-${parentId}` : 'discInput';
-  const content = document.getElementById(inputId).value;
+  if (!content) {
+      const inputId = parentId ? `replyInput-${parentId}` : 'discInputMain';
+      content = document.getElementById(inputId)?.value;
+  }
   if (!content) return;
   try {
     await SupabaseDB.saveDiscussion({
@@ -1214,29 +1176,95 @@ async function renderPlanner() {
     const user = await SessionManager.getCurrentUser();
     const items = await SupabaseDB.getPlannerItems(user.email);
 
-  container.innerHTML = `
-    <h2 class="m-0">Study Planner</h2>
-    <div class="card mt-20">
-      <div class="flex gap-10 mb-20">
-        <input type="text" id="plannerTitle" placeholder="Task title..." class="m-0">
-        <input type="date" id="plannerDate" class="m-0">
-        <button class="button w-auto px-30" onclick="addPlannerItem()">Add Task</button>
-      </div>
-      <div id="plannerList" class="mt-15">
-        ${items.map(item => `
-          <div class="flex-between list-item">
-            <span>${item.completed ? '✅' : '⏳'} <span class="bold">${escapeHtml(item.title)}</span> - ${new Date(item.due_date).toLocaleDateString()}</span>
-            <button class="button danger small w-auto" onclick="deletePlannerItem('${item.id}')">Delete</button>
+    const now = new Date();
+    now.setHours(0,0,0,0);
+
+    const todayTasks = items.filter(i => !i.completed && new Date(i.due_date).setHours(0,0,0,0) === now.getTime());
+    const upcomingTasks = items.filter(i => !i.completed && new Date(i.due_date).setHours(0,0,0,0) > now.getTime());
+    const overdueTasks = items.filter(i => !i.completed && new Date(i.due_date).setHours(0,0,0,0) < now.getTime());
+    const completedTasks = items.filter(i => i.completed);
+
+    const renderTask = (item) => `
+      <div class="flex-between list-item">
+        <div class="flex-center-y gap-10">
+          <input type="checkbox" class="w-auto m-0" ${item.completed ? 'checked' : ''} onchange="togglePlannerItem('${item.id}', this.checked)">
+          <div class="${item.completed ? 'text-muted' : ''}" style="${item.completed ? 'text-decoration: line-through' : ''}">
+            <span class="bold small">${escapeHtml(item.title)}</span>
+            <div class="tiny ${!item.completed && new Date(item.due_date) < now ? 'danger-text' : 'text-muted'}">${new Date(item.due_date).toLocaleDateString()}</div>
           </div>
-        `).join('') || '<div class="empty">No tasks planned yet.</div>'}
+        </div>
+        <button class="button danger tiny w-auto" onclick="deletePlannerItem('${item.id}')">✕</button>
       </div>
-    </div>
-  `;
+    `;
+
+    container.innerHTML = `
+      <div class="flex-between mb-20">
+        <h2 class="m-0">Study Planner</h2>
+        <div class="small text-muted">${items.length} tasks recorded</div>
+      </div>
+
+      <div class="card">
+        <h3 class="m-0 small mb-15">Quick Add Task</h3>
+        <div class="flex gap-10">
+          <input type="text" id="plannerTitle" placeholder="What needs to be done?" class="m-0">
+          <input type="date" id="plannerDate" class="m-0" value="${new Date().toISOString().split('T')[0]}" style="width: 150px">
+          <button class="button w-auto px-30" onclick="addPlannerItem()">Add</button>
+        </div>
+      </div>
+
+      <div class="grid-2 mt-20">
+        <div class="flex-column gap-20">
+          <div class="card">
+            <h3 class="m-0 mb-10" style="color: var(--danger)">Overdue</h3>
+            <div id="overdueList">
+              ${overdueTasks.map(renderTask).join('') || '<p class="tiny text-muted italic">No overdue tasks.</p>'}
+            </div>
+          </div>
+          <div class="card">
+            <h3 class="m-0 mb-10" style="color: var(--purple)">Today</h3>
+            <div id="todayList">
+              ${todayTasks.map(renderTask).join('') || '<p class="tiny text-muted italic">Nothing scheduled for today.</p>'}
+            </div>
+          </div>
+          <div class="card">
+            <h3 class="m-0 mb-10">Upcoming</h3>
+            <div id="upcomingList">
+              ${upcomingTasks.map(renderTask).join('') || '<p class="tiny text-muted italic">No upcoming tasks.</p>'}
+            </div>
+          </div>
+        </div>
+
+        <div class="flex-column">
+          <div class="card">
+            <h3 class="m-0 mb-10" style="color: var(--ok)">Completed</h3>
+            <div id="completedList" style="max-height: 400px; overflow-y: auto">
+              ${completedTasks.map(renderTask).join('') || '<p class="tiny text-muted italic">Completed tasks will appear here.</p>'}
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
   } catch (e) {
     console.error('Planner render error:', e);
-    container.innerHTML = `<div class="empty">Error loading planner.</div>`;
+    container.innerHTML = `<div class="stat-card danger"><h3>Error Loading Planner</h3></div>`;
   }
 }
+
+async function togglePlannerItem(id, completed) {
+  try {
+    const user = await SessionManager.getCurrentUser();
+    const items = await SupabaseDB.getPlannerItems(user.email);
+    const item = items.find(i => i.id === id);
+    if (item) {
+        item.completed = completed;
+        await SupabaseDB.savePlannerItem(item);
+        renderPlanner();
+    }
+  } catch (e) {
+      alert('Failed to update task.');
+  }
+}
+window.togglePlannerItem = togglePlannerItem;
 
 async function addPlannerItem() {
   const user = await SessionManager.getCurrentUser();
@@ -1521,7 +1549,84 @@ window.renderLiveClasses = renderLiveClasses;
 async function renderHelp() {
   const content = document.getElementById('pageContent');
   if (!content) return;
-  content.innerHTML = '<h2>Help & Support</h2><div class="card"><h3>FAQ</h3><p>Contact support at support@smartlms.com</p></div>';
+
+  content.innerHTML = `
+    <h2 class="m-0">Help & Support Center</h2>
+
+    <div class="grid-2 mt-20">
+      <div class="card">
+        <h3 class="m-0">Contact Support</h3>
+        <p class="small mt-10">Our technical team is available 24/7 to assist you with any issues.</p>
+        <div class="flex-column gap-10 mt-20">
+          <div class="flex-center-y gap-10">
+            <span style="font-size: 20px">📧</span>
+            <div>
+              <div class="bold small">Email Support</div>
+              <div class="tiny text-muted">support@smartlms.com</div>
+            </div>
+          </div>
+          <div class="flex-center-y gap-10">
+            <span style="font-size: 20px">📞</span>
+            <div>
+              <div class="bold small">Phone Support</div>
+              <div class="tiny text-muted">+1 (800) 123-4567</div>
+            </div>
+          </div>
+          <div class="flex-center-y gap-10">
+            <span style="font-size: 20px">💬</span>
+            <div>
+              <div class="bold small">Live Chat</div>
+              <div class="tiny text-muted">Available in Dashboard (9 AM - 5 PM)</div>
+            </div>
+          </div>
+        </div>
+        <button class="button mt-20" onclick="alert('Chat feature coming soon!')">Open Live Chat</button>
+      </div>
+
+      <div class="card">
+        <h3 class="m-0">Quick Resources</h3>
+        <div class="mt-15">
+          <div class="list-item flex-between" style="cursor: pointer" onclick="alert('Downloading Student Guide...')">
+            <span class="small">📕 Student Handbook.pdf</span>
+            <span class="tiny text-muted">2.4 MB</span>
+          </div>
+          <div class="list-item flex-between" style="cursor: pointer" onclick="alert('Opening Tutorial...')">
+            <span class="small">🎥 How to use SmartLMS</span>
+            <span class="tiny text-muted">Video</span>
+          </div>
+          <div class="list-item flex-between" style="cursor: pointer" onclick="alert('Opening Troubleshooting...')">
+            <span class="small">🔧 Troubleshooting Guide</span>
+            <span class="tiny text-muted">Web</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card mt-20">
+      <h3 class="mb-20">Frequently Asked Questions</h3>
+      <div class="flex-column gap-15">
+        <details class="question p-0 m-0" style="background: transparent; border: none; border-bottom: 1px solid var(--border); border-radius: 0">
+          <summary class="bold small py-10" style="cursor: pointer; outline: none">How do I submit an assignment?</summary>
+          <div class="small p-10 text-muted">Navigate to the "Assignments" tab, find your assignment, and click "Submit". You can upload files, paste links, or write essays directly.</div>
+        </details>
+
+        <details class="question p-0 m-0" style="background: transparent; border: none; border-bottom: 1px solid var(--border); border-radius: 0">
+          <summary class="bold small py-10" style="cursor: pointer; outline: none">What happens if I switch tabs during a quiz?</summary>
+          <div class="small p-10 text-muted">If Anti-Cheat is enabled, tab switching is logged as a violation and your teacher will be notified. Some quizzes may even lock you out.</div>
+        </details>
+
+        <details class="question p-0 m-0" style="background: transparent; border: none; border-bottom: 1px solid var(--border); border-radius: 0">
+          <summary class="bold small py-10" style="cursor: pointer; outline: none">How can I see my final grades?</summary>
+          <div class="small p-10 text-muted">Go to the "Grades" section to see your scores for all completed assignments and quizzes, along with teacher feedback.</div>
+        </details>
+
+        <details class="question p-0 m-0" style="background: transparent; border: none; border-bottom: 1px solid var(--border); border-radius: 0">
+          <summary class="bold small py-10" style="cursor: pointer; outline: none">Where do I find course materials?</summary>
+          <div class="small p-10 text-muted">Materials shared by your teacher can be found in the "Materials" tab, organized by course.</div>
+        </details>
+      </div>
+    </div>
+  `;
 }
 
 async function renderSettings() {

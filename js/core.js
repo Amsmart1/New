@@ -340,24 +340,6 @@ const NotificationManager = {
         UI.showNotification('Notification preferences updated.');
     },
 
-    async subscribeToPush() {
-        if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
-            console.warn('Push messaging is not supported');
-            return;
-        }
-
-        try {
-            const registration = await navigator.serviceWorker.ready;
-            const subscription = await registration.pushManager.subscribe({
-                userVisibleOnly: true,
-                applicationServerKey: this.vapidPublicKey
-            });
-            // Here you would send the subscription to your backend
-            // await SupabaseDB.savePushSubscription(subscription);
-        } catch (e) {
-            console.error('Failed to subscribe to push:', e);
-        }
-    },
 
     async markAllAsRead() {
         const user = await SessionManager.getCurrentUser();
@@ -586,7 +568,18 @@ const NotificationManager = {
     },
 
     async subscribeToPush() {
-        UI.showNotification('Browser push notifications are currently disabled.', 'info');
+        if (!('Notification' in window)) {
+            UI.showNotification('Push notifications are not supported by your browser.', 'error');
+            return;
+        }
+
+        const permission = await Notification.requestPermission();
+        if (permission === 'granted') {
+            UI.showNotification('Push notifications enabled successfully!', 'success');
+            // Logic for actual push token registration would go here
+        } else {
+            UI.showNotification('Notification permission was denied.', 'warn');
+        }
     },
 
     initPolling() {
@@ -1037,6 +1030,82 @@ UI.createFileUploader = function(containerId, options = {}) {
         input.files = e.dataTransfer.files;
         input.dispatchEvent(new Event('change'));
     });
+};
+
+UI.renderDiscussion = function(containerId, discussions, currentUserEmail, options = {}) {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+
+    const {
+        onReply = (parentId) => {},
+        onEdit = (id) => {},
+        onDelete = (id) => {},
+        onPost = (content, parentId) => {}
+    } = options;
+
+    const renderThread = (parentId = null, depth = 0) => {
+        return discussions.filter(d => d.parent_id === parentId).map(d => {
+            const isMine = d.user_email === currentUserEmail;
+            return `
+                <div class="question mb-10" style="margin-left:${depth * 20}px" id="disc-${d.id}">
+                    <div class="flex-between" style="align-items:start">
+                        <div class="small"><strong>${escapeHtml(d.user_email)}</strong> - ${new Date(d.created_at).toLocaleString()}</div>
+                        <div class="flex gap-5">
+                            <button class="button secondary tiny" onclick="UI._dispatchDiscussionAction('${containerId}', 'reply', '${d.id}')">Reply</button>
+                            ${isMine ? `
+                                <button class="button secondary tiny" onclick="UI._dispatchDiscussionAction('${containerId}', 'edit', '${d.id}')">Edit</button>
+                                <button class="button danger tiny" onclick="UI._dispatchDiscussionAction('${containerId}', 'delete', '${d.id}')">Delete</button>
+                            ` : ''}
+                        </div>
+                    </div>
+                    <div class="mt-5 disc-content">${escapeHtml(d.content)}</div>
+                    <div id="reply-area-${d.id}"></div>
+                    ${renderThread(d.id, depth + 1)}
+                </div>
+            `;
+        }).join('');
+    };
+
+    container.innerHTML = `
+        <div class="card">
+            <h3 class="m-0">Course Discussion</h3>
+            <div id="disc-list" class="mt-20 mb-20" style="max-height:500px; overflow-y:auto">
+                ${renderThread() || '<div class="empty">No messages yet. Start the conversation!</div>'}
+            </div>
+            <div class="flex gap-10">
+                <input type="text" id="discInputMain" placeholder="Start a new thread..." class="m-0">
+                <button class="button w-auto" onclick="UI._dispatchDiscussionAction('${containerId}', 'post', null)">Post</button>
+            </div>
+        </div>
+    `;
+
+    // Internal action dispatcher
+    UI._discussionOptions = UI._discussionOptions || {};
+    UI._discussionOptions[containerId] = options;
+};
+
+UI._dispatchDiscussionAction = function(containerId, action, id) {
+    const opts = UI._discussionOptions[containerId];
+    if (!opts) return;
+
+    if (action === 'reply') {
+        const area = document.getElementById(`reply-area-${id}`);
+        area.innerHTML = `
+            <div class="flex gap-10 mt-10">
+                <input type="text" id="replyInput-${id}" placeholder="Write a reply..." class="m-0 small p-10">
+                <button class="button small w-auto" onclick="UI._dispatchDiscussionAction('${containerId}', 'post', '${id}')">Reply</button>
+                <button class="button secondary small w-auto" onclick="this.parentElement.remove()">Cancel</button>
+            </div>
+        `;
+    } else if (action === 'post') {
+        const inputId = id ? `replyInput-${id}` : 'discInputMain';
+        const content = document.getElementById(inputId).value;
+        if (content) opts.onPost(content, id);
+    } else if (action === 'edit') {
+        opts.onEdit(id);
+    } else if (action === 'delete') {
+        opts.onDelete(id);
+    }
 };
 
 window.UI = UI;

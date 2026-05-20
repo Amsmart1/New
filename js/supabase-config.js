@@ -358,7 +358,8 @@ class SupabaseDB {
             allowed_extensions: assignment.allowed_extensions,
             questions: assignment.questions,
             attachments: assignment.attachments,
-            status: assignment.status
+            status: assignment.status,
+            anti_cheat_config: assignment.anti_cheat_config
         };
         if (assignment.id) payload.id = assignment.id;
         if (assignment.created_at) payload.created_at = assignment.created_at;
@@ -892,7 +893,8 @@ class SupabaseDB {
             passing_score: quiz.passing_score,
             questions: quiz.questions,
             shuffle_questions: quiz.shuffle_questions,
-            status: quiz.status
+            status: quiz.status,
+            anti_cheat_config: quiz.anti_cheat_config
         };
         if (quiz.id) payload.id = quiz.id;
         if (quiz.created_at) payload.created_at = quiz.created_at;
