@@ -822,19 +822,19 @@ window.getActiveMaintenanceEnd = function(m) {
 
 window.NotificationManager = NotificationManager;
 
-window.hashPassword = async function(password, salt = '') {
+window.legacyHashPassword = async function(password) {
     const encoder = new TextEncoder();
-    // Use a fixed system salt + provided salt (e.g. email)
-    const systemSalt = 'smart-lms-v1-';
-    const data = encoder.encode(systemSalt + salt + password);
+    const data = encoder.encode(password);
     const hashBuffer = await crypto.subtle.digest('SHA-256', data);
     const hashArray = Array.from(new Uint8Array(hashBuffer));
     return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
 };
 
-window.legacyHashPassword = async function(password) {
+window.hashPassword = async function(password, salt = '') {
     const encoder = new TextEncoder();
-    const data = encoder.encode(password);
+    // Use a fixed system salt + provided salt (e.g. email)
+    const systemSalt = 'smart-lms-v1-';
+    const data = encoder.encode(systemSalt + salt + password);
     const hashBuffer = await crypto.subtle.digest('SHA-256', data);
     const hashArray = Array.from(new Uint8Array(hashBuffer));
     return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');

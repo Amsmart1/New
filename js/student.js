@@ -200,6 +200,7 @@ async function enroll(courseId) {
   }
 }
 async function viewCourse(courseId, fromMyCourses = false) {
+  UI.showLoading();
   // Ensure any active study session is stopped if navigating to course view
   if (studyInterval) await stopStudySession();
   const [lessons, allCourseAssignments] = await Promise.all([
@@ -241,6 +242,7 @@ async function viewCourse(courseId, fromMyCourses = false) {
     </div>`;
 }
 async function showLesson(lessonId, courseId, fromMyCourses = false) {
+  UI.showLoading();
   const lessons = await SupabaseDB.getLessons(courseId);
   const lesson = lessons.find(l => l.id === lessonId);
   const container = document.getElementById('pageContent');
@@ -522,6 +524,7 @@ window.previewFile = function(input, idx) {
 };
 
 async function viewFeedback(assignmentId) {
+  UI.showLoading();
   const user = await SessionManager.getCurrentUser();
   const [assignment, submission] = await Promise.all([
     SupabaseDB.getAssignment(assignmentId),
@@ -592,9 +595,11 @@ async function viewFeedback(assignmentId) {
         <textarea id="regradeReason" class="input" rows="3" placeholder="Reason for regrade..."></textarea>
         <button class="button secondary w-auto mt-10" onclick="requestRegrade('${escapeAttr(assignmentId)}')">Submit Regrade Request</button>
       </div>
+
     </div>
   `;
 }
+
 
 async function renderDashboardOverview() {
   UI.showLoading();
@@ -1479,8 +1484,8 @@ async function stopAttendanceTracking(classId) {
     let isPresent = false;
     if (liveClass) {
         const totalExpected = (new Date(liveClass.end_at) - new Date(liveClass.start_at)) / 1000;
-        // Mark present if duration >= 60% of class time or at least 30 mins (demo logic)
-        if (duration >= (totalExpected * 0.6) || duration >= 1800) {
+        // Mark present if duration >= 80% of class time
+        if (duration >= (totalExpected * 0.8)) {
             isPresent = true;
         }
     }
@@ -2334,6 +2339,7 @@ async function deleteSubmissionById(assignmentId, studentEmail) {
 }
 async function submitAssignment(assignmentId, studentEmail) {
   AntiCheat.destroy();
+  UI.showLoading('pageContent', 'Uploading submission...');
   const btn = document.getElementById('submitAssignBtn');
   if (btn) { btn.disabled = true; btn.textContent = 'Uploading...'; }
 
@@ -2370,7 +2376,8 @@ async function submitAssignment(assignmentId, studentEmail) {
       submitted_at: new Date().toISOString(),
       answers: answers,
       attachments: existing?.attachments || [],
-      status: 'submitted'
+      status: 'submitted',
+      regrade_request: null
     };
 
     if (await SupabaseDB.saveSubmission(submission)) {
@@ -2380,10 +2387,13 @@ async function submitAssignment(assignmentId, studentEmail) {
 
       alert('Submitted!');
       renderAssignments();
+    } else {
+        throw new Error('Save failed');
     }
   } catch (e) {
     console.error('Submission failed:', e);
     alert(`Submission failed: ${e.message || 'Unknown error'}. ${e.details || ''}`);
+    UI.hideLoading('pageContent');
   } finally {
     if (btn) { btn.disabled = false; btn.textContent = 'Submit Assignment'; }
   }

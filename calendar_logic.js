@@ -2,21 +2,6 @@
  * Modern Academic Calendar Logic for SmartLMS
  */
 
-const escapeHtml = (s) => {
-    if (s === null || s === undefined) return '';
-    return String(s)
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;')
-        .replace(/'/g, '&#39;');
-};
-
-const escapeAttr = (s) => {
-    if (s === null || s === undefined) return '';
-    return String(s).replace(/"/g, '&quot;').replace(/'/g, '&#39;');
-};
-
 class CalendarManager {
     constructor() {
         this.events = [];
