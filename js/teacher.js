@@ -2007,20 +2007,29 @@ async function gradeQuizSubmission(submissionId, quizId) {
     e.preventDefault();
     try {
       const manualScoresMap = {};
-      const manualScoresList = Array.from(document.querySelectorAll('.q-manual-points')).map(input => {
+      Array.from(document.querySelectorAll('.q-manual-points')).forEach(input => {
         const idx = parseInt(input.dataset.qIdx);
         const pts = parseInt(input.value) || 0;
         manualScoresMap[idx] = pts;
-        return { idx, points: pts };
       });
 
-      // Calculate total points
+      // Re-calculate final score immediately before save to ensure integrity
+      let earnedPoints = 0;
       let totalPossible = 0;
-      quiz.questions.forEach((q) => {
+      quiz.questions.forEach((q, idx) => {
         totalPossible += q.points;
+        const manual = manualScoresMap[idx];
+        if (manual !== undefined) {
+          earnedPoints += manual;
+        } else {
+          const studentAnswer = submission.answers[idx] || '';
+          if (studentAnswer.toString().toLowerCase() === q.correct.toString().toLowerCase()) {
+            earnedPoints += q.points;
+          }
+        }
       });
 
-      const finalScore = parseInt(finalScoreInput.value) || 0;
+      const finalScore = totalPossible > 0 ? Math.round((earnedPoints / totalPossible) * 100) : 0;
 
       const updatedSubmission = {
         ...submission,
