@@ -11,7 +11,7 @@ function clearActiveCountdowns() {
 }
 
 async function renderDashboard() {
-  UI.showLoading();
+
   NotificationManager.initPolling();
   const content = document.getElementById('pageContent');
   if (!content) return;
@@ -46,7 +46,7 @@ async function renderDashboard() {
 }
 
 async function renderCourses() {
-  UI.showLoading();
+
   const content = document.getElementById('pageContent');
   if (!content) return;
   clearActiveCountdowns();
@@ -275,6 +275,7 @@ async function renderAssignments() {
       SupabaseDB.getAssignments(user.email),
       SupabaseDB.getCourses(user.email)
     ]);
+    UI.hideLoading();
 
   content.innerHTML = `
     <div class="card flex-between">
@@ -339,6 +340,7 @@ async function renderGrading() {
       SupabaseDB.getAssignments(user.email),
       SupabaseDB.getSubmissions(null, null, user.email)
     ]);
+    UI.hideLoading();
 
     let gradingHtml = '<h2>Grading Queue</h2>';
     let hasPending = false;
@@ -386,7 +388,7 @@ async function renderGrading() {
   }
 }
 async function renderStudents() {
-  UI.showLoading();
+
   const content = document.getElementById('pageContent');
   if (!content) return;
   clearActiveCountdowns();
@@ -684,6 +686,7 @@ async function deleteAssignmentById(id, courseId = null) {
   if (confirm('Delete?')) { await SupabaseDB.deleteAssignment(id); if (courseId) editCourse(courseId); else renderAssignments(); }
 }
 async function gradeSubmission(assignmentId, studentEmail) {
+  UI.showLoading();
   const content = document.getElementById('pageContent');
   if (!content) return;
 
@@ -841,7 +844,7 @@ async function gradeSubmission(assignmentId, studentEmail) {
   }
 }
 async function renderDiscussions() {
-  UI.showLoading();
+
   const container = document.getElementById('pageContent');
   if (!container) return;
   clearActiveCountdowns();
@@ -980,7 +983,7 @@ window.issueCert = issueCert;
 window.renderCalendar = renderCalendar;
 
 async function renderAntiCheat() {
-  UI.showLoading();
+
   const content = document.getElementById('pageContent');
   if (!content) return;
   clearActiveCountdowns();
@@ -1147,7 +1150,7 @@ async function renderSettings() {
 window.renderSettings = renderSettings;
 
 async function renderLiveClasses() {
-  UI.showLoading();
+
   const content = document.getElementById('pageContent');
   if (!content) return;
   clearActiveCountdowns();
@@ -1654,6 +1657,7 @@ async function renderQuizzes() {
       SupabaseDB.getQuizzes(null, user.email),
       SupabaseDB.getCourses(user.email)
     ]);
+    UI.hideLoading();
     const now = Date.now();
     container.innerHTML = `
     <div class="card flex-between">
@@ -1913,10 +1917,12 @@ async function deleteQuizById(id) {
 }
 
 async function viewQuizResults(quizId) {
+  UI.showLoading();
   const [subs, quiz] = await Promise.all([
     SupabaseDB.getQuizSubmissions(quizId),
     SupabaseDB.getQuiz(quizId)
   ]);
+  UI.hideLoading();
   const container = document.getElementById('pageContent');
   if (!container) return;
 
@@ -1928,13 +1934,13 @@ async function viewQuizResults(quizId) {
           <table>
             <thead><tr><th>Student</th><th>Score</th><th>Points</th><th>Submitted</th><th>Action</th></tr></thead>
             <tbody>
-              ${subs.filter(s => s.status === 'submitted').map(s => `
+              ${subs.filter(s => s.status === 'submitted' || s.status === 'in-progress').map(s => `
                 <tr>
                   <td>${escapeHtml(s.student_email)}</td>
-                  <td>${s.score !== null ? s.score + '%' : '<span class="warning-text bold">Pending</span>'}</td>
+                  <td>${s.status === 'submitted' ? (s.score !== null ? s.score + '%' : '<span class="warning-text bold">Pending</span>') : '<span class="badge badge-warn">In Progress</span>'}</td>
                   <td>${s.total_points || 0}</td>
-                  <td>${new Date(s.submitted_at).toLocaleString()}</td>
-                  <td><button class="button small w-auto" onclick="gradeQuizSubmission('${s.id}', '${quizId}')">Grade/View</button></td>
+                  <td>${s.submitted_at ? new Date(s.submitted_at).toLocaleString() : '---'}</td>
+                  <td><button class="button small w-auto" ${s.status === 'in-progress' ? 'disabled' : ''} onclick="gradeQuizSubmission('${s.id}', '${quizId}')">Grade/View</button></td>
                 </tr>
               `).join('') || '<tr><td colspan="5" class="empty">No submissions yet.</td></tr>'}
             </tbody>
@@ -1945,10 +1951,12 @@ async function viewQuizResults(quizId) {
 }
 
 async function gradeQuizSubmission(submissionId, quizId) {
+  UI.showLoading();
   const [quiz, submission] = await Promise.all([
     SupabaseDB.getQuiz(quizId),
     SupabaseDB.getQuizSubmissionById(submissionId)
   ]);
+  UI.hideLoading();
   const container = document.getElementById('pageContent');
   if (!container) return;
 
@@ -2104,6 +2112,7 @@ async function renderGradeBook() {
             SupabaseDB.getSubmissions(null, null, user.email),
             SupabaseDB.getQuizSubmissions(null, null, user.email)
         ]);
+        UI.hideLoading();
 
         content.innerHTML = `
             <div class="card flex-between">
@@ -2247,7 +2256,7 @@ function initNav() {
 
 
 async function renderMaterials() {
-  UI.showLoading();
+
   const content = document.getElementById('pageContent');
   if (!content) return;
   clearActiveCountdowns();

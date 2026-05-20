@@ -181,7 +181,7 @@ CREATE TABLE IF NOT EXISTS quiz_submissions (
   total_points INTEGER,
   answers JSONB DEFAULT '{}'::jsonb,
   analytics JSONB DEFAULT '{}'::jsonb,
-  status VARCHAR(50) DEFAULT 'submitted' CHECK (status IN ('draft', 'submitted')),
+  status VARCHAR(50) DEFAULT 'submitted' CHECK (status IN ('in-progress', 'submitted')),
   time_spent INTEGER DEFAULT 0,
   started_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   submitted_at TIMESTAMP WITH TIME ZONE,
@@ -679,8 +679,8 @@ DECLARE
     v_attempts_allowed INTEGER;
     v_next_attempt INTEGER;
 BEGIN
-    -- Force attempt_number to NULL if it's a draft to ensure it doesn't count towards used attempts
-    IF (NEW.status = 'draft') THEN
+    -- Force attempt_number to NULL if it's in-progress to ensure it doesn't count towards used attempts
+    IF (NEW.status = 'in-progress') THEN
         NEW.attempt_number := NULL;
     END IF;
 
@@ -716,9 +716,9 @@ CREATE TRIGGER tr_validate_quiz_attempts
 BEFORE INSERT OR UPDATE ON quiz_submissions
 FOR EACH ROW EXECUTE PROCEDURE validate_quiz_attempts();
 
--- Ensure only one draft exists per student per quiz to prevent duplicate start records.
--- This combined with validate_quiz_attempts ensures a clean "one-draft-at-a-time" flow.
-CREATE UNIQUE INDEX IF NOT EXISTS idx_quiz_submissions_draft_unique ON quiz_submissions (quiz_id, student_email) WHERE (status = 'draft');
+-- Ensure only one in-progress attempt exists per student per quiz to prevent duplicate start records.
+-- This combined with validate_quiz_attempts ensures a clean "one-in-progress-at-a-time" flow.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_quiz_submissions_in_progress_unique ON quiz_submissions (quiz_id, student_email) WHERE (status = 'in-progress');
 
 -- JSONB Validation Functions
 CREATE OR REPLACE FUNCTION validate_jsonb_metadata() RETURNS TRIGGER AS $$
