@@ -879,59 +879,21 @@ async function viewCourseDiscussions(courseId) {
   const container = document.getElementById('pageContent');
   if (!container) return;
 
-  const renderThread = (parentId = null, depth = 0) => {
-    return disc.filter(d => d.parent_id === parentId).map(d => {
-      const isMine = d.user_email === user.email;
-      return `
-        <div class="question mb-10" style="margin-left:${depth * 20}px" id="disc-${d.id}">
-          <div class="flex-between" style="align-items:start">
-            <div class="small"><strong>${escapeHtml(d.user_email)}</strong> - ${new Date(d.created_at).toLocaleString()}</div>
-            <div class="flex gap-5">
-              <button class="button secondary tiny" onclick="showTeacherReplyForm('${escapeAttr(d.id)}', '${escapeAttr(courseId)}')">Reply</button>
-              ${isMine ? `
-                <button class="button secondary tiny" onclick="editDiscussion('${escapeAttr(d.id)}', '${escapeAttr(courseId)}')">Edit</button>
-                <button class="button danger tiny" onclick="deleteDiscussion('${escapeAttr(d.id)}', '${escapeAttr(courseId)}')">Delete</button>
-              ` : ''}
-            </div>
-          </div>
-          <div class="mt-5 disc-content">${escapeHtml(d.content)}</div>
-          <div id="reply-area-${d.id}"></div>
-          ${renderThread(d.id, depth + 1)}
-        </div>
-      `;
-    }).join('');
-  };
+  container.innerHTML = `<button class="button secondary w-auto mb-10" onclick="renderDiscussions()">← Back</button><div id="discussionArea"></div>`;
 
-  container.innerHTML = `
-    <button class="button secondary w-auto mb-10" onclick="renderDiscussions()">← Back</button>
-    <div class="card">
-      <h3>Course Discussions</h3>
-      <div id="disc-list" class="mb-20" style="max-height:500px; overflow-y:auto">
-        ${renderThread() || '<div class="empty">No messages yet.</div>'}
-      </div>
-      <div class="flex gap-10">
-        <input type="text" id="discInput" placeholder="Start a new thread..." class="m-0">
-        <button class="button w-auto" onclick="postTeacherDiscussion('${escapeAttr(courseId)}')">Post</button>
-      </div>
-    </div>
-  `;
+  UI.renderDiscussion('discussionArea', disc, user.email, {
+      onPost: (content, parentId) => postTeacherDiscussion(courseId, parentId, content),
+      onEdit: (id) => editDiscussion(id, courseId),
+      onDelete: (id) => deleteDiscussion(id, courseId)
+  });
 }
 
-window.showTeacherReplyForm = (parentId, courseId) => {
-  const area = document.getElementById(`reply-area-${parentId}`);
-  area.innerHTML = `
-    <div class="flex gap-10 mt-10">
-      <input type="text" id="replyInput-${parentId}" placeholder="Write a reply..." class="m-0 small p-10">
-      <button class="button small w-auto" onclick="postTeacherDiscussion('${escapeAttr(courseId)}', '${escapeAttr(parentId)}')">Reply</button>
-      <button class="button secondary small w-auto" onclick="this.parentElement.remove()">Cancel</button>
-    </div>
-  `;
-};
-
-async function postTeacherDiscussion(courseId, parentId = null) {
+async function postTeacherDiscussion(courseId, parentId = null, content = null) {
   const user = await SessionManager.getCurrentUser();
-  const inputId = parentId ? `replyInput-${parentId}` : 'discInput';
-  const content = document.getElementById(inputId).value;
+  if (!content) {
+      const inputId = parentId ? `replyInput-${parentId}` : 'discInputMain';
+      content = document.getElementById(inputId)?.value;
+  }
   if (!content) return;
   try {
     await SupabaseDB.saveDiscussion({
@@ -1095,36 +1057,49 @@ function openAntiCheatModal(type) {
     const categories = ['Interaction', 'Environment', 'Input'];
 
     backdrop.innerHTML = `
-        <div class="modal" style="max-width: 700px">
+        <div class="modal" style="max-width: 800px">
             <div class="flex-between mb-20">
-                <h3 class="m-0">🛡️ Anti-Cheat Configuration</h3>
+                <div class="flex-center-y gap-10">
+                    <span style="font-size: 24px">🛡️</span>
+                    <h3 class="m-0">Anti-Cheat Configuration</h3>
+                </div>
                 <button class="button secondary tiny w-auto" onclick="this.closest('.modal-backdrop').remove()">✕</button>
             </div>
 
-            <p class="small mb-20">Select the security measures you want to enable for this ${type}. Active measures will log violations and notify you.</p>
+            <p class="small mb-20">Enhance the integrity of your ${type} by enabling advanced security measures. All violations are logged with detailed session data.</p>
 
-            <div class="ac-modal-content">
+            <div class="ac-modal-content" style="max-height: 60vh; overflow-y: auto; padding-right: 10px;">
                 ${categories.map(cat => `
-                    <div class="mb-20">
-                        <h4 class="mb-10" style="border-bottom: 1px solid var(--border); padding-bottom: 5px; color: var(--purple)">${cat} Control</h4>
+                    <div class="mb-30">
+                        <h4 class="mb-15" style="border-bottom: 2px solid var(--purple-light); padding-bottom: 8px; color: var(--purple); display: flex; align-items: center; gap: 8px">
+                            ${cat === 'Interaction' ? '🖱️' : cat === 'Environment' ? '🌐' : '⌨️'} ${cat} Control
+                        </h4>
                         <div class="grid-2">
-                            ${flags.filter(f => f.category === cat).map(f => `
-                                <div class="flex gap-10 p-10 border-radius-sm" style="background: var(--bg); align-items: flex-start">
-                                    <input type="checkbox" class="ac-modal-flag w-auto m-0 mt-4" data-flag="${f.key}" ${currentConfig[f.key] ? 'checked' : ''}>
-                                    <div>
-                                        <label class="m-0 bold small" style="cursor: pointer" onclick="this.parentElement.previousElementSibling.click()">${f.label}</label>
-                                        <div class="tiny text-muted mt-4">${f.desc}</div>
+                            ${flags.filter(f => f.category === cat).map(f => {
+                                const isActive = currentConfig[f.key] === true;
+                                return `
+                                <div class="ac-feature-card ${isActive ? 'active' : ''}" onclick="const cb=this.querySelector('input'); cb.checked=!cb.checked; this.classList.toggle('active', cb.checked)">
+                                    <label class="ac-switch" onclick="event.stopPropagation()">
+                                        <input type="checkbox" class="ac-modal-flag" data-flag="${f.key}" ${isActive ? 'checked' : ''} onchange="this.closest('.ac-feature-card').classList.toggle('active', this.checked)">
+                                        <span class="ac-slider"></span>
+                                    </label>
+                                    <div style="flex: 1">
+                                        <div class="bold small">${f.label}</div>
+                                        <div class="tiny text-muted mt-4" style="line-height: 1.3">${f.desc}</div>
                                     </div>
                                 </div>
-                            `).join('')}
+                            `}).join('')}
                         </div>
                     </div>
                 `).join('')}
             </div>
 
-            <div class="flex gap-10 mt-30">
-                <button class="button w-auto px-40" id="saveACBtn">Apply Settings</button>
-                <button class="button secondary w-auto px-40" onclick="this.closest('.modal-backdrop').remove()">Cancel</button>
+            <div class="flex-between mt-30 pt-20" style="border-top: 1px solid var(--border)">
+                <div class="tiny text-muted">Select flags to apply to this assessment.</div>
+                <div class="flex gap-10">
+                    <button class="button w-auto px-40" id="saveACBtn">Apply Settings</button>
+                    <button class="button secondary w-auto px-40" onclick="this.closest('.modal-backdrop').remove()">Cancel</button>
+                </div>
             </div>
         </div>
     `;
@@ -2356,6 +2331,7 @@ async function showMaterialForm() {
 }
 
 async function saveMaterial() {
+  const user = await SessionManager.getCurrentUser();
   const courseId = document.getElementById('matCourseId').value;
   const title = document.getElementById('matTitle').value;
   const url = document.getElementById('matFileUrl').value;
@@ -2365,9 +2341,9 @@ async function saveMaterial() {
     await SupabaseDB.saveMaterial({
       id: crypto.randomUUID(),
       course_id: courseId,
+      teacher_email: user.email,
       title: title,
-      file_url: url,
-      created_at: new Date().toISOString()
+      file_url: url
     });
     alert('Material saved!');
     renderMaterials();
