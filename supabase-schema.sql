@@ -914,7 +914,7 @@ BEGIN
         'role', v_user.role,
         'created_at', v_user.created_at,
         'updated_at', v_user.updated_at,
-        'last_login', v_user.last_login,
+        'last_login', NOW(),
         'failed_attempts', 0,
         'locked_until', NULL,
         'lockouts', v_user.lockouts,
@@ -922,7 +922,8 @@ BEGIN
         'reset_request', v_user.reset_request,
         'active', v_user.active,
         'notification_preferences', v_user.notification_preferences,
-        'metadata', v_user.metadata
+        'metadata', v_user.metadata,
+        'session_id', p_session_id
       )
     );
   ELSE
@@ -998,7 +999,14 @@ BEGIN
     INSERT INTO user_secrets (email, password_hash, session_id)
     VALUES (p_email, p_password_hash, p_session_id);
 
-    RETURN jsonb_build_object('success', true, 'user', (SELECT to_jsonb(u.*) FROM users u WHERE email = p_email));
+    RETURN jsonb_build_object('success', true, 'user', (
+        SELECT to_jsonb(t.*) FROM (
+            SELECT u.*, s.session_id
+            FROM users u
+            JOIN user_secrets s ON u.email = s.email
+            WHERE u.email = p_email
+        ) t
+    ));
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
@@ -1035,6 +1043,26 @@ BEGIN
 
     SELECT session_id INTO v_session_id FROM user_secrets WHERE email = v_email;
     RETURN v_session_id;
+END;
+$$ LANGUAGE plpgsql STABLE SECURITY DEFINER;
+
+CREATE OR REPLACE FUNCTION get_user_secure(p_email VARCHAR)
+RETURNS JSONB AS $$
+DECLARE
+    v_user RECORD;
+    v_session_id VARCHAR;
+BEGIN
+    SELECT * INTO v_user FROM users WHERE email = p_email;
+    IF NOT FOUND THEN
+        RETURN NULL;
+    END IF;
+
+    -- Only include session_id if requester is admin or the user themselves
+    IF (is_admin() OR get_auth_email() = p_email) THEN
+        SELECT session_id INTO v_session_id FROM user_secrets WHERE email = p_email;
+    END IF;
+
+    RETURN to_jsonb(v_user) || jsonb_build_object('session_id', v_session_id);
 END;
 $$ LANGUAGE plpgsql STABLE SECURITY DEFINER;
 

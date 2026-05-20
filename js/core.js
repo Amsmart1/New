@@ -666,8 +666,6 @@ async function updateMaintBanner() {
             // Check for session invalidation (single-session enforcement)
             // after fetching fresh user data, compare fresh.session_id with SessionManager.getSessionId().
             const currentSid = SessionManager.getSessionId();
-            const dbSid = await SupabaseDB.getCurrentSessionId();
-            fresh.session_id = dbSid; // authoritative ID from user_secrets
             const sessionMismatch = fresh.session_id && fresh.session_id !== currentSid;
 
             if ((isMaint && user.role !== 'admin') || isRestricted || sessionMismatch) {

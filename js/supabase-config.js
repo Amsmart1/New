@@ -204,7 +204,7 @@ class SupabaseDB {
 
         _cache.invalidate('users');
         _cache.invalidate(`user_${user.email}`);
-        return data?.[0];
+        return this.getUser(user.email, true);
     }
 
     static async createUserSecure(user) {
@@ -252,12 +252,9 @@ class SupabaseDB {
     static async getUser(email, bypassCache = false) {
         if (bypassCache) _cache.invalidate(`user_${email}`);
         return _cache.fetch(`user_${email}`, async () => {
-            const { data, error } = await supabaseClient
-                .from('users')
-                .select('*')
-                .eq('email', email);
+            const { data, error } = await supabaseClient.rpc('get_user_secure', { p_email: email });
             if (error) throw error;
-            return data?.[0] || null;
+            return data || null;
         });
     }
 
@@ -970,12 +967,6 @@ class SupabaseDB {
             p_password_hash: passwordHash,
             p_session_id: sessionId
         });
-        if (error) throw error;
-        return data;
-    }
-
-    static async getCurrentSessionId() {
-        const { data, error } = await supabaseClient.rpc('get_current_session_id');
         if (error) throw error;
         return data;
     }

@@ -445,9 +445,11 @@ document.addEventListener('DOMContentLoaded', () => {
             const hashedInput = await Auth.hashPassword(password, email);
 
             try {
-                // Perform credentials check first
-                const initialSid = sessionStorage.getItem('sessionId');
-                const authResult = await SupabaseDB.authenticateUser(email, hashedInput, initialSid);
+                // Clear existing session and generate a fresh one BEFORE authentication
+                sessionStorage.removeItem('sessionId');
+                const sid = SessionManager.getSessionId();
+
+                const authResult = await SupabaseDB.authenticateUser(email, hashedInput, sid);
 
                 if (!authResult.success) {
                     if (passErr) passErr.innerText = authResult.message || 'Login failed';
@@ -456,15 +458,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 const authUser = authResult.user;
 
-                // After successful credentials check, clear sessionId from sessionStorage,
-                // assign SessionManager.getSessionId() to user.session_id and call await SupabaseDB.saveUser(user)
-                // before SessionManager.setCurrentUser(user).
-                sessionStorage.removeItem('sessionId');
-                const sid = SessionManager.getSessionId();
-                authUser.session_id = sid;
-                await SupabaseDB.saveUser(authUser);
-
-                // Establish RLS session context
+                // Establish RLS session context immediately after successful auth
                 window.setSupabaseSession(sid);
                 await SessionManager.setCurrentUser(authUser);
 
@@ -622,11 +616,13 @@ document.addEventListener('DOMContentLoaded', () => {
             sessionStorage.removeItem('sessionId');
             const sid = SessionManager.getSessionId();
             freshUser.session_id = sid;
-            await SupabaseDB.saveUser(freshUser);
+
+            // Persist changes and get authoritative user object
+            const updatedUser = await SupabaseDB.saveUser(freshUser);
 
             // Establish RLS session context and persist updated user data
             window.setSupabaseSession(sid);
-            await SessionManager.setCurrentUser(freshUser);
+            await SessionManager.setCurrentUser(updatedUser);
 
             // Notify user of update
             await SupabaseDB.createNotification(
