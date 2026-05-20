@@ -186,30 +186,22 @@ async function initDashboard(role) {
         return null;
     }
 
-    // Enforce account restrictions
+    // Initialize SessionGuard and perform initial validation
+    if (typeof SessionGuard !== 'undefined') {
+        SessionGuard.init();
+        await SessionGuard.validate(true);
+    }
+
+    // Force password change if reset is approved but not yet completed
     try {
         const freshUser = await SupabaseDB.getUser(user.email);
-        if (!freshUser || !freshUser.active || freshUser.flagged || isAccountLocked(freshUser)) {
-            let msg = 'Access denied.';
-            if (!freshUser) msg = 'Account not found.';
-            else if (!freshUser.active) msg = 'Your account has been deactivated.';
-            else if (freshUser.flagged) msg = 'Your account is flagged for suspicious activities.';
-            else if (isAccountLocked(freshUser)) msg = 'Your account is temporarily locked.';
-
-            alert(msg + ' Logging out.');
-            await SessionManager.clearCurrentUser();
-            window.location.href = 'index.html';
-            return null;
-        }
-
-        // Force password change if reset is approved but not yet completed
-        if (freshUser.reset_request && freshUser.reset_request.status === 'approved') {
+        if (freshUser && freshUser.reset_request && freshUser.reset_request.status === 'approved') {
             alert('You must change your password before continuing.');
             window.location.href = 'index.html';
             return null;
         }
     } catch (e) {
-        console.warn('Initial restriction check failed, will retry in background polling.', e);
+        console.warn('Dashboard init check failed:', e);
     }
 
     return user;
@@ -640,47 +632,80 @@ const NotificationManager = {
 
 let maintCountdown = null;
 
-async function updateMaintBanner() {
-    let m;
-    try {
-        m = await SupabaseDB.getMaintenance(true);
-    } catch (e) {
-        console.warn('Maintenance check failed:', e);
-        return;
-    }
+const SessionGuard = {
+    _lastCheck: 0,
+    _throttle: 5000, // 5 seconds
 
-    // Force check account status and maintenance for active sessions
-    try {
-        const user = await SessionManager.getCurrentUser();
-        if (user) {
-            // Bypass cache to get real-time status during polling
-            const fresh = await SupabaseDB.getUser(user.email, true);
+    async validate(force = false) {
+        const now = Date.now();
+        if (!force && (now - this._lastCheck < this._throttle)) return;
+        this._lastCheck = now;
+
+        try {
+            const user = await SessionManager.getCurrentUser();
+            if (!user) return;
+
+            const [fresh, m] = await Promise.all([
+                SupabaseDB.getUser(user.email, true),
+                SupabaseDB.getMaintenance(true)
+            ]);
+
             if (!fresh) {
-                console.warn('Could not fetch user data during polling.');
-                return;
+                console.warn('SessionGuard: User not found.');
+                return this.logout('Your account could not be verified.');
             }
 
             const isMaint = isActiveMaintenance(m);
             const isRestricted = !fresh.active || fresh.flagged || isAccountLocked(fresh);
-
-            // Check for session invalidation (single-session enforcement)
-            // after fetching fresh user data, compare fresh.session_id with SessionManager.getSessionId().
             const currentSid = SessionManager.getSessionId();
-            const sessionMismatch = fresh.session_id && fresh.session_id !== currentSid;
+            // Invalidation detection: mismatch occurs if fresh.session_id is missing (unauthorized)
+            // or if it doesn't match the local session ID.
+            const sessionMismatch = !fresh.session_id || fresh.session_id !== currentSid;
 
             if ((isMaint && user.role !== 'admin') || isRestricted || sessionMismatch) {
                 let msg = isMaint ? 'System entered maintenance mode.' : 'Your account status has changed.';
                 if (sessionMismatch) msg = 'You have been logged in from another device or tab.';
 
-                await SessionManager.clearCurrentUser();
-                if (!window.location.href.includes('index.html')) {
-                    alert(msg + ' Logging out.');
-                    window.location.href = 'index.html';
-                }
+                await this.logout(msg);
             }
+        } catch (e) {
+            console.warn('SessionGuard: Validation failed', e);
         }
+    },
+
+    async logout(message) {
+        await SessionManager.clearCurrentUser();
+        if (!window.location.href.includes('index.html')) {
+            alert(message + ' Logging out.');
+            window.location.href = 'index.html';
+        }
+    },
+
+    init() {
+        if (this._initialized) return;
+        this._initialized = true;
+
+        // Listen for visibility changes and focus to trigger immediate validation
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'visible') this.validate(true);
+        });
+        window.addEventListener('focus', () => this.validate(true));
+
+        // Initial check
+        this.validate();
+    }
+};
+
+async function updateMaintBanner() {
+    // Integrate session validation into the banner update polling
+    await SessionGuard.validate();
+
+    let m;
+    try {
+        m = await SupabaseDB.getMaintenance(false); // Use cache here for banner as SessionGuard already bypassed it
     } catch (e) {
-        console.warn('Account status check failed:', e);
+        console.warn('Maintenance check failed:', e);
+        return;
     }
 
     const ids = ['maintBanner', 'maintBannerSignup', 'maintBannerLogin', 'maintBannerReset'];

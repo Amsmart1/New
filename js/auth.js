@@ -332,8 +332,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const hashedPassword = await Auth.hashPassword(password, email);
 
             // Generate a fresh session ID for the new signup
-            sessionStorage.removeItem('sessionId');
-            const sid = SessionManager.getSessionId();
+            const sid = SessionManager.getSessionId(true);
 
             const user = {
                 full_name: fullName,
@@ -446,8 +445,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             try {
                 // Clear existing session and generate a fresh one BEFORE authentication
-                sessionStorage.removeItem('sessionId');
-                const sid = SessionManager.getSessionId();
+                const sid = SessionManager.getSessionId(true);
 
                 const authResult = await SupabaseDB.authenticateUser(email, hashedInput, sid);
 
@@ -611,10 +609,8 @@ document.addEventListener('DOMContentLoaded', () => {
             freshUser.password = await Auth.hashPassword(newPass, freshUser.email);
             freshUser.reset_request = null;
 
-            // After updating the password, clear sessionId from sessionStorage,
-            // assign SessionManager.getSessionId() to freshUser.session_id and ensure it's saved in SupabaseDB.saveUser(freshUser).
-            sessionStorage.removeItem('sessionId');
-            const sid = SessionManager.getSessionId();
+            // After updating the password, generate a fresh session ID
+            const sid = SessionManager.getSessionId(true);
             freshUser.session_id = sid;
 
             // Persist changes and get authoritative user object

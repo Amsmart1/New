@@ -1436,12 +1436,19 @@ class SessionManager {
     static async clearCurrentUser() {
         sessionStorage.removeItem('currentUser');
         sessionStorage.removeItem('sessionId');
+        // Reset the internal guard to allow re-initialization on next login
+        if (typeof _lastSessionId !== 'undefined') {
+            _lastSessionId = null;
+        }
         if (typeof window.setSupabaseSession === 'function') {
             window.setSupabaseSession(null);
         }
     }
 
-    static getSessionId() {
+    static getSessionId(force = false) {
+        if (force) {
+            sessionStorage.removeItem('sessionId');
+        }
         let sid = sessionStorage.getItem('sessionId');
         if (!sid) {
             sid = 's_' + Math.random().toString(36).slice(2) + Date.now().toString(36);
