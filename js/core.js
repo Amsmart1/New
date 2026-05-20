@@ -69,15 +69,20 @@ const UI = {
         }, 3000);
     },
 
-    showLoading(containerId = 'pageContent') {
+    showLoading(containerId = 'pageContent', message = 'Loading content...') {
         const container = document.getElementById(containerId);
         if (!container) return;
         container.innerHTML = `
             <div class="loading-state flex-center flex-column p-40">
                 <div class="loading-spinner mb-20"></div>
-                <div class="text-muted">Loading content...</div>
+                <div class="text-muted">${escapeHtml(message)}</div>
             </div>
         `;
+    },
+
+    hideLoading(containerId = 'pageContent') {
+        const container = document.getElementById(containerId);
+        if (container) container.innerHTML = '';
     },
 
     viewFile(url, title) {

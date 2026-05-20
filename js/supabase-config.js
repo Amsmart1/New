@@ -939,6 +939,7 @@ class SupabaseDB {
             started_at: submission.started_at,
             submitted_at: submission.submitted_at
         };
+        // Only include ID if it is a valid UUID/truthy
         if (submission.id) payload.id = submission.id;
 
         const { data, error } = await supabaseClient
