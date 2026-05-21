@@ -2236,7 +2236,7 @@ function renderQuizQuestion(index) {
         <div class="animate-fade-in">
             <div class="flex-between mb-15">
                 <div class="badge badge-purple small">Points: ${q.points}</div>
-                ${q.hint ? `<button class="button tiny secondary w-auto" onclick="alert('💡 Hint: ' + this.dataset.hint)" data-hint="${escapeAttr(q.hint)}">View Hint</button>` : ''}
+                ${q.hint ? `<button class="button tiny w-auto animate-pulse" style="background: var(--ok)" onclick="UI.showNotification('💡 Hint: ' + this.dataset.hint, 'info')" data-hint="${escapeAttr(q.hint)}">View Hint</button>` : ''}
             </div>
             <h2 class="quiz-question-text mb-30" style="font-size: 1.4rem; line-height: 1.4; color: var(--text)">${escapeHtml(q.text)}</h2>
             <div class="quiz-options-container flex-column gap-15">
