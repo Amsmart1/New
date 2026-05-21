@@ -2098,7 +2098,7 @@ async function deleteQuizById(id) {
 }
 
 async function viewQuizResults(quizId) {
-  const [subs, quiz] = await Promise.all([
+  const [{ data: subs }, quiz] = await Promise.all([
     SupabaseDB.getQuizSubmissions(quizId),
     SupabaseDB.getQuiz(quizId)
   ]);

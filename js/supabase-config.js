@@ -276,7 +276,7 @@ class SupabaseDB {
     static async deleteUser(email) {
         try {
             // Cleanup files before deleting user record
-            const [certs, submissions] = await Promise.all([
+            const [certs, { data: submissions }] = await Promise.all([
                 this.getCertificates(email),
                 this.getSubmissions(null, email)
             ]);
@@ -399,7 +399,7 @@ class SupabaseDB {
 
     static async deleteAssignment(id) {
         try {
-            const [assignment, submissions] = await Promise.all([
+            const [assignment, { data: submissions }] = await Promise.all([
                 this.getAssignment(id),
                 this.getSubmissions(id)
             ]);
@@ -554,7 +554,7 @@ class SupabaseDB {
     static async deleteEnrollment(courseId, studentEmail) {
         // Thorough cleanup: Delete all related student history for this course
         try {
-            const [assignments, quizzes] = await Promise.all([
+            const [{ data: assignments }, { data: quizzes }] = await Promise.all([
                 this.getAssignments(null, courseId),
                 this.getQuizzes(courseId)
             ]);
@@ -637,7 +637,7 @@ class SupabaseDB {
 
     static async updateCourseProgress(courseId, studentEmail) {
         try {
-            const [lessons, courseAssignments, courseQuizzes, submissions, quizSubs] = await Promise.all([
+            const [lessons, { data: courseAssignments }, { data: courseQuizzes }, { data: submissions }, { data: quizSubs }] = await Promise.all([
                 this.getLessons(courseId),
                 this.getAssignments(null, courseId),
                 this.getQuizzes(courseId),
@@ -734,7 +734,7 @@ class SupabaseDB {
 
     static async deleteCourse(id) {
         try {
-            const [materials, assignments, liveClasses, certs] = await Promise.all([
+            const [materials, { data: assignments }, liveClasses, certs] = await Promise.all([
                 this.getMaterials(id),
                 this.getAssignments(null, id),
                 this.getLiveClasses(id),

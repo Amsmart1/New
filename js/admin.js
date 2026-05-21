@@ -517,7 +517,7 @@ async function renderAnalytics() {
   if (!content) return;
 
   try {
-    const [submissions, users] = await Promise.all([
+    const [{ data: submissions }, { data: users }] = await Promise.all([
       SupabaseDB.getSubmissions(),
       SupabaseDB.getUsers()
     ]);
@@ -644,7 +644,7 @@ async function renderHealth() {
 
   try {
     const start = performance.now();
-    const [maint, users, assignments, subs] = await Promise.all([
+    const [maint, { data: users }, { data: assignments }, { data: subs }] = await Promise.all([
       SupabaseDB.getMaintenance(true),
       SupabaseDB.getUsers(),
       SupabaseDB.getAssignments(),
