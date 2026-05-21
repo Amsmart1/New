@@ -30,31 +30,34 @@ class CalendarManager {
 
         try {
             if (this.user.role === 'teacher') {
-                [assignments, liveClasses, quizzes] = await Promise.all([
-                    SupabaseDB.getAssignments(this.user.email),
+                const [aRes, lRes, qRes] = await Promise.all([
+                    SupabaseDB.getAssignments(this.user.email, null, null, { limit: 1000 }),
                     SupabaseDB.getLiveClasses(null, this.user.email),
-                    SupabaseDB.getQuizzes(null, this.user.email)
+                    SupabaseDB.getQuizzes(null, this.user.email, null, { limit: 1000 })
                 ]);
+                assignments = aRes.data || [];
+                liveClasses = lRes || [];
+                quizzes = qRes.data || [];
             } else {
                 const enrollments = await SupabaseDB.getEnrollments(this.user.email);
-                const enrolledIds = enrollments.map(e => e.course_id);
+                const enrolledIds = (enrollments || []).map(e => e.course_id);
 
                 const promises = [SupabaseDB.getPlannerItems(this.user.email)];
                 if (enrolledIds.length > 0) {
-                    promises.push(SupabaseDB.getAssignments(null, null, enrolledIds));
+                    promises.push(SupabaseDB.getAssignments(null, null, enrolledIds, { limit: 1000 }));
                     promises.push(SupabaseDB.getLiveClasses(null, null, enrolledIds));
-                    promises.push(SupabaseDB.getQuizzes(null, null, enrolledIds));
+                    promises.push(SupabaseDB.getQuizzes(null, null, enrolledIds, { limit: 1000 }));
                 } else {
+                    promises.push(Promise.resolve({ data: [] }));
                     promises.push(Promise.resolve([]));
-                    promises.push(Promise.resolve([]));
-                    promises.push(Promise.resolve([]));
+                    promises.push(Promise.resolve({ data: [] }));
                 }
 
                 const results = await Promise.all(promises);
-                plannerItems = results[0];
-                assignments = results[1];
-                liveClasses = results[2];
-                quizzes = results[3];
+                plannerItems = results[0] || [];
+                assignments = results[1].data || [];
+                liveClasses = results[2] || [];
+                quizzes = results[3].data || [];
             }
         } catch (e) {
             console.error("Calendar data fetch error:", e);
@@ -63,7 +66,7 @@ class CalendarManager {
         this.events = [];
 
         // Assignments
-        assignments.filter(a => a.status === 'published').forEach(a => {
+        (assignments || []).filter(a => a.status === 'published').forEach(a => {
             this.events.push({
                 id: a.id,
                 type: 'assignment',
@@ -74,7 +77,7 @@ class CalendarManager {
         });
 
         // Quizzes
-        quizzes.filter(q => q.status === 'published').forEach(q => {
+        (quizzes || []).filter(q => q.status === 'published').forEach(q => {
             this.events.push({
                 id: q.id,
                 type: 'quiz',

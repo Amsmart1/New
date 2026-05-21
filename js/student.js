@@ -1160,6 +1160,7 @@ window.submitQuiz = submitQuiz;
 window.postDiscussion = postDiscussion;
 window.addPlannerItem = addPlannerItem;
 window.deletePlannerItem = deletePlannerItem;
+function filterCatalog() { renderCourses(0); }
 window.filterCatalog = filterCatalog;
 window.viewStudentDiscussions = viewStudentDiscussions;
 
@@ -1697,7 +1698,7 @@ async function renderQuizzes(openId = null, page = 0) {
   try {
     const user = await SessionManager.getCurrentUser();
     const enrollments = await SupabaseDB.getEnrollments(user.email);
-    const enrolledCourseIds = enrollments.map(e => e.course_id);
+    const enrolledCourseIds = (enrollments || []).map(e => e.course_id);
 
     const [{ data: allQuizzes, total }, { data: allSubs }, { data: courses }] = await Promise.all([
       SupabaseDB.getQuizzes(null, null, enrolledCourseIds, { limit, offset }),
@@ -1708,7 +1709,7 @@ async function renderQuizzes(openId = null, page = 0) {
     const totalPages = Math.ceil(total / limit);
 
     // Only show submissions for quizzes that belong to enrolled courses
-    const subs = allSubs.filter(s => enrolledCourseIds.includes(s.quizzes?.course_id));
+    const subs = (allSubs || []).filter(s => enrolledCourseIds.includes(s.quizzes?.course_id));
 
     const now = Date.now();
     container.innerHTML = `
@@ -1717,7 +1718,7 @@ async function renderQuizzes(openId = null, page = 0) {
         <div class="small text-muted">${total} Total</div>
       </div>
       <div class="grid">
-        ${quizzes.map(q => {
+        ${(allQuizzes || []).map(q => {
           const mySubs = subs.filter(s => s.quiz_id === q.id && s.status === 'submitted').sort((a,b) => new Date(b.submitted_at) - new Date(a.submitted_at));
           const inProgress = subs.find(s => s.quiz_id === q.id && s.status === 'in-progress');
           const bestScore = mySubs.length ? Math.max(...mySubs.map(s => s.score || 0)) : '-';
