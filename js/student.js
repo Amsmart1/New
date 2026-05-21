@@ -39,7 +39,7 @@ async function _getDueSoonCount(email) {
     const enrolledCourseIds = enrollments.map(e => e.course_id);
     if (enrolledCourseIds.length === 0) return 0;
 
-    const [assigns, submissions] = await Promise.all([
+    const [{ data: assigns }, { data: submissions }] = await Promise.all([
       SupabaseDB.getAssignments(null, null, enrolledCourseIds),
       SupabaseDB.getSubmissions(null, email)
     ]);
@@ -650,7 +650,7 @@ async function renderDashboardOverview() {
 
     const enrolledCourseIds = enrollments.map(e => e.course_id);
 
-    const [assigns, submissions] = await Promise.all([
+    const [{ data: assigns }, { data: submissions }] = await Promise.all([
         SupabaseDB.getAssignments(null, null, enrolledCourseIds),
         SupabaseDB.getSubmissions(null, user.email)
     ]);
