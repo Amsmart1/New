@@ -1949,11 +1949,42 @@ async function gradeQuizSubmission(submissionId, quizId) {
   const container = document.getElementById('pageContent');
   if (!container) return;
 
+  const durationMin = Math.floor((submission.time_spent || 0) / 60);
+  const durationSec = (submission.time_spent || 0) % 60;
+  const avgTimePerQ = ((submission.time_spent || 0) / (quiz.questions?.length || 1)).toFixed(1);
+  const isPassed = submission.score >= (quiz.passing_score || 0);
+
   container.innerHTML = `
     <button class="button secondary w-auto mb-10" onclick="viewQuizResults('${quizId}')">← Back to Results</button>
     <div class="card">
-      <h3 class="m-0">Grading: ${escapeHtml(quiz.title)}</h3>
+      <div class="flex-between">
+          <h3 class="m-0">Grading: ${escapeHtml(quiz.title)}</h3>
+          <span class="badge ${isPassed ? 'badge-active' : 'badge-inactive'}" style="font-size: 1.1rem; padding: 8px 16px;">
+            ${isPassed ? 'PASSED' : 'FAILED'}
+          </span>
+      </div>
       <p class="small mt-5"><strong>Student:</strong> ${escapeHtml(submission.student_email)}</p>
+
+      <div class="grid-3 mt-20 p-15 border-radius-sm" style="background:var(--bg)">
+        <div class="text-center">
+            <div class="small text-muted">Raw Score</div>
+            <div class="bold" style="font-size:1.2rem">${Math.round(((submission.score || 0) / 100) * (submission.total_points || 0))} / ${submission.total_points || 0}</div>
+        </div>
+        <div class="text-center">
+            <div class="small text-muted">Final Percentage</div>
+            <div class="bold" style="font-size:1.5rem; color:var(--purple)">${submission.score || 0}%</div>
+        </div>
+        <div class="text-center">
+            <div class="small text-muted">Passing Required</div>
+            <div class="bold" style="font-size:1.2rem">${quiz.passing_score || 0}%</div>
+        </div>
+      </div>
+
+      <div class="grid-2 mt-10 p-10 border-radius-sm" style="background:#f8fafc; border:1px solid var(--border)">
+          <div class="small"><strong>Total Time Spent:</strong> ${durationMin}m ${durationSec}s</div>
+          <div class="small"><strong>Avg Time per Question:</strong> ${avgTimePerQ}s</div>
+      </div>
+
       <form id="quizGradingForm" class="mt-20">
         <div>
           ${quiz.questions.map((q, idx) => {
@@ -1974,13 +2005,18 @@ async function gradeQuizSubmission(submissionId, quizId) {
 
             return `
               <div class="question" style="border-left: 5px solid ${statusColor}">
-                <div class="bold">Q${idx + 1}: ${escapeHtml(q.text)} (${q.points} pts)</div>
+                <div class="flex-between">
+                  <div class="bold">Q${idx + 1}: ${escapeHtml(q.text)}</div>
+                  <div class="badge ${isCorrect ? 'badge-active' : 'badge-warn'}">${currentPoints} / ${q.points} pts ${!isAutoGraded ? '(Manual)' : ''}</div>
+                </div>
                 <div class="mt-5">
-                  <span class="small">Type: ${q.type.toUpperCase()} | Correct: ${escapeHtml(correctDisplay)}</span>
+                  <span class="small">Type: ${q.type.toUpperCase()}</span>
                 </div>
                 <div class="small p-10 mt-10" style="background:white; border:1px solid var(--border); border-radius:4px">
-                  <strong class="text-muted">Student Answer:</strong> ${escapeHtml(studentDisplay)}
+                  <strong class="text-muted">Student Answer:</strong> <span class="bold ${isCorrect ? 'success-text' : 'danger-text'}">${escapeHtml(studentDisplay)}</span>
                 </div>
+                ${!isCorrect ? `<div class="small success-text bold mt-5">Correct Answer: ${escapeHtml(correctDisplay)}</div>` : ''}
+
                 ${!isAutoGraded ? `
                   <div class="mt-10 flex-center-y gap-10">
                     <label class="small m-0">Points Awarded (0-${q.points}):</label>
