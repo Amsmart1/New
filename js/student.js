@@ -2346,10 +2346,11 @@ async function submitQuiz(isAuto = false) {
   currentQuiz.questions.forEach((q, idx) => {
     totalPoints += q.points;
     const studentAnswer = answers[idx];
-    if (studentAnswer !== undefined && studentAnswer !== null) {
-      if (studentAnswer.toString().trim().toLowerCase() === q.correct.toString().trim().toLowerCase()) {
-        score += q.points;
-      }
+    const sAns = (studentAnswer !== undefined && studentAnswer !== null) ? studentAnswer.toString().trim().toLowerCase() : "";
+    const cAns = (q.correct !== undefined && q.correct !== null) ? q.correct.toString().trim().toLowerCase() : "";
+
+    if (sAns !== "" && sAns === cAns) {
+      score += q.points;
     }
   });
 
@@ -2495,7 +2496,9 @@ async function viewQuizResults(quizId, submissionId = null) {
               correctDisplay = q.correct;
           }
 
-          const isCorrect = studentAnswer?.toString().trim().toLowerCase() === q.correct.toString().trim().toLowerCase();
+          const sAns = (studentAnswer !== undefined && studentAnswer !== null) ? studentAnswer.toString().trim().toLowerCase() : "";
+          const cAns = (q.correct !== undefined && q.correct !== null) ? q.correct.toString().trim().toLowerCase() : "";
+          const isCorrect = sAns !== "" && sAns === cAns;
           const statusColor = isCorrect ? 'var(--ok)' : 'var(--danger)';
 
           return `

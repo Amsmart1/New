@@ -1931,7 +1931,7 @@ async function viewQuizResults(quizId) {
                   <td>${s.status === 'submitted' ? (s.score !== null ? s.score + '%' : '<span class="warning-text bold">Pending</span>') : '<span class="badge badge-warn">In Progress</span>'}</td>
                   <td>${s.total_points || 0}</td>
                   <td>${s.submitted_at ? new Date(s.submitted_at).toLocaleString() : '---'}</td>
-                  <td><button class="button small w-auto" ${s.status === 'in-progress' ? 'disabled' : ''} onclick="gradeQuizSubmission('${s.id}', '${quizId}')">Grade/View</button></td>
+                  <td><button class="button small w-auto" ${s.status === 'in-progress' ? 'disabled' : ''} onclick="gradeQuizSubmission('${s.id}', '${quizId}')">View Details</button></td>
                 </tr>
               `).join('') || '<tr><td colspan="5" class="empty">No submissions yet.</td></tr>'}
             </tbody>
@@ -1949,139 +1949,76 @@ async function gradeQuizSubmission(submissionId, quizId) {
   const container = document.getElementById('pageContent');
   if (!container) return;
 
+  const isPassed = submission.score >= (quiz.passing_score || 0);
+  const durationMin = Math.floor(submission.time_spent / 60);
+  const durationSec = submission.time_spent % 60;
+  const avgTimePerQ = (submission.time_spent / (quiz.questions?.length || 1)).toFixed(1);
+
   container.innerHTML = `
     <button class="button secondary w-auto mb-10" onclick="viewQuizResults('${quizId}')">← Back to Results</button>
     <div class="card">
-      <h3 class="m-0">Grading: ${escapeHtml(quiz.title)}</h3>
+      <div class="flex-between">
+          <h2 class="m-0">Quiz Results: ${escapeHtml(quiz.title)}</h2>
+          <span class="badge ${isPassed ? 'badge-active' : 'badge-inactive'}" style="font-size: 1.1rem; padding: 8px 16px;">
+            ${isPassed ? 'PASSED' : 'FAILED'}
+          </span>
+      </div>
       <p class="small mt-5"><strong>Student:</strong> ${escapeHtml(submission.student_email)}</p>
-      <form id="quizGradingForm" class="mt-20">
-        <div>
-          ${quiz.questions.map((q, idx) => {
-            const studentAnswer = submission.answers[idx] || 'No Answer';
-            const isAutoGraded = q.type !== 'short';
-            const isCorrect = isAutoGraded && studentAnswer.toString().toLowerCase() === q.correct.toString().toLowerCase();
-            const statusColor = isAutoGraded ? (isCorrect ? 'var(--ok)' : 'var(--danger)') : 'var(--warn)';
 
-            let studentDisplay = studentAnswer;
-            let correctDisplay = q.correct;
-            if (q.type === 'mcq') {
+      <div class="grid-3 mt-20 p-15 border-radius-sm" style="background:var(--bg)">
+        <div class="text-center">
+            <div class="small text-muted">Raw Score</div>
+            <div class="bold" style="font-size:1.2rem">${Math.round((submission.score / 100) * (submission.total_points || 0))} / ${submission.total_points || 0}</div>
+        </div>
+        <div class="text-center">
+            <div class="small text-muted">Final Percentage</div>
+            <div class="bold" style="font-size:1.5rem; color:var(--purple)">${submission.score}%</div>
+        </div>
+        <div class="text-center">
+            <div class="small text-muted">Passing Required</div>
+            <div class="bold" style="font-size:1.2rem">${quiz.passing_score || 0}%</div>
+        </div>
+      </div>
+
+      <div class="grid-2 mt-10 p-10 border-radius-sm" style="background:#f8fafc; border:1px solid var(--border)">
+          <div class="small"><strong>Total Time Spent:</strong> ${durationMin}m ${durationSec}s</div>
+          <div class="small"><strong>Avg Time per Question:</strong> ${avgTimePerQ}s</div>
+      </div>
+
+      <div class="mt-20">
+        ${quiz.questions.map((q, idx) => {
+          const studentAnswer = submission.answers[idx];
+          let studentDisplay = studentAnswer || 'No Answer';
+          let correctDisplay = q.correct;
+
+          if (q.type === 'mcq') {
               studentDisplay = q.options[studentAnswer] !== undefined ? q.options[studentAnswer] : studentAnswer;
               correctDisplay = q.options[q.correct] !== undefined ? q.options[q.correct] : q.correct;
-            }
+          } else if (q.type === 'tf') {
+              studentDisplay = studentAnswer;
+              correctDisplay = q.correct;
+          }
 
-            const manualScore = submission.analytics?.manual_scores?.[idx];
-            const currentPoints = manualScore !== undefined ? manualScore : (isCorrect ? q.points : 0);
+          const sAns = (studentAnswer !== undefined && studentAnswer !== null) ? studentAnswer.toString().trim().toLowerCase() : "";
+          const cAns = (q.correct !== undefined && q.correct !== null) ? q.correct.toString().trim().toLowerCase() : "";
+          const isCorrect = sAns !== "" && sAns === cAns;
+          const statusColor = isCorrect ? 'var(--ok)' : 'var(--danger)';
 
-            return `
-              <div class="question" style="border-left: 5px solid ${statusColor}">
-                <div class="bold">Q${idx + 1}: ${escapeHtml(q.text)} (${q.points} pts)</div>
-                <div class="mt-5">
-                  <span class="small">Type: ${q.type.toUpperCase()} | Correct: ${escapeHtml(correctDisplay)}</span>
-                </div>
-                <div class="small p-10 mt-10" style="background:white; border:1px solid var(--border); border-radius:4px">
-                  <strong class="text-muted">Student Answer:</strong> ${escapeHtml(studentDisplay)}
-                </div>
-                ${!isAutoGraded ? `
-                  <div class="mt-10 flex-center-y gap-10">
-                    <label class="small m-0">Points Awarded (0-${q.points}):</label>
-                    <input type="number" class="q-manual-points w-auto m-0 p-5" data-q-idx="${idx}" min="0" max="${q.points}" value="${currentPoints}" style="width:80px">
-                  </div>
-                ` : ''}
+          return `
+            <div class="question" style="border-left: 5px solid ${statusColor}">
+              <div class="flex-between">
+                <div class="bold">Q${idx + 1}: ${escapeHtml(q.text)}</div>
+                <div class="badge ${isCorrect ? 'badge-active' : 'badge-warn'}">${isCorrect ? q.points : 0} / ${q.points} pts</div>
               </div>
-            `;
-          }).join('')}
-        </div>
-        <div class="mt-20 pt-20" style="border-top:1px solid var(--border)">
-          <div class="bold mb-10">Final Score</div>
-          <input type="number" id="finalQuizScore" min="0" max="100" value="${submission.score || 0}" class="w-auto" style="width:100px; background:#f0f0f0" readonly>
-          <p class="small mt-5">Note: Calculated from question scores.</p>
-          <button type="submit" class="button w-auto px-40 mt-15">Save Grade</button>
-        </div>
-      </form>
+              <div class="small mt-10">Student Answer: <span class="bold">${escapeHtml(studentDisplay)}</span></div>
+              ${!isCorrect ? `<div class="small success-text bold mt-5">Correct Answer: ${escapeHtml(correctDisplay)}</div>` : ''}
+              ${q.explanation ? `<div class="small mt-10 p-10" style="background:var(--light); border-radius:4px; font-style:italic">📖 Explanation: ${escapeHtml(q.explanation)}</div>` : ''}
+            </div>
+          `;
+        }).join('')}
+      </div>
     </div>
   `;
-
-  const finalScoreInput = document.getElementById('finalQuizScore');
-
-  const updateQuizFinalScore = () => {
-    const manualScores = Array.from(document.querySelectorAll('.q-manual-points')).map(input => ({
-      idx: parseInt(input.dataset.qIdx),
-      points: parseInt(input.value) || 0
-    }));
-
-    let earnedPoints = 0;
-    let totalPossible = 0;
-    quiz.questions.forEach((q, idx) => {
-      totalPossible += q.points;
-      const manual = manualScores.find(m => m.idx === idx);
-      if (manual) {
-        earnedPoints += manual.points;
-      } else {
-        const studentAnswer = submission.answers[idx] || '';
-        if (studentAnswer.toString().toLowerCase() === q.correct.toString().toLowerCase()) {
-          earnedPoints += q.points;
-        }
-      }
-    });
-
-    const percentage = totalPossible > 0 ? Math.round((earnedPoints / totalPossible) * 100) : 0;
-    finalScoreInput.value = percentage;
-  };
-
-  document.querySelectorAll('.q-manual-points').forEach(input => {
-    input.addEventListener('input', updateQuizFinalScore);
-    input.addEventListener('change', updateQuizFinalScore);
-    input.addEventListener('keyup', updateQuizFinalScore);
-  });
-
-  updateQuizFinalScore();
-
-  document.getElementById('quizGradingForm').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    try {
-      const manualScoresMap = {};
-      Array.from(document.querySelectorAll('.q-manual-points')).forEach(input => {
-        const idx = parseInt(input.dataset.qIdx);
-        const pts = parseInt(input.value) || 0;
-        manualScoresMap[idx] = pts;
-      });
-
-      // Re-calculate final score immediately before save to ensure integrity
-      let earnedPoints = 0;
-      let totalPossible = 0;
-      quiz.questions.forEach((q, idx) => {
-        totalPossible += q.points;
-        const manual = manualScoresMap[idx];
-        if (manual !== undefined) {
-          earnedPoints += manual;
-        } else {
-          const studentAnswer = submission.answers[idx] || '';
-          if (studentAnswer.toString().toLowerCase() === q.correct.toString().toLowerCase()) {
-            earnedPoints += q.points;
-          }
-        }
-      });
-
-      const finalScore = totalPossible > 0 ? Math.round((earnedPoints / totalPossible) * 100) : 0;
-
-      const updatedSubmission = {
-        ...submission,
-        score: finalScore,
-        total_points: totalPossible,
-        status: 'submitted',
-        analytics: {
-            ...submission.analytics,
-            manual_scores: manualScoresMap
-        }
-      };
-
-      await SupabaseDB.saveQuizSubmission(updatedSubmission);
-      alert('Quiz graded successfully!');
-      viewQuizResults(quizId);
-    } catch (err) {
-      alert('Error saving grade: ' + err.message);
-    }
-  });
 }
 
 window.gradeQuizSubmission = gradeQuizSubmission;

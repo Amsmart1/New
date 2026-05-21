@@ -915,7 +915,7 @@ class SupabaseDB {
     }
 
     static async getQuizSubmissions(quizId = null, studentEmail = null, teacherEmail = null) {
-        let query = supabaseClient.from('quiz_submissions').select('*, quizzes(*)');
+        let query = supabaseClient.from('quiz_submissions').select('*, quizzes!quiz_id(*)');
         if (quizId) query = query.eq('quiz_id', quizId);
         if (studentEmail) query = query.eq('student_email', studentEmail);
         if (teacherEmail) query = query.eq('quizzes.teacher_email', teacherEmail);
