@@ -392,23 +392,36 @@ function saveAutoSetting(key, val) {
   UI.showNotification('Setting saved');
 }
 
-async function renderResets() {
-
+async function renderResets(page = 0) {
   const content = document.getElementById('pageContent');
   if (!content) return;
 
+  const limit = 20;
+  const offset = page * limit;
+
   try {
-    const { data: users } = await SupabaseDB.getUsers({ limit: 1000 }); // Fetch more for reset requests as they are few but spread out
-    const pendingResets = users.filter(u => u.reset_request && u.reset_request.status === 'pending');
+    // There's no direct RPC for pending resets, so we use the paginated getUsers with a filter if possible,
+    // or fetch a reasonable amount and paginate locally for now if the API doesn't support complex filters.
+    // However, our getUsers supports roles but not arbitrary metadata filters yet.
+    // Let's optimize by fetching users and filtering.
+    const { data: allUsers } = await SupabaseDB.getUsers({ limit: 2000 });
+    const pendingResets = (allUsers || []).filter(u => u.reset_request && u.reset_request.status === 'pending');
+
+    const paginated = pendingResets.slice(offset, offset + limit);
+    const totalPages = Math.ceil(pendingResets.length / limit);
+
     content.innerHTML = `
     <section>
-      <h3>Password Reset Requests</h3>
+      <div class="flex-between mb-20">
+        <h3 class="m-0">Password Reset Requests</h3>
+        <div class="small text-muted">${pendingResets.length} Pending</div>
+      </div>
       ${pendingResets.length === 0 ? '<p class="empty">No pending reset requests.</p>' : `
         <div class="card" style="padding:0; overflow-x:auto">
           <table>
             <thead><tr><th>Name</th><th>Email</th><th>Requested At</th><th>Actions</th></tr></thead>
             <tbody>
-              ${pendingResets.map(user => `
+              ${paginated.map(user => `
                 <tr>
                   <td>${escapeHtml(user.full_name)}</td>
                   <td>${escapeHtml(user.email)}</td>
@@ -422,6 +435,14 @@ async function renderResets() {
             </tbody>
           </table>
         </div>
+
+        ${totalPages > 1 ? `
+            <div class="flex-center gap-10 mt-20">
+                <button class="button secondary small w-auto" ${page === 0 ? 'disabled' : ''} onclick="renderResets(${page - 1})">Previous</button>
+                <span class="small">Page ${page + 1} of ${totalPages}</span>
+                <button class="button secondary small w-auto" ${page >= totalPages - 1 ? 'disabled' : ''} onclick="renderResets(${page + 1})">Next</button>
+            </div>
+        ` : ''}
       `}
     </section>
     `;

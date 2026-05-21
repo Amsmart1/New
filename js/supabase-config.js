@@ -303,39 +303,45 @@ class SupabaseDB {
 
     // Assignment operations
     static async getAssignments(teacherEmail = null, courseId = null, courseIds = null, options = {}) {
-        if (courseIds && courseIds.length === 0) return [];
-        const { limit = 100, offset = 0 } = options;
+        if (courseIds && courseIds.length === 0) return { data: [], total: 0 };
+        const { limit = 50, offset = 0, searchTerm = '' } = options;
 
         return this._request(async () => {
-            let query = supabaseClient.from('assignments').select('*');
-            if (teacherEmail) {
-                query = query.eq('teacher_email', teacherEmail);
-            }
-            if (courseId) {
-                query = query.eq('course_id', courseId);
-            }
-            if (courseIds && courseIds.length > 0) {
-                query = query.in('course_id', courseIds);
-            }
-            const { data, error } = await query
+            let query = supabaseClient.from('assignments').select('*', { count: 'exact' });
+            if (teacherEmail) query = query.eq('teacher_email', teacherEmail);
+            if (courseId) query = query.eq('course_id', courseId);
+            if (courseIds && courseIds.length > 0) query = query.in('course_id', courseIds);
+            if (searchTerm) query = query.ilike('title', `%${searchTerm}%`);
+
+            const { data, count, error } = await query
                 .order('due_date', { ascending: false })
                 .range(offset, offset + limit - 1);
             if (error) throw error;
-            return data || [];
+            return { data: data || [], total: count || 0 };
         });
     }
 
-    static async getEnrolledCourses(studentEmail) {
-        return _cache.fetch(`enrolled_courses_${studentEmail}`, async () => {
-            const enrollments = await this.getEnrollments(studentEmail);
-            const courseIds = enrollments.map(e => e.course_id);
-            if (courseIds.length === 0) return [];
-            const { data, error } = await supabaseClient
+    static async getEnrolledCourses(studentEmail, options = {}) {
+        const { limit = 50, offset = 0 } = options;
+        return this._request(async () => {
+            const { data: enrollments, error: eError } = await supabaseClient
+                .from('enrollments')
+                .select('course_id')
+                .eq('student_email', studentEmail);
+
+            if (eError) throw eError;
+            const courseIds = (enrollments || []).map(e => e.course_id);
+            if (courseIds.length === 0) return { data: [], total: 0 };
+
+            const { data, count, error } = await supabaseClient
                 .from('courses')
-                .select('*')
-                .in('id', courseIds);
+                .select('*', { count: 'exact' })
+                .in('id', courseIds)
+                .order('title', { ascending: true })
+                .range(offset, offset + limit - 1);
+
             if (error) throw error;
-            return data || [];
+            return { data: data || [], total: count || 0 };
         });
     }
 
@@ -419,18 +425,22 @@ class SupabaseDB {
     }
 
     // Submission operations
-    static async getSubmissions(assignmentId = null, studentEmail = null, teacherEmail = null) {
+    static async getSubmissions(assignmentId = null, studentEmail = null, teacherEmail = null, options = {}) {
+        const { limit = 100, offset = 0 } = options;
         return this._request(async () => {
             let selectStr = '*, assignments(*)';
             if (teacherEmail) selectStr = '*, assignments!inner(*)';
 
-            let query = supabaseClient.from('submissions').select(selectStr);
+            let query = supabaseClient.from('submissions').select(selectStr, { count: 'exact' });
             if (assignmentId) query = query.eq('assignment_id', assignmentId);
             if (studentEmail) query = query.eq('student_email', studentEmail);
             if (teacherEmail) query = query.eq('assignments.teacher_email', teacherEmail);
-            const { data, error } = await query;
+
+            const { data, count, error } = await query
+                .order('submitted_at', { ascending: false })
+                .range(offset, offset + limit - 1);
             if (error) throw error;
-            return data || [];
+            return { data: data || [], total: count || 0 };
         });
     }
 
@@ -682,19 +692,19 @@ class SupabaseDB {
     }
 
     // Course operations
-    static async getCourses(teacherEmail = null, status = null) {
-        const cacheKey = `courses_${teacherEmail || 'all'}_${status || 'all'}`;
-        return _cache.fetch(cacheKey, async () => {
-            let query = supabaseClient.from('courses').select('*');
-            if (teacherEmail) {
-                query = query.eq('teacher_email', teacherEmail);
-            }
-            if (status) {
-                query = query.eq('status', status);
-            }
-            const { data, error } = await query;
+    static async getCourses(teacherEmail = null, status = null, options = {}) {
+        const { limit = 50, offset = 0, searchTerm = '' } = options;
+        return this._request(async () => {
+            let query = supabaseClient.from('courses').select('*', { count: 'exact' });
+            if (teacherEmail) query = query.eq('teacher_email', teacherEmail);
+            if (status) query = query.eq('status', status);
+            if (searchTerm) query = query.ilike('title', `%${searchTerm}%`);
+
+            const { data, count, error } = await query
+                .order('title', { ascending: true })
+                .range(offset, offset + limit - 1);
             if (error) throw error;
-            return data || [];
+            return { data: data || [], total: count || 0 };
         });
     }
 
@@ -873,19 +883,21 @@ class SupabaseDB {
 
     // Quiz operations
     static async getQuizzes(courseId = null, teacherEmail = null, courseIds = null, options = {}) {
-        if (courseIds && courseIds.length === 0) return [];
-        const { limit = 100, offset = 0 } = options;
+        if (courseIds && courseIds.length === 0) return { data: [], total: 0 };
+        const { limit = 50, offset = 0, searchTerm = '' } = options;
 
         return this._request(async () => {
-            let query = supabaseClient.from('quizzes').select('*');
+            let query = supabaseClient.from('quizzes').select('*', { count: 'exact' });
             if (courseId) query = query.eq('course_id', courseId);
             if (teacherEmail) query = query.eq('teacher_email', teacherEmail);
             if (courseIds && courseIds.length > 0) query = query.in('course_id', courseIds);
-            const { data, error } = await query
+            if (searchTerm) query = query.ilike('title', `%${searchTerm}%`);
+
+            const { data, count, error } = await query
                 .order('created_at', { ascending: false })
                 .range(offset, offset + limit - 1);
             if (error) throw error;
-            return data || [];
+            return { data: data || [], total: count || 0 };
         });
     }
 
@@ -938,14 +950,20 @@ class SupabaseDB {
         if (error) throw error;
     }
 
-    static async getQuizSubmissions(quizId = null, studentEmail = null, teacherEmail = null) {
-        let query = supabaseClient.from('quiz_submissions').select('*, quizzes!quiz_id(*)');
-        if (quizId) query = query.eq('quiz_id', quizId);
-        if (studentEmail) query = query.eq('student_email', studentEmail);
-        if (teacherEmail) query = query.eq('quizzes.teacher_email', teacherEmail);
-        const { data, error } = await query;
-        if (error) throw error;
-        return data || [];
+    static async getQuizSubmissions(quizId = null, studentEmail = null, teacherEmail = null, options = {}) {
+        const { limit = 100, offset = 0 } = options;
+        return this._request(async () => {
+            let query = supabaseClient.from('quiz_submissions').select('*, quizzes!quiz_id(*)', { count: 'exact' });
+            if (quizId) query = query.eq('quiz_id', quizId);
+            if (studentEmail) query = query.eq('student_email', studentEmail);
+            if (teacherEmail) query = query.eq('quizzes.teacher_email', teacherEmail);
+
+            const { data, count, error } = await query
+                .order('started_at', { ascending: false })
+                .range(offset, offset + limit - 1);
+            if (error) throw error;
+            return { data: data || [], total: count || 0 };
+        });
     }
 
     static async saveQuizSubmission(submission) {
@@ -1357,26 +1375,28 @@ class SupabaseDB {
 
     // Violation operations
     static async saveViolation(violation) {
-        const payload = {
-            user_email: violation.user_email,
-            assessment_id: violation.assessment_id,
-            assessment_type: violation.assessment_type,
-            type: violation.type,
-            browser: violation.browser,
-            device: violation.device,
-            os: violation.os,
-            elapsed_time: violation.elapsed_time,
-            score: violation.score,
-            severity: violation.severity,
-            metadata: violation.metadata,
-            timestamp: violation.timestamp
-        };
-        const { data, error } = await supabaseClient
-            .from('violations')
-            .insert([payload])
-            .select();
-        if (error) throw error;
-        return data?.[0];
+        return this._request(async () => {
+            const payload = {
+                user_email: violation.user_email,
+                assessment_id: violation.assessment_id,
+                assessment_type: violation.assessment_type,
+                type: violation.type,
+                browser: violation.browser || 'Unknown',
+                device: violation.device || 'Unknown',
+                os: violation.os || 'Unknown',
+                elapsed_time: violation.elapsed_time || 0,
+                score: violation.score || 0,
+                severity: violation.severity || 'LOW',
+                metadata: violation.metadata || {},
+                timestamp: violation.timestamp || new Date().toISOString()
+            };
+            const { data, error } = await supabaseClient
+                .from('violations')
+                .insert([payload])
+                .select();
+            if (error) throw error;
+            return data?.[0];
+        });
     }
 
     static async getViolations(assessmentId = null, userEmail = null, teacherEmail = null, options = {}) {
