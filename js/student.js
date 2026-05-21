@@ -2019,20 +2019,60 @@ async function startQuiz(quizId) {
         return;
     }
 
-    const subs = await SupabaseDB.getQuizSubmissions(quizId, user.email);
-    const inProgress = subs.find(s => s.status === 'in-progress');
-
     currentQuiz = quiz;
     currentQuestionIndex = 0;
+    currentQuizQuestions = quiz.questions.map((q, idx) => ({ ...q, originalIdx: idx }));
+
+    if (quiz.shuffle_questions) {
+        for (let i = currentQuizQuestions.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [currentQuizQuestions[i], currentQuizQuestions[j]] = [currentQuizQuestions[j], currentQuizQuestions[i]];
+        }
+    }
 
     const content = document.getElementById('pageContent');
     if (!content || !quizArea) return;
+
+    // Show Shell Immediately for better UX
+    renderQuizShell();
+    UI.showLoading('questionContainer', 'Initializing your attempt...');
 
     Array.from(content.children).forEach(c => {
         if (c.id !== 'quizArea') c.style.display = 'none';
     });
 
-    if (quiz.anti_cheat_config && Object.values(quiz.anti_cheat_config).some(v => v === true)) {
+    // Handle Anti-Cheat initialization with gesture requirement
+    const needsGesture = quiz.anti_cheat_config?.FULLSCREEN_REQUIRED;
+
+    if (needsGesture) {
+        const qContainer = document.getElementById('questionContainer');
+        qContainer.innerHTML = `
+            <div class="flex-center flex-column p-40 text-center">
+                <div style="font-size: 3rem; margin-bottom: 20px;">🛡️</div>
+                <h3>Security Check Required</h3>
+                <p class="mb-30">This quiz requires <strong>Fullscreen Mode</strong> and other security features. <br> Please click the button below to secure your browser and start the quiz.</p>
+                <button class="button px-40" id="confirmQuizStartBtn">Secure & Start Quiz</button>
+            </div>
+        `;
+
+        await new Promise((resolve) => {
+            document.getElementById('confirmQuizStartBtn').onclick = async () => {
+                // Initialize Anti-Cheat within the user gesture
+                await AntiCheat.init(quiz.id, 'quiz', user.email, {
+                    ...quiz.anti_cheat_config,
+                    callbacks: {
+                        onViolation: (v) => {
+                            UI.showNotification(`Security Violation: ${v.type.replace(/_/g, ' ')} detected and logged.`, 'danger');
+                        }
+                    }
+                });
+                resolve();
+            };
+        });
+
+        UI.showLoading('questionContainer', 'Starting attempt...');
+    } else if (quiz.anti_cheat_config && Object.values(quiz.anti_cheat_config).some(v => v === true)) {
+      // Initialize other anti-cheat features that don't strictly require a fresh gesture
       AntiCheat.init(quiz.id, 'quiz', user.email, {
           ...quiz.anti_cheat_config,
           callbacks: {
@@ -2043,13 +2083,8 @@ async function startQuiz(quizId) {
       });
     }
 
-    currentQuizQuestions = quiz.questions.map((q, idx) => ({ ...q, originalIdx: idx }));
-    if (quiz.shuffle_questions) {
-        for (let i = currentQuizQuestions.length - 1; i > 0; i--) {
-            const j = Math.floor(Math.random() * (i + 1));
-            [currentQuizQuestions[i], currentQuizQuestions[j]] = [currentQuizQuestions[j], currentQuizQuestions[i]];
-        }
-    }
+    const subs = await SupabaseDB.getQuizSubmissions(quizId, user.email);
+    const inProgress = subs.find(s => s.status === 'in-progress');
 
     if (inProgress) {
       currentSubmission = inProgress;
@@ -2063,9 +2098,7 @@ async function startQuiz(quizId) {
       });
     }
 
-    renderQuizShell();
     renderQuizQuestion(0);
-
     isStartingQuiz = false;
 
     if (quiz.time_limit > 0) {

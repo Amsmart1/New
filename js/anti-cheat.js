@@ -142,15 +142,88 @@
             this.addGlobalListener(document, 'webkitfullscreenchange', handler);
         }
 
-        enforceFullscreen() {
+        async enforceFullscreen() {
+            if (!this.config.FULLSCREEN_REQUIRED || !this.state.isActive) return;
+
             try {
                 const docEl = document.documentElement;
-                if (docEl.requestFullscreen) docEl.requestFullscreen();
-                else if (docEl.webkitRequestFullscreen) docEl.webkitRequestFullscreen();
+                let promise;
+                if (docEl.requestFullscreen) {
+                    promise = docEl.requestFullscreen();
+                } else if (docEl.webkitRequestFullscreen) {
+                    promise = docEl.webkitRequestFullscreen();
+                }
+
+                if (promise) {
+                    await promise;
+                }
             } catch (err) {
-                // If it fails, it might need user interaction
+                // If it fails, it might need user interaction or permissions
                 if (this.config.DEBUG) console.warn('Anti-Cheat: Fullscreen enforcement failed', err);
+
+                // Show overlay if fullscreen is required but failed
+                if (this.config.FULLSCREEN_REQUIRED && !document.fullscreenElement) {
+                    this.showFullscreenOverlay();
+                }
             }
+        }
+
+        showFullscreenOverlay() {
+            if (document.getElementById('anti-cheat-fullscreen-overlay')) return;
+
+            const overlay = document.createElement('div');
+            overlay.id = 'anti-cheat-fullscreen-overlay';
+            overlay.style.cssText = `
+                position: fixed;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                background: rgba(0, 0, 0, 0.95);
+                z-index: 999999;
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                justify-content: center;
+                color: white;
+                text-align: center;
+                padding: 20px;
+                font-family: sans-serif;
+            `;
+
+            overlay.innerHTML = `
+                <div style="max-width: 500px;">
+                    <h2 style="margin-bottom: 20px; color: #ff4d4d;">Security Required</h2>
+                    <p style="margin-bottom: 30px; font-size: 1.1rem; line-height: 1.5;">
+                        This assessment requires Fullscreen Mode to ensure academic integrity.
+                        Please click the button below to re-enter fullscreen and continue.
+                    </p>
+                    <button id="re-enter-fullscreen-btn" style="
+                        background: #5b2ea6;
+                        color: white;
+                        border: none;
+                        padding: 15px 40px;
+                        font-size: 1.2rem;
+                        border-radius: 8px;
+                        cursor: pointer;
+                        font-weight: bold;
+                        transition: background 0.2s;
+                    ">Re-enter Fullscreen</button>
+                </div>
+            `;
+
+            document.body.appendChild(overlay);
+
+            const btn = document.getElementById('re-enter-fullscreen-btn');
+            btn.onmouseover = () => btn.style.background = '#4a2586';
+            btn.onmouseout = () => btn.style.background = '#5b2ea6';
+
+            btn.onclick = async () => {
+                await this.enforceFullscreen();
+                if (document.fullscreenElement) {
+                    overlay.remove();
+                }
+            };
         }
 
         // Multi-tab
