@@ -57,11 +57,14 @@ async function _getDueSoonCount(email) {
 }
 window._getDueSoonCount = _getDueSoonCount;
 
-async function renderCourses() {
+async function renderCourses(page = 0) {
 
   const container = document.getElementById('pageContent');
   if (!container) return;
   clearActiveCountdowns();
+
+  const limit = 12;
+  const offset = page * limit;
 
   try {
     const user = await SessionManager.getCurrentUser();
@@ -70,19 +73,36 @@ async function renderCourses() {
       SupabaseDB.getEnrollments(user.email)
     ]);
 
-  container.innerHTML = `
-    <div class="flex-between mb-20">
-      <h2 class="m-0">Course Catalog</h2>
-      <div class="flex gap-10">
-        <input type="text" id="catalogSearch" placeholder="Search courses..." class="m-0" style="width:200px" oninput="filterCatalog()">
+    const searchTerm = document.getElementById('catalogSearch')?.value.toLowerCase() || '';
+    const filtered = publishedCourses.filter(c =>
+        c.title.toLowerCase().includes(searchTerm) ||
+        (c.description || '').toLowerCase().includes(searchTerm)
+    );
+
+    const paginated = filtered.slice(offset, offset + limit);
+    const totalPages = Math.ceil(filtered.length / limit);
+
+    container.innerHTML = `
+      <div class="flex-between mb-20">
+        <h2 class="m-0">Course Catalog</h2>
+        <div class="flex gap-10">
+          <input type="text" id="catalogSearch" placeholder="Search courses..." class="m-0" style="width:200px" value="${escapeAttr(searchTerm)}" oninput="renderCourses(0)">
+        </div>
       </div>
-    </div>
-    <div class="grid" id="catalogGrid" style="grid-template-columns: repeat(auto-fill, minmax(280px, 1fr))"></div>
-  `;
+      <div class="grid" id="catalogGrid" style="grid-template-columns: repeat(auto-fill, minmax(280px, 1fr))"></div>
+
+      ${totalPages > 1 ? `
+        <div class="flex-center gap-10 mt-30">
+            <button class="button secondary small w-auto" ${page === 0 ? 'disabled' : ''} onclick="renderCourses(${page - 1})">Previous</button>
+            <span class="small">Page ${page + 1} of ${totalPages}</span>
+            <button class="button secondary small w-auto" ${page >= totalPages - 1 ? 'disabled' : ''} onclick="renderCourses(${page + 1})">Next</button>
+        </div>
+      ` : ''}
+    `;
 
     window.allPublishedCourses = publishedCourses;
     window.myEnrollments = enrollments;
-    displayCatalog(publishedCourses);
+    displayCatalog(paginated);
   } catch (error) {
     console.error('Courses error:', error);
     container.innerHTML = `<div class="stat-card danger">
@@ -124,15 +144,6 @@ function displayCatalog(courses) {
   }).join('');
 }
 
-function filterCatalog() {
-  const searchTerm = document.getElementById('catalogSearch').value.toLowerCase();
-
-  const filtered = window.allPublishedCourses.filter(c => {
-    return c.title.toLowerCase().includes(searchTerm) || (c.description || '').toLowerCase().includes(searchTerm);
-  });
-
-  displayCatalog(filtered);
-}
 
 async function renderMyCourses() {
 
@@ -270,10 +281,13 @@ async function stopAndNavigateToViewCourse(courseId, fromMyCourses) {
   viewCourse(courseId, fromMyCourses);
 }
 window.stopAndNavigateToViewCourse = stopAndNavigateToViewCourse;
-async function renderAssignments(openId = null){
+async function renderAssignments(openId = null, page = 0){
   const container = document.getElementById('pageContent');
   if (!container) return;
   clearActiveCountdowns();
+
+  const limit = 20;
+  const offset = page * limit;
 
   try {
     const user = await SessionManager.getCurrentUser();
@@ -282,40 +296,54 @@ async function renderAssignments(openId = null){
     const enrollments = await SupabaseDB.getEnrollments(user.email);
     const enrolledCourseIds = enrollments.map(e => e.course_id);
 
-    const [courses, assigns, submissions] = await Promise.all([
+    const [courses, allAssigns, submissions] = await Promise.all([
       SupabaseDB.getEnrolledCourses(user.email),
       SupabaseDB.getAssignments(null, null, enrolledCourseIds),
       SupabaseDB.getSubmissions(null, user.email)
     ]);
 
-  const now = Date.now();
+    const mine = allAssigns.filter(a => enrolledCourseIds.includes(a.course_id) && a.status === 'published');
+    const paginated = mine.slice(offset, offset + limit);
+    const totalPages = Math.ceil(mine.length / limit);
 
-  if (!container) return;
-  container.innerHTML = `
-    <h2>Assignments</h2>
-    <div class="card" style="padding:0; overflow-x:auto">
-      <table>
-        <thead>
-          <tr>
-            <th>Assignment</th>
-            <th>Course</th>
-            <th>Due Date</th>
-            <th>Status</th>
-            <th>Grade</th>
-            <th>Actions</th>
-          </tr>
-        </thead>
-        <tbody id="assignTableBody"></tbody>
-      </table>
-    </div>
-    <div id="assignmentForm" class="hidden" style="margin-top:20px"></div>
-  `;
+    const now = Date.now();
+
+    container.innerHTML = `
+      <div class="flex-between mb-20">
+        <h2 class="m-0">Assignments</h2>
+        <div class="small text-muted">${mine.length} Total</div>
+      </div>
+      <div class="card" style="padding:0; overflow-x:auto">
+        <table>
+          <thead>
+            <tr>
+              <th>Assignment</th>
+              <th>Course</th>
+              <th>Due Date</th>
+              <th>Status</th>
+              <th>Grade</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="assignTableBody"></tbody>
+        </table>
+      </div>
+
+      ${totalPages > 1 ? `
+        <div class="flex-center gap-10 mt-20">
+            <button class="button secondary small w-auto" ${page === 0 ? 'disabled' : ''} onclick="renderAssignments(null, ${page - 1})">Previous</button>
+            <span class="small">Page ${page + 1} of ${totalPages}</span>
+            <button class="button secondary small w-auto" ${page >= totalPages - 1 ? 'disabled' : ''} onclick="renderAssignments(null, ${page + 1})">Next</button>
+        </div>
+      ` : ''}
+
+      <div id="assignmentForm" class="hidden" style="margin-top:20px"></div>
+    `;
 
   const tbody = document.getElementById('assignTableBody');
-  const mine = assigns.filter(a => enrolledCourseIds.includes(a.course_id));
   if(!mine.length){ tbody.innerHTML = '<tr><td colspan="6" class="empty">No assignments found.</td></tr>'; return; }
 
-  mine.forEach(a => {
+  paginated.forEach(a => {
     if (a.status !== 'published') return;
 
     const submission = submissions.find(s => s.assignment_id === a.id);
@@ -1640,239 +1668,55 @@ async function renderAntiCheat() {
     const user = await SessionManager.getCurrentUser();
     const violations = await SupabaseDB.getViolations(null, user.email);
 
-    const stats = calculateAntiCheatStats(violations);
-    const browser = getBrowserInfo();
-    const device = getDeviceInfo();
-
     content.innerHTML = `
       <div class="flex-between mb-20">
         <h2 class="m-0">Security & Integrity Dashboard</h2>
         <button class="button w-auto secondary" onclick="renderAntiCheat()">Refresh Data</button>
       </div>
-
-      <div class="card mb-20">
-        <h2>Session Information</h2>
-        <div class="stats-grid">
-          <div class="stat-card">
-            <h4>Assessment Type</h4>
-            <div class="value" id="assessmentType" style="font-size: 1.2rem">${violations.length > 0 ? escapeHtml(violations[0].assessment_type.charAt(0).toUpperCase() + violations[0].assessment_type.slice(1)) : 'None'}</div>
-          </div>
-          <div class="stat-card">
-            <h4>Session Time</h4>
-            <div class="value" id="sessionTime" style="font-size: 1.2rem">${violations.length > 0 ? new Date(violations[violations.length - 1].timestamp).toLocaleTimeString() + ' - ' + new Date(violations[0].timestamp).toLocaleTimeString() : 'N/A'}</div>
-          </div>
-          <div class="stat-card">
-            <h4>Session Duration</h4>
-            <div class="value" id="sessionDuration" style="font-size: 1.2rem">${violations.length > 0 ? Math.round((new Date(violations[0].timestamp) - new Date(violations[violations.length - 1].timestamp)) / 60000) + ' min' : '0 min'}</div>
-          </div>
-          <div class="stat-card">
-            <h4>Device</h4>
-            <div class="value" id="deviceInfo" style="font-size: 1.2rem">${device}</div>
-          </div>
-          <div class="stat-card">
-            <h4>Browser</h4>
-            <div class="value" id="browserInfo" style="font-size: 1.2rem">${browser}</div>
-          </div>
-          <div class="stat-card">
-            <h4>Page Visibility</h4>
-            <div class="value" id="pageVisibility" style="font-size: 1.2rem">${document.hidden ? 'Hidden' : 'Visible'}</div>
-          </div>
-        </div>
-      </div>
-
-      <div class="card mb-20">
-        <h2>Statistics</h2>
-        <div class="stats-grid">
-          <div class="stat-card">
-            <h4>Total Violations</h4>
-            <div class="value" id="totalCount">${stats.totalCount}</div>
-          </div>
-          <div class="stat-card">
-            <h4>Violation Score</h4>
-            <div class="value" id="totalScore">${stats.totalScore}</div>
-          </div>
-          <div class="stat-card">
-            <h4>Risk Level</h4>
-            <div class="value"><span id="riskLevel" class="badge ${stats.riskLevel === 'Low' ? 'badge-active' : (stats.riskLevel === 'Medium' ? 'badge-warn' : 'badge-inactive')}">${stats.riskLevel}</span></div>
-          </div>
-          <div class="stat-card">
-            <h4>Last Violation</h4>
-            <div class="value" id="lastViolation" style="font-size: 1.1rem">${escapeHtml(stats.lastViolation)}</div>
-          </div>
-          <div class="stat-card">
-            <h4>Most Frequent Violation</h4>
-            <div class="value" id="topViolation" style="font-size: 1.1rem">${escapeHtml(stats.topViolation)}</div>
-          </div>
-          <div class="stat-card">
-            <h4>Tab Switches</h4>
-            <div class="value" id="tabSwitchCount">${stats.tabSwitchCount}</div>
-          </div>
-          <div class="stat-card">
-            <h4>Blocked Actions</h4>
-            <div class="value" id="blockedActionCount">${stats.blockedActionCount}</div>
-          </div>
-        </div>
-      </div>
-
-      <div class="card">
-        <h3>Violation History</h3>
-        <div id="violationHistoryContainer">
-          ${violations.length === 0 ? `
-            <div class="no-violations" id="noViolationsMsg" style="padding: 40px; text-align: center; color: #718096;">
-              No violations detected yet.
-            </div>
-          ` : `
-            <div style="overflow-x: auto;">
-              <table class="violation-table" id="violationTable">
-                <thead>
-                  <tr>
-                    <th>#</th>
-                    <th>Time</th>
-                    <th>Violation Type</th>
-                    <th>Severity</th>
-                    <th>Score</th>
-                    <th>Visibility State</th>
-                    <th>Details</th>
-                    <th>Status</th>
-                  </tr>
-                </thead>
-                <tbody id="violationTableBody">
-                  ${violations.map((v, i) => {
-                    const weight = getViolationWeight(v.type);
-                    const severity = weight >= 40 ? 'Critical' : (weight >= 15 ? 'High' : 'Low');
-                    return `
-                      <tr>
-                        <td>${violations.length - i}</td>
-                        <td class="small">${new Date(v.timestamp).toLocaleTimeString()}</td>
-                        <td><span class="bold">${escapeHtml(v.type.replace(/_/g, ' '))}</span></td>
-                        <td><span class="badge ${severity === 'Critical' ? 'badge-inactive' : (severity === 'High' ? 'badge-warn' : 'badge-active')}">${severity}</span></td>
-                        <td>${weight}</td>
-                        <td>${v.details?.visibilityState || 'N/A'}</td>
-                        <td class="small">${escapeHtml(JSON.stringify(v.details || {}))}</td>
-                        <td><span class="tiny text-muted">LOGGED</span></td>
-                      </tr>
-                    `;
-                  }).join('')}
-                </tbody>
-              </table>
-            </div>
-          `}
-        </div>
-      </div>
+      <div id="integrityReportArea"></div>
     `;
+
+    UI.renderIntegrityReport('integrityReportArea', violations, user.email);
+
   } catch (error) {
     console.error('AntiCheat error:', error);
     content.innerHTML = `<div class="card danger-border"><h3>Error Loading Record</h3></div>`;
   }
 }
-
-function calculateAntiCheatStats(violations) {
-    const stats = {
-        totalCount: violations.length,
-        totalScore: 0,
-        riskLevel: 'Low',
-        lastViolation: 'None',
-        topViolation: 'None',
-        tabSwitchCount: 0,
-        blockedActionCount: 0
-    };
-
-    if (violations.length === 0) return stats;
-
-    const counts = {};
-    violations.forEach(v => {
-        const type = v.type;
-        counts[type] = (counts[type] || 0) + 1;
-        stats.totalScore += getViolationWeight(type);
-
-        if (type === 'TAB_SWITCH') stats.tabSwitchCount++;
-        if (type.includes('_ATTEMPT') || type.includes('BLOCK_')) stats.blockedActionCount++;
-    });
-
-    stats.lastViolation = violations[0].type.replace(/_/g, ' ');
-
-    let maxCount = 0;
-    for (const type in counts) {
-        if (counts[type] > maxCount) {
-            maxCount = counts[type];
-            stats.topViolation = type.replace(/_/g, ' ');
-        }
-    }
-
-    if (stats.totalScore > 100) stats.riskLevel = 'High';
-    else if (stats.totalScore > 40) stats.riskLevel = 'Medium';
-
-    return stats;
-}
-
-function getViolationWeight(type) {
-    const weights = {
-        'TAB_SWITCH': 10,
-        'DEVTOOLS_OPEN': 50,
-        'DEVTOOLS_ATTEMPT': 20,
-        'VIEW_SOURCE_ATTEMPT': 20,
-        'SCREENSHOT_ATTEMPT': 15,
-        'RIGHT_CLICK': 5,
-        'COPY_ATTEMPT': 5,
-        'PASTE_ATTEMPT': 5,
-        'CUT_ATTEMPT': 5,
-        'DRAG_ATTEMPT': 5,
-        'DROP_ATTEMPT': 5,
-        'EXIT_FULLSCREEN': 15,
-        'MULTIPLE_TABS': 40,
-        'LONG_PRESS': 5,
-        'TEXT_SELECTION': 5
-    };
-    return weights[type] || 5;
-}
-
-function getBrowserInfo() {
-    const ua = navigator.userAgent;
-    if (ua.includes("Firefox")) return "Firefox";
-    if (ua.includes("SamsungBrowser")) return "Samsung Browser";
-    if (ua.includes("Opera") || ua.includes("OPR")) return "Opera";
-    if (ua.includes("Trident")) return "Internet Explorer";
-    if (ua.includes("Edge")) return "Edge";
-    if (ua.includes("Chrome")) return "Chrome";
-    if (ua.includes("Safari")) return "Safari";
-    return "Unknown Browser";
-}
-
-function getDeviceInfo() {
-    const ua = navigator.userAgent;
-    if (/(tablet|ipad|playbook|silk)|(android(?!.*mobi))/i.test(ua)) return "Tablet";
-    if (/Mobile|Android|iP(hone|od)|IEMobile|BlackBerry|Kindle|Silk-Accelerated|(hpw|web)OS|Opera M(obi|ini)/.test(ua)) return "Mobile";
-    return "Desktop";
-}
 window.renderAntiCheat = renderAntiCheat;
-window.calculateAntiCheatStats = calculateAntiCheatStats;
-window.getViolationWeight = getViolationWeight;
-window.getBrowserInfo = getBrowserInfo;
-window.getDeviceInfo = getDeviceInfo;
 
-async function renderQuizzes(openId = null) {
+async function renderQuizzes(openId = null, page = 0) {
   clearActiveCountdowns();
   const container = document.getElementById('pageContent');
   if (!container) return;
+
+  const limit = 12;
+  const offset = page * limit;
 
   try {
     const user = await SessionManager.getCurrentUser();
     const enrollments = await SupabaseDB.getEnrollments(user.email);
     const enrolledCourseIds = enrollments.map(e => e.course_id);
 
-    const [quizzes, allSubs, courses] = await Promise.all([
+    const [allQuizzes, allSubs, courses] = await Promise.all([
       SupabaseDB.getQuizzes(null, null, enrolledCourseIds),
       SupabaseDB.getQuizSubmissions(null, user.email),
       SupabaseDB.getEnrolledCourses(user.email)
     ]);
+
+    const quizzes = allQuizzes.slice(offset, offset + limit);
+    const totalPages = Math.ceil(allQuizzes.length / limit);
 
     // Only show submissions for quizzes that belong to enrolled courses
     const subs = allSubs.filter(s => enrolledCourseIds.includes(s.quizzes?.course_id));
 
     const now = Date.now();
     container.innerHTML = `
-      <h2 class="m-0">My Quizzes</h2>
-      <div class="grid mt-20">
+      <div class="flex-between mb-20">
+        <h2 class="m-0">My Quizzes</h2>
+        <div class="small text-muted">${allQuizzes.length} Total</div>
+      </div>
+      <div class="grid">
         ${quizzes.map(q => {
           const mySubs = subs.filter(s => s.quiz_id === q.id && s.status === 'submitted').sort((a,b) => new Date(b.submitted_at) - new Date(a.submitted_at));
           const inProgress = subs.find(s => s.quiz_id === q.id && s.status === 'in-progress');
@@ -1960,6 +1804,17 @@ async function renderQuizzes(openId = null) {
         });
         activeCountdowns.push(c);
     });
+
+    if (totalPages > 1) {
+        const pagination = document.createElement('div');
+        pagination.className = 'flex-center gap-10 mt-30';
+        pagination.innerHTML = `
+            <button class="button secondary small w-auto" ${page === 0 ? 'disabled' : ''} onclick="renderQuizzes(null, ${page - 1})">Previous</button>
+            <span class="small">Page ${page + 1} of ${totalPages}</span>
+            <button class="button secondary small w-auto" ${page >= totalPages - 1 ? 'disabled' : ''} onclick="renderQuizzes(null, ${page + 1})">Next</button>
+        `;
+        container.appendChild(pagination);
+    }
 
     if (openId) {
         startQuiz(openId);

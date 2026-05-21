@@ -111,15 +111,19 @@ class SupabaseDB {
     }
 
     // User operations
-    static async getUsers() {
-        return _cache.fetch('users', async () => {
-            return this._request(async () => {
-                const { data, error } = await supabaseClient
-                    .from('users')
-                    .select('*');
-                if (error) throw error;
-                return data || [];
-            });
+    static async getUsers(options = {}) {
+        const { limit = 50, offset = 0, searchTerm = '', role = null } = options;
+        return this._request(async () => {
+            let query = supabaseClient.from('users').select('*', { count: 'exact' });
+            if (role) query = query.eq('role', role);
+            if (searchTerm) {
+                query = query.or(`full_name.ilike.%${searchTerm}%,email.ilike.%${searchTerm}%`);
+            }
+            const { data, count, error } = await query
+                .order('full_name', { ascending: true })
+                .range(offset, offset + limit - 1);
+            if (error) throw error;
+            return { data: data || [], total: count || 0 };
         });
     }
 
@@ -146,14 +150,27 @@ class SupabaseDB {
         });
     }
 
-    static async getEnrollmentsByCourses(courseIds) {
-        if (!courseIds || courseIds.length === 0) return [];
-        const { data, error } = await supabaseClient
-            .from('enrollments')
-            .select('*, users(*), courses(title)')
-            .in('course_id', courseIds);
-        if (error) throw error;
-        return data || [];
+    static async getEnrollmentsByCourses(courseIds, options = {}) {
+        if (!courseIds || courseIds.length === 0) return { data: [], total: 0 };
+        const { limit = 50, offset = 0, searchTerm = '' } = options;
+
+        return this._request(async () => {
+            let query = supabaseClient
+                .from('enrollments')
+                .select('*, users!inner(*), courses(title)', { count: 'exact' })
+                .in('course_id', courseIds);
+
+            if (searchTerm) {
+                query = query.or(`users.full_name.ilike.%${searchTerm}%,users.email.ilike.%${searchTerm}%`);
+            }
+
+            const { data, count, error } = await query
+                .order('enrolled_at', { ascending: false })
+                .range(offset, offset + limit - 1);
+
+            if (error) throw error;
+            return { data: data || [], total: count || 0 };
+        });
     }
 
     static async saveUser(user) {
@@ -285,8 +302,10 @@ class SupabaseDB {
     }
 
     // Assignment operations
-    static async getAssignments(teacherEmail = null, courseId = null, courseIds = null) {
+    static async getAssignments(teacherEmail = null, courseId = null, courseIds = null, options = {}) {
         if (courseIds && courseIds.length === 0) return [];
+        const { limit = 100, offset = 0 } = options;
+
         return this._request(async () => {
             let query = supabaseClient.from('assignments').select('*');
             if (teacherEmail) {
@@ -298,7 +317,9 @@ class SupabaseDB {
             if (courseIds && courseIds.length > 0) {
                 query = query.in('course_id', courseIds);
             }
-            const { data, error } = await query;
+            const { data, error } = await query
+                .order('due_date', { ascending: false })
+                .range(offset, offset + limit - 1);
             if (error) throw error;
             return data || [];
         });
@@ -851,15 +872,18 @@ class SupabaseDB {
     }
 
     // Quiz operations
-    static async getQuizzes(courseId = null, teacherEmail = null, courseIds = null) {
+    static async getQuizzes(courseId = null, teacherEmail = null, courseIds = null, options = {}) {
         if (courseIds && courseIds.length === 0) return [];
-        const cacheKey = `quizzes_${courseId || 'all'}_${teacherEmail || 'all'}_${courseIds ? courseIds.join(',') : 'none'}`;
-        return _cache.fetch(cacheKey, async () => {
+        const { limit = 100, offset = 0 } = options;
+
+        return this._request(async () => {
             let query = supabaseClient.from('quizzes').select('*');
             if (courseId) query = query.eq('course_id', courseId);
             if (teacherEmail) query = query.eq('teacher_email', teacherEmail);
             if (courseIds && courseIds.length > 0) query = query.in('course_id', courseIds);
-            const { data, error } = await query;
+            const { data, error } = await query
+                .order('created_at', { ascending: false })
+                .range(offset, offset + limit - 1);
             if (error) throw error;
             return data || [];
         });
@@ -1338,7 +1362,13 @@ class SupabaseDB {
             assessment_id: violation.assessment_id,
             assessment_type: violation.assessment_type,
             type: violation.type,
-            details: violation.details,
+            browser: violation.browser,
+            device: violation.device,
+            os: violation.os,
+            elapsed_time: violation.elapsed_time,
+            score: violation.score,
+            severity: violation.severity,
+            metadata: violation.metadata,
             timestamp: violation.timestamp
         };
         const { data, error } = await supabaseClient
@@ -1349,7 +1379,9 @@ class SupabaseDB {
         return data?.[0];
     }
 
-    static async getViolations(assessmentId = null, userEmail = null, teacherEmail = null) {
+    static async getViolations(assessmentId = null, userEmail = null, teacherEmail = null, options = {}) {
+        const { limit = 100, offset = 0 } = options;
+
         if (teacherEmail) {
             // Get teacher's course IDs first
             const courses = await this.getCourses(teacherEmail);
@@ -1368,7 +1400,8 @@ class SupabaseDB {
                 .from('violations')
                 .select('*')
                 .in('assessment_id', assessmentIds)
-                .order('timestamp', { ascending: false });
+                .order('timestamp', { ascending: false })
+                .range(offset, offset + limit - 1);
             if (error) throw error;
             return data || [];
         }
@@ -1377,9 +1410,59 @@ class SupabaseDB {
         if (assessmentId) query = query.eq('assessment_id', assessmentId);
         if (userEmail) query = query.eq('user_email', userEmail);
 
-        const { data, error } = await query.order('timestamp', { ascending: false });
+        const { data, error } = await query
+            .order('timestamp', { ascending: false })
+            .range(offset, offset + limit - 1);
         if (error) throw error;
         return data || [];
+    }
+
+    static async getViolationSummary(teacherEmail) {
+        const courses = await this.getCourses(teacherEmail);
+        const courseIds = courses.map(c => c.id);
+        if (courseIds.length === 0) return [];
+
+        const [assigns, quizzes] = await Promise.all([
+            this.getAssignments(null, null, courseIds),
+            this.getQuizzes(null, null, courseIds)
+        ]);
+        const assessmentIds = [...assigns.map(a => a.id), ...quizzes.map(q => q.id)];
+        if (assessmentIds.length === 0) return [];
+
+        // PostgREST doesn't support complex aggregation well, so we fetch and aggregate in JS for now
+        // This is safe for thousands of records as it's just the violations table
+        const { data, error } = await supabaseClient
+            .from('violations')
+            .select('assessment_id, assessment_type, user_email, type, severity, score')
+            .in('assessment_id', assessmentIds);
+
+        if (error) throw error;
+
+        const summaryMap = {};
+        (data || []).forEach(v => {
+            const key = v.assessment_id;
+            if (!summaryMap[key]) {
+                const assessment = [...assigns, ...quizzes].find(a => a.id === key);
+                summaryMap[key] = {
+                    id: key,
+                    title: assessment?.title || 'Unknown',
+                    type: v.assessment_type,
+                    violationCount: 0,
+                    studentCount: new Set(),
+                    totalScore: 0,
+                    criticalCount: 0
+                };
+            }
+            summaryMap[key].violationCount++;
+            summaryMap[key].studentCount.add(v.user_email);
+            summaryMap[key].totalScore += (v.score || 0);
+            if (v.severity === 'CRITICAL') summaryMap[key].criticalCount++;
+        });
+
+        return Object.values(summaryMap).map(s => ({
+            ...s,
+            studentCount: s.studentCount.size
+        }));
     }
 
     // Storage operations

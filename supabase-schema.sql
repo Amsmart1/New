@@ -309,7 +309,13 @@ CREATE TABLE IF NOT EXISTS violations (
   assessment_id UUID NOT NULL,
   assessment_type VARCHAR(50) NOT NULL CHECK (assessment_type IN ('assignment', 'quiz')),
   type VARCHAR(100) NOT NULL,
-  details JSONB DEFAULT '{}'::jsonb,
+  browser VARCHAR(100),
+  device VARCHAR(50),
+  os VARCHAR(50),
+  elapsed_time INTEGER, -- in milliseconds
+  score INTEGER,
+  severity VARCHAR(20),
+  metadata JSONB DEFAULT '{}'::jsonb,
   timestamp TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
@@ -329,7 +335,14 @@ ALTER TABLE quiz_submissions ALTER COLUMN status SET DEFAULT 'in-progress';
 ALTER TABLE violations ADD COLUMN IF NOT EXISTS assessment_id UUID;
 ALTER TABLE violations ADD COLUMN IF NOT EXISTS assessment_type VARCHAR(50);
 ALTER TABLE violations ADD COLUMN IF NOT EXISTS type VARCHAR(100);
-ALTER TABLE violations ADD COLUMN IF NOT EXISTS details JSONB DEFAULT '{}'::jsonb;
+ALTER TABLE violations ADD COLUMN IF NOT EXISTS browser VARCHAR(100);
+ALTER TABLE violations ADD COLUMN IF NOT EXISTS device VARCHAR(50);
+ALTER TABLE violations ADD COLUMN IF NOT EXISTS os VARCHAR(50);
+ALTER TABLE violations ADD COLUMN IF NOT EXISTS elapsed_time INTEGER;
+ALTER TABLE violations ADD COLUMN IF NOT EXISTS score INTEGER;
+ALTER TABLE violations ADD COLUMN IF NOT EXISTS severity VARCHAR(20);
+ALTER TABLE violations ADD COLUMN IF NOT EXISTS metadata JSONB DEFAULT '{}'::jsonb;
+ALTER TABLE violations DROP COLUMN IF EXISTS details;
 ALTER TABLE violations ADD COLUMN IF NOT EXISTS timestamp TIMESTAMP WITH TIME ZONE DEFAULT NOW();
 ALTER TABLE violations ADD COLUMN IF NOT EXISTS expires_at TIMESTAMP WITH TIME ZONE DEFAULT (NOW() + INTERVAL '90 days');
 
@@ -788,6 +801,7 @@ CREATE INDEX IF NOT EXISTS idx_quizzes_status ON quizzes(status);
 CREATE INDEX IF NOT EXISTS idx_assignments_status ON assignments(status);
 CREATE INDEX IF NOT EXISTS idx_violations_assessment ON violations(assessment_id);
 CREATE INDEX IF NOT EXISTS idx_violations_user ON violations(user_email);
+CREATE INDEX IF NOT EXISTS idx_violations_reporting ON violations(assessment_id, user_email);
 
 -- Missing Foreign-Key Indexes
 CREATE INDEX IF NOT EXISTS idx_assignments_teacher_email ON assignments(teacher_email);
@@ -830,7 +844,7 @@ CREATE INDEX IF NOT EXISTS idx_quizzes_anti_cheat_gin ON quizzes USING GIN (anti
 CREATE INDEX IF NOT EXISTS idx_submissions_answers_gin ON submissions USING GIN (answers);
 CREATE INDEX IF NOT EXISTS idx_quiz_submissions_answers_gin ON quiz_submissions USING GIN (answers);
 CREATE INDEX IF NOT EXISTS idx_quiz_submissions_analytics_gin ON quiz_submissions USING GIN (analytics);
-CREATE INDEX IF NOT EXISTS idx_violations_details_gin ON violations USING GIN (details);
+CREATE INDEX IF NOT EXISTS idx_violations_metadata_gin ON violations USING GIN (metadata);
 
 -- 7. Helper Functions
 

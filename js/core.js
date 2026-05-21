@@ -1108,6 +1108,118 @@ UI._dispatchDiscussionAction = function(containerId, action, id) {
     }
 };
 
+UI.renderIntegrityReport = function(containerId, violations, userEmail) {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+
+    if (typeof AntiCheat === 'undefined' || !AntiCheat.calculateStats) {
+        container.innerHTML = '<div class="empty">Anti-Cheat system not loaded.</div>';
+        return;
+    }
+
+    const stats = AntiCheat.calculateStats(violations);
+    const firstV = violations[violations.length - 1];
+    const lastV = violations[0];
+
+    container.innerHTML = `
+      <div class="card mb-20">
+        <h3>Session Information</h3>
+        <div class="stats-grid">
+          <div class="stat-card">
+            <h4>Device Context</h4>
+            <div class="value" style="font-size: 1.1rem">
+                ${lastV?.device || 'Unknown'} / ${lastV?.os || 'N/A'}
+            </div>
+          </div>
+          <div class="stat-card">
+            <h4>Browser</h4>
+            <div class="value" style="font-size: 1.1rem">${lastV?.browser || 'Unknown'}</div>
+          </div>
+          <div class="stat-card">
+            <h4>Session Window</h4>
+            <div class="value" style="font-size: 1.1rem">
+                ${firstV ? new Date(firstV.timestamp).toLocaleTimeString() : 'N/A'} -
+                ${lastV ? new Date(lastV.timestamp).toLocaleTimeString() : 'N/A'}
+            </div>
+          </div>
+          <div class="stat-card">
+            <h4>Duration (est)</h4>
+            <div class="value" style="font-size: 1.1rem">
+                ${firstV && lastV ? Math.round((new Date(lastV.timestamp) - new Date(firstV.timestamp)) / 60000) : 0} min
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card mb-20">
+        <h3>Violation Statistics</h3>
+        <div class="stats-grid">
+          <div class="stat-card ${stats.riskLevel === 'High' ? 'danger' : (stats.riskLevel === 'Medium' ? 'warn' : 'success')}">
+            <h4>Risk Level</h4>
+            <div class="value">
+                <span class="badge ${stats.riskLevel === 'High' ? 'badge-inactive' : (stats.riskLevel === 'Medium' ? 'badge-warn' : 'badge-active')}">
+                    ${stats.riskLevel}
+                </span>
+            </div>
+          </div>
+          <div class="stat-card">
+            <h4>Total Score</h4>
+            <div class="value">${stats.totalScore}</div>
+          </div>
+          <div class="stat-card">
+            <h4>Frequency</h4>
+            <div class="value" style="font-size: 1rem">
+                C:${stats.criticalCount} | H:${stats.highCount} | L:${stats.lowCount}
+            </div>
+          </div>
+          <div class="stat-card">
+            <h4>Most Frequent</h4>
+            <div class="value" style="font-size: 1rem">${escapeHtml(stats.topViolation)}</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>Detailed Violation History</h3>
+        ${violations.length === 0 ? `
+          <div class="empty">No violations detected for this session.</div>
+        ` : `
+          <div style="overflow-x: auto;">
+            <table>
+              <thead>
+                <tr>
+                  <th>Time</th>
+                  <th>Type</th>
+                  <th>Severity</th>
+                  <th>Score</th>
+                  <th>Context</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${violations.map(v => `
+                  <tr>
+                    <td class="small">${new Date(v.timestamp).toLocaleTimeString()}</td>
+                    <td><span class="bold">${escapeHtml(v.type.replace(/_/g, ' '))}</span></td>
+                    <td>
+                        <span class="badge ${v.severity === 'CRITICAL' ? 'badge-inactive' : (v.severity === 'HIGH' ? 'badge-warn' : 'badge-active')}">
+                            ${v.severity}
+                        </span>
+                    </td>
+                    <td>${v.score || 0}</td>
+                    <td class="tiny text-muted">
+                        ${v.metadata?.url ? `URL: ${v.metadata.url.substring(0,30)}...` : ''}
+                        ${v.metadata?.shortcut ? `Shortcut: ${v.metadata.shortcut}` : ''}
+                    </td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+          </div>
+        `}
+      </div>
+    `;
+};
+
 window.UI = UI;
 
 const IdleManager = {
