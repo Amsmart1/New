@@ -181,7 +181,7 @@ CREATE TABLE IF NOT EXISTS quiz_submissions (
   total_points INTEGER,
   answers JSONB DEFAULT '{}'::jsonb,
   analytics JSONB DEFAULT '{}'::jsonb,
-  status VARCHAR(50) DEFAULT 'submitted' CHECK (status IN ('in-progress', 'submitted')),
+  status VARCHAR(50) DEFAULT 'in-progress' CHECK (status IN ('in-progress', 'submitted')),
   time_spent INTEGER DEFAULT 0,
   started_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   submitted_at TIMESTAMP WITH TIME ZONE,
@@ -325,6 +325,7 @@ ALTER TABLE system_logs ADD COLUMN IF NOT EXISTS user_email VARCHAR(255);
 ALTER TABLE system_logs ADD COLUMN IF NOT EXISTS expires_at TIMESTAMP WITH TIME ZONE DEFAULT (NOW() + INTERVAL '30 days');
 ALTER TABLE quiz_submissions ADD COLUMN IF NOT EXISTS attempt_number INTEGER;
 ALTER TABLE quiz_submissions ALTER COLUMN attempt_number DROP NOT NULL;
+ALTER TABLE quiz_submissions ALTER COLUMN status SET DEFAULT 'in-progress';
 ALTER TABLE violations ADD COLUMN IF NOT EXISTS assessment_id UUID;
 ALTER TABLE violations ADD COLUMN IF NOT EXISTS assessment_type VARCHAR(50);
 ALTER TABLE violations ADD COLUMN IF NOT EXISTS type VARCHAR(100);

@@ -944,7 +944,7 @@ class SupabaseDB {
 
         const { data, error } = await supabaseClient
             .from('quiz_submissions')
-            .upsert(payload, { onConflict: 'id' })
+            .upsert(payload)
             .select();
         if (error) throw error;
         return data?.[0];

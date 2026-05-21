@@ -423,8 +423,12 @@
 
             if (this.config.DEBUG) console.log('Anti-Cheat: Destroyed');
 
+            // Remove any anti-cheat overlays
+            const overlay = document.getElementById('anti-cheat-fullscreen-overlay');
+            if (overlay) overlay.remove();
+
             // Try to exit fullscreen if we forced it
-            if (this.config.FULLSCREEN_REQUIRED && document.fullscreenElement) {
+            if (document.fullscreenElement) {
                 try {
                     if (document.exitFullscreen) document.exitFullscreen();
                     else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
