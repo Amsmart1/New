@@ -112,10 +112,11 @@ class SupabaseDB {
 
     // User operations
     static async getUsers(options = {}) {
-        const { limit = 50, offset = 0, searchTerm = '', role = null } = options;
+        const { limit = 50, offset = 0, searchTerm = '', role = null, resetStatus = null } = options;
         return this._request(async () => {
             let query = supabaseClient.from('users').select('*', { count: 'exact' });
             if (role) query = query.eq('role', role);
+            if (resetStatus) query = query.eq('reset_request->>status', resetStatus);
             if (searchTerm) {
                 query = query.or(`full_name.ilike.%${searchTerm}%,email.ilike.%${searchTerm}%`);
             }
@@ -426,7 +427,7 @@ class SupabaseDB {
 
     // Submission operations
     static async getSubmissions(assignmentId = null, studentEmail = null, teacherEmail = null, options = {}) {
-        const { limit = 100, offset = 0 } = options;
+        const { limit = 100, offset = 0, status = null, pendingGradingOnly = false } = options;
         return this._request(async () => {
             let selectStr = '*, assignments(*)';
             if (teacherEmail) selectStr = '*, assignments!inner(*)';
@@ -435,6 +436,12 @@ class SupabaseDB {
             if (assignmentId) query = query.eq('assignment_id', assignmentId);
             if (studentEmail) query = query.eq('student_email', studentEmail);
             if (teacherEmail) query = query.eq('assignments.teacher_email', teacherEmail);
+
+            if (pendingGradingOnly) {
+                query = query.or('status.eq.submitted,regrade_request.not.is.null');
+            } else if (status) {
+                query = query.eq('status', status);
+            }
 
             const { data, count, error } = await query
                 .order('submitted_at', { ascending: false })
@@ -852,14 +859,18 @@ class SupabaseDB {
     }
 
     // Discussion operations
-    static async getDiscussions(courseId) {
-        const { data, error } = await supabaseClient
-            .from('discussions')
-            .select('*')
-            .eq('course_id', courseId)
-            .order('created_at', { ascending: true });
-        if (error) throw error;
-        return data || [];
+    static async getDiscussions(courseId, options = {}) {
+        const { limit = 200, offset = 0 } = options;
+        return this._request(async () => {
+            const { data, count, error } = await supabaseClient
+                .from('discussions')
+                .select('*', { count: 'exact' })
+                .eq('course_id', courseId)
+                .order('created_at', { ascending: true })
+                .range(offset, offset + limit - 1);
+            if (error) throw error;
+            return { data: data || [], total: count || 0 };
+        });
     }
 
     static async saveDiscussion(discussion) {
@@ -951,12 +962,13 @@ class SupabaseDB {
     }
 
     static async getQuizSubmissions(quizId = null, studentEmail = null, teacherEmail = null, options = {}) {
-        const { limit = 100, offset = 0 } = options;
+        const { limit = 100, offset = 0, status = null } = options;
         return this._request(async () => {
             let query = supabaseClient.from('quiz_submissions').select('*, quizzes!quiz_id(*)', { count: 'exact' });
             if (quizId) query = query.eq('quiz_id', quizId);
             if (studentEmail) query = query.eq('student_email', studentEmail);
             if (teacherEmail) query = query.eq('quizzes.teacher_email', teacherEmail);
+            if (status) query = query.eq('status', status);
 
             const { data, count, error } = await query
                 .order('started_at', { ascending: false })
@@ -1181,6 +1193,22 @@ class SupabaseDB {
         if (error) throw error;
     }
 
+    // System log operations
+    static async getSystemLogs(options = {}) {
+        const { limit = 100, offset = 0, level = null, category = null } = options;
+        return this._request(async () => {
+            let query = supabaseClient.from('system_logs').select('*', { count: 'exact' });
+            if (level) query = query.eq('level', level);
+            if (category) query = query.eq('category', category);
+
+            const { data, count, error } = await query
+                .order('created_at', { ascending: false })
+                .range(offset, offset + limit - 1);
+            if (error) throw error;
+            return { data: data || [], total: count || 0 };
+        });
+    }
+
     // Study session operations
     static async saveStudySession(session) {
         const payload = {
@@ -1402,39 +1430,41 @@ class SupabaseDB {
     static async getViolations(assessmentId = null, userEmail = null, teacherEmail = null, options = {}) {
         const { limit = 100, offset = 0 } = options;
 
-        if (teacherEmail) {
-            // Get teacher's course IDs first
-            const { data: courses } = await this.getCourses(teacherEmail, null, { limit: 2000 });
-            const courseIds = (courses || []).map(c => c.id);
-            if (courseIds.length === 0) return [];
+        return this._request(async () => {
+            if (teacherEmail) {
+                // Get teacher's course IDs first
+                const { data: courses } = await this.getCourses(teacherEmail, null, { limit: 2000 });
+                const courseIds = (courses || []).map(c => c.id);
+                if (courseIds.length === 0) return { data: [], total: 0 };
 
-            // Get assignments and quizzes for these courses
-            const [{ data: assigns }, { data: quizzes }] = await Promise.all([
-                this.getAssignments(null, null, courseIds, { limit: 2000 }),
-                this.getQuizzes(null, null, courseIds, { limit: 2000 })
-            ]);
-            const assessmentIds = [...(assigns || []).map(a => a.id), ...(quizzes || []).map(q => q.id)];
-            if (assessmentIds.length === 0) return [];
+                // Get assignments and quizzes for these courses
+                const [{ data: assigns }, { data: quizzes }] = await Promise.all([
+                    this.getAssignments(null, null, courseIds, { limit: 2000 }),
+                    this.getQuizzes(null, null, courseIds, { limit: 2000 })
+                ]);
+                const assessmentIds = [...(assigns || []).map(a => a.id), ...(quizzes || []).map(q => q.id)];
+                if (assessmentIds.length === 0) return { data: [], total: 0 };
 
-            const { data, error } = await supabaseClient
-                .from('violations')
-                .select('*')
-                .in('assessment_id', assessmentIds)
+                const { data, count, error } = await supabaseClient
+                    .from('violations')
+                    .select('*', { count: 'exact' })
+                    .in('assessment_id', assessmentIds)
+                    .order('timestamp', { ascending: false })
+                    .range(offset, offset + limit - 1);
+                if (error) throw error;
+                return { data: data || [], total: count || 0 };
+            }
+
+            let query = supabaseClient.from('violations').select('*', { count: 'exact' });
+            if (assessmentId) query = query.eq('assessment_id', assessmentId);
+            if (userEmail) query = query.eq('user_email', userEmail);
+
+            const { data, count, error } = await query
                 .order('timestamp', { ascending: false })
                 .range(offset, offset + limit - 1);
             if (error) throw error;
-            return data || [];
-        }
-
-        let query = supabaseClient.from('violations').select('*');
-        if (assessmentId) query = query.eq('assessment_id', assessmentId);
-        if (userEmail) query = query.eq('user_email', userEmail);
-
-        const { data, error } = await query
-            .order('timestamp', { ascending: false })
-            .range(offset, offset + limit - 1);
-        if (error) throw error;
-        return data || [];
+            return { data: data || [], total: count || 0 };
+        });
     }
 
     static async getViolationSummary(teacherEmail) {
