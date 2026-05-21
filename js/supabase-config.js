@@ -15,10 +15,12 @@ const clientOptions = {
     global: {
         fetch: (url, options) => {
             const sid = sessionStorage.getItem('sessionId');
-            if (sid) {
+            // Only inject sid if it matches the activated session to avoid auth regressions
+            if (sid && sid === _lastSessionId) {
                 options = options || {};
-                options.headers = options.headers || {};
-                options.headers['x-session-id'] = sid;
+                const headers = new Headers(options.headers || {});
+                headers.set('x-session-id', sid);
+                options.headers = headers;
             }
             return fetch(url, options);
         }
