@@ -45,15 +45,19 @@ async function renderDashboard() {
   }
 }
 
-async function renderCourses() {
-
+async function renderCourses(page = 0) {
   const content = document.getElementById('pageContent');
   if (!content) return;
   clearActiveCountdowns();
 
+  const limit = 20;
+  const offset = page * limit;
+
   try {
     const user = await SessionManager.getCurrentUser();
-    const courses = await SupabaseDB.getCourses(user.email);
+    const { data: courses, total } = await SupabaseDB.getCourses(user.email, null, { limit, offset });
+    const totalPages = Math.ceil(total / limit);
+
     content.innerHTML = `
     <div class="card flex-between">
       <h2 class="m-0">Course Management</h2>
@@ -73,6 +77,14 @@ async function renderCourses() {
         </div>
       `).join('') || '<div class="empty">No courses created yet.</div>'}
       </div>
+
+      ${totalPages > 1 ? `
+        <div class="flex-center gap-10 mt-30">
+            <button class="button secondary small w-auto" ${page === 0 ? 'disabled' : ''} onclick="renderCourses(${page - 1})">Previous</button>
+            <span class="small">Page ${page + 1} of ${totalPages} (${total} Total)</span>
+            <button class="button secondary small w-auto" ${page >= totalPages - 1 ? 'disabled' : ''} onclick="renderCourses(${page + 1})">Next</button>
+        </div>
+      ` : ''}
     `;
   } catch (error) {
     console.error('Courses error:', error);
@@ -157,12 +169,12 @@ function showCourseForm(course = null) {
 }
 async function editCourse(id) {
   const user = await SessionManager.getCurrentUser();
-  const [courses, lessons, courseAssignments] = await Promise.all([
+  const [{ data: courses }, lessons, { data: courseAssignments }] = await Promise.all([
     SupabaseDB.getCourses(user.email),
     SupabaseDB.getLessons(id),
     SupabaseDB.getAssignments(user.email, id)
   ]);
-  const course = courses.find(c => c.id === id);
+  const course = (courses || []).find(c => c.id === id);
   const content = document.getElementById('pageContent');
   if (!content) return;
   content.innerHTML = `
@@ -263,17 +275,22 @@ async function deleteCourseById(id) {
     }
   }
 }
-async function renderAssignments() {
+async function renderAssignments(page = 0) {
   const content = document.getElementById('pageContent');
   if (!content) return;
   clearActiveCountdowns();
 
+  const limit = 20;
+  const offset = page * limit;
+
   try {
     const user = await SessionManager.getCurrentUser();
-    const [assignments, courses] = await Promise.all([
-      SupabaseDB.getAssignments(user.email),
-      SupabaseDB.getCourses(user.email)
+    const [{ data: assignments, total }, { data: courses }] = await Promise.all([
+      SupabaseDB.getAssignments(user.email, null, null, { limit, offset }),
+      SupabaseDB.getCourses(user.email, null, { limit: 1000 })
     ]);
+
+    const totalPages = Math.ceil(total / limit);
 
   content.innerHTML = `
     <div class="card flex-between">
@@ -301,6 +318,14 @@ async function renderAssignments() {
         </div>
 `;}).join('') || '<div class="empty">No assignments found.</div>'}
       </div>
+
+      ${totalPages > 1 ? `
+        <div class="flex-center gap-10 mt-30">
+            <button class="button secondary small w-auto" ${page === 0 ? 'disabled' : ''} onclick="renderAssignments(${page - 1})">Previous</button>
+            <span class="small">Page ${page + 1} of ${totalPages} (${total} Total)</span>
+            <button class="button secondary small w-auto" ${page >= totalPages - 1 ? 'disabled' : ''} onclick="renderAssignments(${page + 1})">Next</button>
+        </div>
+      ` : ''}
     `;
 
     document.querySelectorAll('.assign-countdown').forEach(el => {
@@ -326,19 +351,30 @@ async function renderAssignments() {
     </div>`;
   }
 }
-async function renderGrading() {
+async function renderGrading(page = 0) {
   const content = document.getElementById('pageContent');
   if (!content) return;
   clearActiveCountdowns();
 
+  const limit = 20;
+  const offset = page * limit;
+
   try {
     const user = await SessionManager.getCurrentUser();
-    const [assignments, mySubmissions] = await Promise.all([
-      SupabaseDB.getAssignments(user.email),
-      SupabaseDB.getSubmissions(null, null, user.email)
+    const [{ data: assignments }, { data: allSubmissions, total }] = await Promise.all([
+      SupabaseDB.getAssignments(user.email, null, null, { limit: 1000 }),
+      SupabaseDB.getSubmissions(null, null, user.email, { limit: 1000 })
     ]);
 
-    let gradingHtml = '<h2>Grading Queue</h2>';
+    const mySubmissions = allSubmissions.slice(offset, offset + limit);
+    const totalPages = Math.ceil(total / limit);
+
+    let gradingHtml = `
+      <div class="flex-between mb-20">
+        <h2 class="m-0">Grading Queue</h2>
+        <div class="small text-muted">${total} Submissions</div>
+      </div>
+    `;
     let hasPending = false;
     assignments.sort((a,b) => new Date(a.due_date) - new Date(b.due_date));
 
@@ -373,6 +409,16 @@ async function renderGrading() {
         `;
       }
     });
+    if (totalPages > 1) {
+        gradingHtml += `
+          <div class="flex-center gap-10 mt-30">
+              <button class="button secondary small w-auto" ${page === 0 ? 'disabled' : ''} onclick="renderGrading(${page - 1})">Previous</button>
+              <span class="small">Page ${page + 1} of ${totalPages}</span>
+              <button class="button secondary small w-auto" ${page >= totalPages - 1 ? 'disabled' : ''} onclick="renderGrading(${page + 1})">Next</button>
+          </div>
+        `;
+    }
+
     content.innerHTML = hasPending ? gradingHtml : '<div class="empty"><h3>All caught up!</h3><p class="small">No pending submissions to grade.</p></div>';
   } catch (error) {
     console.error('Grading error:', error);
@@ -476,7 +522,7 @@ window.unenrollStudent = unenrollStudent;
 
 async function showCertForm(studentEmail) {
   const user = await SessionManager.getCurrentUser();
-  const courses = await SupabaseDB.getCourses(user.email);
+  const { data: courses } = await SupabaseDB.getCourses(user.email, null, { limit: 1000 });
   const area = document.getElementById('certFormArea');
   if (!area) return;
   area.classList.remove('hidden');
@@ -540,7 +586,7 @@ async function showAssignmentForm(assignment = null, courseId = null) {
   const finalCourseId = isEdit ? assignment.course_id : courseId;
 
   const user = await SessionManager.getCurrentUser();
-  const courses = await SupabaseDB.getCourses(user.email);
+  const { data: courses } = await SupabaseDB.getCourses(user.email, null, { limit: 1000 });
 
   content.innerHTML = `
     <div class="card">
@@ -700,7 +746,7 @@ async function showAssignmentForm(assignment = null, courseId = null) {
     }
   });
 }
-async function editAssignment(id) { const user = await SessionManager.getCurrentUser(); const assignments = await SupabaseDB.getAssignments(user.email); const assignment = assignments.find(a => a.id === id); if (assignment) showAssignmentForm(assignment); }
+async function editAssignment(id) { const user = await SessionManager.getCurrentUser(); const { data: assignments } = await SupabaseDB.getAssignments(user.email, null, null, { limit: 1000 }); const assignment = assignments.find(a => a.id === id); if (assignment) showAssignmentForm(assignment); }
 async function deleteAssignmentById(id, courseId = null) {
   if (confirm('Delete?')) { await SupabaseDB.deleteAssignment(id); if (courseId) editCourse(courseId); else renderAssignments(); }
 }
@@ -869,7 +915,7 @@ async function renderDiscussions() {
 
   try {
     const user = await SessionManager.getCurrentUser();
-    const courses = await SupabaseDB.getCourses(user.email);
+    const { data: courses } = await SupabaseDB.getCourses(user.email, null, { limit: 1000 });
     container.innerHTML = `
     <div class="card">
       <h2 class="m-0">Discussions</h2>
@@ -1282,9 +1328,9 @@ async function renderLiveClasses() {
 
   try {
     const user = await SessionManager.getCurrentUser();
-    const [liveClasses, courses] = await Promise.all([
+    const [liveClasses, { data: courses }] = await Promise.all([
       SupabaseDB.getLiveClasses(null, user.email),
-      SupabaseDB.getCourses(user.email)
+      SupabaseDB.getCourses(user.email, null, { limit: 1000 })
     ]);
 
     const activeClass = liveClasses.find(liveClass => liveClass.status === 'live');
@@ -1384,8 +1430,8 @@ async function showLiveClassForm(liveClass = null) {
 
   try {
     const user = await SessionManager.getCurrentUser();
-    const [courses, allLiveClasses] = await Promise.all([
-        SupabaseDB.getCourses(user.email),
+    const [{ data: courses }, allLiveClasses] = await Promise.all([
+        SupabaseDB.getCourses(user.email, null, { limit: 1000 }),
         SupabaseDB.getLiveClasses(null, user.email)
     ]);
 
@@ -1770,17 +1816,21 @@ window.deleteLiveClass = deleteLiveClass;
 window.viewAttendance = viewAttendance;
 window.renderLiveClasses = renderLiveClasses;
 
-async function renderQuizzes() {
+async function renderQuizzes(page = 0) {
   const container = document.getElementById('pageContent');
   if (!container) return;
   clearActiveCountdowns();
 
+  const limit = 20;
+  const offset = page * limit;
+
   try {
     const user = await SessionManager.getCurrentUser();
-    const [quizzes, courses] = await Promise.all([
-      SupabaseDB.getQuizzes(null, user.email),
-      SupabaseDB.getCourses(user.email)
+    const [{ data: quizzes, total }, { data: courses }] = await Promise.all([
+      SupabaseDB.getQuizzes(null, user.email, null, { limit, offset }),
+      SupabaseDB.getCourses(user.email, null, { limit: 1000 })
     ]);
+    const totalPages = Math.ceil(total / limit);
     const now = Date.now();
     container.innerHTML = `
     <div class="card flex-between">
@@ -1813,6 +1863,14 @@ async function renderQuizzes() {
         </div>
 `;}).join('') || '<div class="empty">No quizzes created yet.</div>'}
       </div>
+
+      ${totalPages > 1 ? `
+        <div class="flex-center gap-10 mt-30">
+            <button class="button secondary small w-auto" ${page === 0 ? 'disabled' : ''} onclick="renderQuizzes(${page - 1})">Previous</button>
+            <span class="small">Page ${page + 1} of ${totalPages} (${total} Total)</span>
+            <button class="button secondary small w-auto" ${page >= totalPages - 1 ? 'disabled' : ''} onclick="renderQuizzes(${page + 1})">Next</button>
+        </div>
+      ` : ''}
     `;
 
     document.querySelectorAll('.quiz-sch-countdown').forEach(el => {
@@ -1845,7 +1903,7 @@ async function showQuizForm(quiz = null) {
   if (!container) return;
 
   const user = await SessionManager.getCurrentUser();
-  const courses = await SupabaseDB.getCourses(user.email);
+  const { data: courses } = await SupabaseDB.getCourses(user.email, null, { limit: 1000 });
 
   container.innerHTML = `
     <div class="card">
@@ -2023,8 +2081,8 @@ window.shuffleQuizQuestions = () => {
 
 async function editQuiz(id) {
   const user = await SessionManager.getCurrentUser();
-  const quizzes = await SupabaseDB.getQuizzes(null, user.email);
-  const quiz = quizzes.find(q => q.id === id);
+  const { data: quizzes } = await SupabaseDB.getQuizzes(null, user.email, null, { limit: 1000 });
+  const quiz = (quizzes || []).find(q => q.id === id);
   showQuizForm(quiz);
 }
 
@@ -2259,12 +2317,12 @@ async function renderGradeBook() {
 
     try {
         const user = await SessionManager.getCurrentUser();
-        const [courses, assignments, quizzes, submissions, quizSubs] = await Promise.all([
-            SupabaseDB.getCourses(user.email),
-            SupabaseDB.getAssignments(user.email),
-            SupabaseDB.getQuizzes(null, user.email),
-            SupabaseDB.getSubmissions(null, null, user.email),
-            SupabaseDB.getQuizSubmissions(null, null, user.email)
+        const [{ data: courses }, { data: assignments }, { data: quizzes }, { data: submissions }, { data: quizSubs }] = await Promise.all([
+            SupabaseDB.getCourses(user.email, null, { limit: 1000 }),
+            SupabaseDB.getAssignments(user.email, null, null, { limit: 1000 }),
+            SupabaseDB.getQuizzes(null, user.email, null, { limit: 1000 }),
+            SupabaseDB.getSubmissions(null, null, user.email, { limit: 1000 }),
+            SupabaseDB.getQuizSubmissions(null, null, user.email, { limit: 1000 })
         ]);
 
         content.innerHTML = `
@@ -2287,7 +2345,7 @@ async function renderGradeBook() {
             let filteredCourses = courseId ? courses.filter(c => c.id === courseId) : courses;
             let courseIds = filteredCourses.map(c => c.id);
 
-            const enrollments = await SupabaseDB.getEnrollmentsByCourses(courseIds);
+            const { data: enrollments } = await SupabaseDB.getEnrollmentsByCourses(courseIds, { limit: 1000 });
 
             let html = '';
 
@@ -2416,8 +2474,8 @@ async function renderMaterials() {
 
   try {
     const user = await SessionManager.getCurrentUser();
-    const courses = await SupabaseDB.getCourses(user.email);
-    const courseIds = courses.map(c => c.id);
+    const { data: courses } = await SupabaseDB.getCourses(user.email, null, { limit: 1000 });
+    const courseIds = (courses || []).map(c => c.id);
     const materials = await SupabaseDB.getMaterials(null, courseIds);
 
     content.innerHTML = `
@@ -2460,7 +2518,7 @@ async function renderMaterials() {
 
 async function showMaterialForm() {
   const user = await SessionManager.getCurrentUser();
-  const courses = await SupabaseDB.getCourses(user.email);
+  const { data: courses } = await SupabaseDB.getCourses(user.email, null, { limit: 1000 });
   const area = document.getElementById('materialFormArea');
   if (!area) return;
   area.classList.remove('hidden');

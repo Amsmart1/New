@@ -108,12 +108,12 @@
                 assessment_id: this.state.assessmentId,
                 assessment_type: this.state.assessmentType,
                 type,
-                browser: this.state.sessionInfo.browser,
-                device: this.state.sessionInfo.device,
-                os: this.state.sessionInfo.os,
-                elapsed_time: now - this.state.startTime,
-                score,
-                severity,
+                browser: this.state.sessionInfo.browser || 'Unknown',
+                device: this.state.sessionInfo.device || 'Unknown',
+                os: this.state.sessionInfo.os || 'Unknown',
+                elapsed_time: Math.max(0, now - (this.state.startTime || now)),
+                score: score || 0,
+                severity: severity || 'LOW',
                 metadata: {
                     ...metadata,
                     url: window.location.href,
@@ -124,12 +124,16 @@
 
             // Sync to DB if SupabaseDB is available
             if (window.SupabaseDB && typeof window.SupabaseDB.saveViolation === 'function') {
-                window.SupabaseDB.saveViolation(violation).catch(err => console.error('Anti-Cheat: Sync failed', err));
+                window.SupabaseDB.saveViolation(violation).catch(err => {
+                    if (this.config.DEBUG) console.error('Anti-Cheat: Sync failed', err, violation);
+                });
             }
 
             // Callbacks
             if (this.config.callbacks.onViolation) {
-                this.config.callbacks.onViolation(violation);
+                try {
+                    this.config.callbacks.onViolation(violation);
+                } catch (e) { console.error('Anti-Cheat: Callback failed', e); }
             }
 
             if (this.config.DEBUG) {
