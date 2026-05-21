@@ -441,8 +441,8 @@ async function renderStudents(page = 0) {
 
   try {
     const user = await SessionManager.getCurrentUser();
-    const myCourses = await SupabaseDB.getCourses(user.email);
-    const myCourseIds = myCourses.map(c => c.id);
+    const { data: myCourses } = await SupabaseDB.getCourses(user.email, null, { limit: 1000 });
+    const myCourseIds = (myCourses || []).map(c => c.id);
 
     const { data: enrollments, total } = await SupabaseDB.getEnrollmentsByCourses(myCourseIds, {
         limit,

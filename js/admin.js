@@ -235,6 +235,7 @@ window.denyReset = denyReset;
 window.broadcastNotif = broadcastNotif;
 window.showAddScheduleForm = showAddScheduleForm;
 window.removeSchedule = removeSchedule;
+function filterUsers() { renderUsers(0); }
 window.filterUsers = filterUsers;
 window.saveAutoSetting = saveAutoSetting;
 window.previewCleanup = previewCleanup;
@@ -744,9 +745,9 @@ async function renderManagement() {
 }
 
 async function previewCleanup() {
-  const [{ data: users }, courses] = await Promise.all([SupabaseDB.getUsers({ limit: 1000 }), SupabaseDB.getCourses()]);
-  const inactiveUsers = users.filter(u => !u.active);
-  const draftCourses = courses.filter(c => c.status === 'draft');
+  const [{ data: users }, { data: courses }] = await Promise.all([SupabaseDB.getUsers({ limit: 1000 }), SupabaseDB.getCourses(null, null, { limit: 1000 })]);
+  const inactiveUsers = (users || []).filter(u => !u.active);
+  const draftCourses = (courses || []).filter(c => c.status === 'draft');
 
   const area = document.getElementById('mgt-area');
   area.innerHTML = `
@@ -765,9 +766,9 @@ async function previewCleanup() {
 async function executeCleanup() {
   if (!confirm('Are you sure? This action is irreversible.')) return;
   try {
-    const [{ data: users }, courses] = await Promise.all([SupabaseDB.getUsers({ limit: 1000 }), SupabaseDB.getCourses()]);
-    const inactiveUsers = users.filter(u => !u.active);
-    const draftCourses = courses.filter(c => c.status === 'draft');
+    const [{ data: users }, { data: courses }] = await Promise.all([SupabaseDB.getUsers({ limit: 1000 }), SupabaseDB.getCourses(null, null, { limit: 1000 })]);
+    const inactiveUsers = (users || []).filter(u => !u.active);
+    const draftCourses = (courses || []).filter(c => c.status === 'draft');
 
     const userProms = inactiveUsers.map(u => SupabaseDB.deleteUser(u.email));
     const courseProms = draftCourses.map(c => SupabaseDB.deleteCourse(c.id));
@@ -782,7 +783,7 @@ async function executeCleanup() {
 }
 
 async function exportBackup() {
-  const [{ data: users }, courses, assigns] = await Promise.all([SupabaseDB.getUsers({ limit: 1000 }), SupabaseDB.getCourses(), SupabaseDB.getAssignments()]);
+  const [{ data: users }, { data: courses }, { data: assigns }] = await Promise.all([SupabaseDB.getUsers({ limit: 1000 }), SupabaseDB.getCourses(null, null, { limit: 1000 }), SupabaseDB.getAssignments(null, null, null, { limit: 1000 })]);
   const data = { users, courses, assigns, exportedAt: new Date().toISOString() };
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);

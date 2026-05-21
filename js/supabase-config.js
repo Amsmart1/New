@@ -1404,16 +1404,16 @@ class SupabaseDB {
 
         if (teacherEmail) {
             // Get teacher's course IDs first
-            const courses = await this.getCourses(teacherEmail);
-            const courseIds = courses.map(c => c.id);
+            const { data: courses } = await this.getCourses(teacherEmail, null, { limit: 2000 });
+            const courseIds = (courses || []).map(c => c.id);
             if (courseIds.length === 0) return [];
 
             // Get assignments and quizzes for these courses
-            const [assigns, quizzes] = await Promise.all([
-                this.getAssignments(null, null, courseIds),
-                this.getQuizzes(null, null, courseIds)
+            const [{ data: assigns }, { data: quizzes }] = await Promise.all([
+                this.getAssignments(null, null, courseIds, { limit: 2000 }),
+                this.getQuizzes(null, null, courseIds, { limit: 2000 })
             ]);
-            const assessmentIds = [...assigns.map(a => a.id), ...quizzes.map(q => q.id)];
+            const assessmentIds = [...(assigns || []).map(a => a.id), ...(quizzes || []).map(q => q.id)];
             if (assessmentIds.length === 0) return [];
 
             const { data, error } = await supabaseClient
@@ -1438,15 +1438,15 @@ class SupabaseDB {
     }
 
     static async getViolationSummary(teacherEmail) {
-        const courses = await this.getCourses(teacherEmail);
-        const courseIds = courses.map(c => c.id);
+        const { data: courses } = await this.getCourses(teacherEmail, null, { limit: 2000 });
+        const courseIds = (courses || []).map(c => c.id);
         if (courseIds.length === 0) return [];
 
-        const [assigns, quizzes] = await Promise.all([
-            this.getAssignments(null, null, courseIds),
-            this.getQuizzes(null, null, courseIds)
+        const [{ data: assigns }, { data: quizzes }] = await Promise.all([
+            this.getAssignments(null, null, courseIds, { limit: 2000 }),
+            this.getQuizzes(null, null, courseIds, { limit: 2000 })
         ]);
-        const assessmentIds = [...assigns.map(a => a.id), ...quizzes.map(q => q.id)];
+        const assessmentIds = [...(assigns || []).map(a => a.id), ...(quizzes || []).map(q => q.id)];
         if (assessmentIds.length === 0) return [];
 
         // PostgREST doesn't support complex aggregation well, so we fetch and aggregate in JS for now
@@ -1462,7 +1462,7 @@ class SupabaseDB {
         (data || []).forEach(v => {
             const key = v.assessment_id;
             if (!summaryMap[key]) {
-                const assessment = [...assigns, ...quizzes].find(a => a.id === key);
+                const assessment = [...(assigns || []), ...(quizzes || [])].find(a => a.id === key);
                 summaryMap[key] = {
                     id: key,
                     title: assessment?.title || 'Unknown',
