@@ -333,6 +333,13 @@ ALTER TABLE violations ADD COLUMN IF NOT EXISTS details JSONB DEFAULT '{}'::json
 ALTER TABLE violations ADD COLUMN IF NOT EXISTS timestamp TIMESTAMP WITH TIME ZONE DEFAULT NOW();
 ALTER TABLE violations ADD COLUMN IF NOT EXISTS expires_at TIMESTAMP WITH TIME ZONE DEFAULT (NOW() + INTERVAL '90 days');
 
+-- Fix quiz_submissions status check constraint if it was incorrectly initialized
+DO $$
+BEGIN
+    ALTER TABLE quiz_submissions DROP CONSTRAINT IF EXISTS quiz_submissions_status_check;
+    ALTER TABLE quiz_submissions ADD CONSTRAINT quiz_submissions_status_check CHECK (status IN ('in-progress', 'submitted'));
+END $$;
+
 DO $$
 BEGIN
     -- users (Move sensitive data if it exists)
