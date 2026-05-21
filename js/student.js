@@ -852,19 +852,14 @@ async function renderGrades() {
 
   try {
     const user = await SessionManager.getCurrentUser();
-    const enrollments = await SupabaseDB.getEnrollments(user.email);
-    const enrolledCourseIds = enrollments.map(e => e.course_id);
-
+    // Optimization: Filter graded status on the server
     const [{ data: submissions }, { data: assigns }] = await Promise.all([
-      SupabaseDB.getSubmissions(null, user.email, null, { limit: 1000 }),
+      SupabaseDB.getSubmissions(null, user.email, null, { limit: 1000, status: 'graded' }),
       SupabaseDB.getAssignments(null, null, null, { limit: 1000 })
     ]);
 
-    // Filter graded submissions that belong to currently enrolled courses
-    const graded = submissions.filter(s => {
-      const a = assigns.find(x => x.id === s.assignment_id);
-      return s.status === 'graded' && a && enrolledCourseIds.includes(a.course_id);
-    }).sort((a,b) => new Date(a.submitted_at) - new Date(b.submitted_at));
+    // Sort graded submissions by date
+    const graded = submissions.sort((a,b) => new Date(a.submitted_at) - new Date(b.submitted_at));
 
     container.innerHTML = `
       <h2 class="m-0">My Grades</h2>
@@ -898,19 +893,14 @@ async function renderAnalytics() {
 
   try {
     const user = await SessionManager.getCurrentUser();
-    const enrollments = await SupabaseDB.getEnrollments(user.email);
-    const enrolledCourseIds = enrollments.map(e => e.course_id);
-
+    // Optimization: Filter graded status on the server
     const [{ data: submissions }, { data: assigns }] = await Promise.all([
-      SupabaseDB.getSubmissions(null, user.email, null, { limit: 1000 }),
+      SupabaseDB.getSubmissions(null, user.email, null, { limit: 1000, status: 'graded' }),
       SupabaseDB.getAssignments(null, null, null, { limit: 1000 })
     ]);
 
-    // Filter graded submissions that belong to currently enrolled courses
-    const graded = submissions.filter(s => {
-      const a = assigns.find(x => x.id === s.assignment_id);
-      return s.status === 'graded' && a && enrolledCourseIds.includes(a.course_id);
-    }).sort((a,b) => new Date(a.submitted_at) - new Date(b.submitted_at));
+    // Sort graded submissions by date
+    const graded = submissions.sort((a,b) => new Date(a.submitted_at) - new Date(b.submitted_at));
 
     container.innerHTML = `
       <h2 class="m-0">Performance Analytics</h2>
@@ -1053,9 +1043,11 @@ async function renderDiscussions() {
   }
 }
 
-async function viewStudentDiscussions(courseId) {
+async function viewStudentDiscussions(courseId, page = 0) {
   const user = await SessionManager.getCurrentUser();
-  const disc = await SupabaseDB.getDiscussions(courseId);
+  const limit = 50;
+  const offset = page * limit;
+  const { data: disc, total } = await SupabaseDB.getDiscussions(courseId, { limit, offset });
   const container = document.getElementById('pageContent');
   if (!container) return;
 
@@ -1063,9 +1055,20 @@ async function viewStudentDiscussions(courseId) {
 
   UI.renderDiscussion('discussionArea', disc, user.email, {
       onPost: (content, parentId) => postDiscussion(courseId, parentId, content),
-      onEdit: (id) => editStudentDiscussion(id, courseId),
-      onDelete: (id) => deleteStudentDiscussion(id, courseId)
+      onEdit: (id) => editStudentDiscussion(id, courseId, page),
+      onDelete: (id) => deleteStudentDiscussion(id, courseId, page)
   });
+
+  if (total > limit) {
+      const pagination = document.createElement('div');
+      pagination.className = 'flex-center gap-10 mt-20';
+      pagination.innerHTML = `
+          <button class="button secondary small w-auto" ${page === 0 ? 'disabled' : ''} onclick="viewStudentDiscussions('${courseId}', ${page - 1})">Previous</button>
+          <span class="small">Page ${page + 1} of ${Math.ceil(total/limit)}</span>
+          <button class="button secondary small w-auto" ${page >= Math.ceil(total/limit)-1 ? 'disabled' : ''} onclick="viewStudentDiscussions('${courseId}', ${page + 1})">Next</button>
+      `;
+      document.getElementById('discussionArea').after(pagination);
+  }
 }
 
 async function postDiscussion(courseId, parentId = null, content = null) {
@@ -1084,44 +1087,44 @@ async function postDiscussion(courseId, parentId = null, content = null) {
         parent_id: parentId,
         created_at: new Date().toISOString()
     });
-    viewStudentDiscussions(courseId);
+    viewStudentDiscussions(courseId, 0);
   } catch (e) {
     alert('Failed to post message: ' + e.message);
   }
 }
 
-async function editStudentDiscussion(id, courseId) {
+async function editStudentDiscussion(id, courseId, page = 0) {
   const div = document.getElementById(`disc-${id}`);
   const contentDiv = div.querySelector('.disc-content');
   const current = contentDiv.innerText;
   contentDiv.innerHTML = `
     <textarea class="input" style="margin-top:10px">${escapeHtml(current)}</textarea>
     <div style="margin-top:8px; display:flex; gap:8px">
-      <button class="button" style="padding:4px 8px; font-size:11px" onclick="saveStudentDiscussionEdit('${id}', '${courseId}')">Save</button>
-      <button class="button secondary" style="padding:4px 8px; font-size:11px" onclick="viewStudentDiscussions('${courseId}')">Cancel</button>
+      <button class="button" style="padding:4px 8px; font-size:11px" onclick="saveStudentDiscussionEdit('${id}', '${courseId}', ${page})">Save</button>
+      <button class="button secondary" style="padding:4px 8px; font-size:11px" onclick="viewStudentDiscussions('${courseId}', ${page})">Cancel</button>
     </div>
   `;
 }
 
-async function saveStudentDiscussionEdit(id, courseId) {
+async function saveStudentDiscussionEdit(id, courseId, page = 0) {
   const div = document.getElementById(`disc-${id}`);
   const content = div.querySelector('textarea').value;
   if (!content) return;
   try {
-    const disc = await SupabaseDB.getDiscussions(courseId);
+    const { data: disc } = await SupabaseDB.getDiscussions(courseId, { limit: 1000 });
     const existing = disc.find(d => d.id === id);
     await SupabaseDB.saveDiscussion({ ...existing, content });
-    viewStudentDiscussions(courseId);
+    viewStudentDiscussions(courseId, page);
   } catch (e) {
     alert('Error updating: ' + e.message);
   }
 }
 
-async function deleteStudentDiscussion(id, courseId) {
+async function deleteStudentDiscussion(id, courseId, page = 0) {
   if (!confirm('Delete this message?')) return;
   try {
     await SupabaseDB.deleteDiscussion(id);
-    viewStudentDiscussions(courseId);
+    viewStudentDiscussions(courseId, page);
   } catch (e) {
     alert('Error deleting: ' + e.message);
   }
@@ -1668,7 +1671,7 @@ async function renderAntiCheat() {
 
   try {
     const user = await SessionManager.getCurrentUser();
-    const violations = await SupabaseDB.getViolations(null, user.email);
+    const { data: violations } = await SupabaseDB.getViolations(null, user.email);
 
     content.innerHTML = `
       <div class="flex-between mb-20">
@@ -2234,12 +2237,15 @@ async function submitQuiz(isAuto = false) {
   } catch (err) {
       console.error('Quiz submission failed:', err);
       alert('Quiz Submission Failed: ' + (err.message || 'Unknown error'));
-      if (btn) {
-          btn.disabled = false;
-          btn.textContent = 'Submit Quiz';
-      }
-      UI.hideLoading('quizArea');
       return;
+  } finally {
+      if (!currentSubmission || currentSubmission.status !== 'submitted') {
+          if (btn) {
+              btn.disabled = false;
+              btn.textContent = 'Submit Quiz';
+          }
+          UI.hideLoading('quizArea');
+      }
   }
 
   if (currentQuiz) await SupabaseDB.updateCourseProgress(currentQuiz.course_id, user.email);
@@ -2450,8 +2456,8 @@ async function submitAssignment(assignmentId, studentEmail) {
   } catch (e) {
     console.error('Submission failed:', e);
     alert(`Submission failed: ${e.message || 'Unknown error'}. ${e.details || ''}`);
-    UI.hideLoading('assignmentForm');
   } finally {
+    UI.hideLoading('assignmentForm');
     if (btn) { btn.disabled = false; btn.textContent = 'Submit Assignment'; }
   }
 }

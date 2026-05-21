@@ -27,7 +27,7 @@ async function renderDashboard() {
       SupabaseDB.getCount('users', q => q.eq('reset_request->>status', 'pending')),
       SupabaseDB.getCount('assignments'),
       SupabaseDB.getCount('submissions'),
-      SupabaseDB.getCount('submissions', q => q.eq('status', 'submitted')),
+      SupabaseDB.getCount('submissions', q => q.or('status.eq.submitted,regrade_request.not.is.null')),
       SupabaseDB.getMaintenance()
     ]);
     const stats = {
@@ -401,28 +401,27 @@ async function renderResets(page = 0) {
   const offset = page * limit;
 
   try {
-    // There's no direct RPC for pending resets, so we use the paginated getUsers with a filter if possible,
-    // or fetch a reasonable amount and paginate locally for now if the API doesn't support complex filters.
-    // However, our getUsers supports roles but not arbitrary metadata filters yet.
-    // Let's optimize by fetching users and filtering.
-    const { data: allUsers } = await SupabaseDB.getUsers({ limit: 2000 });
-    const pendingResets = (allUsers || []).filter(u => u.reset_request && u.reset_request.status === 'pending');
+    // Optimization: Use server-side filtering for pending resets
+    const { data: pendingResets, total } = await SupabaseDB.getUsers({
+        limit,
+        offset,
+        resetStatus: 'pending'
+    });
 
-    const paginated = pendingResets.slice(offset, offset + limit);
-    const totalPages = Math.ceil(pendingResets.length / limit);
+    const totalPages = Math.ceil(total / limit);
 
     content.innerHTML = `
     <section>
       <div class="flex-between mb-20">
         <h3 class="m-0">Password Reset Requests</h3>
-        <div class="small text-muted">${pendingResets.length} Pending</div>
+        <div class="small text-muted">${total} Pending</div>
       </div>
       ${pendingResets.length === 0 ? '<p class="empty">No pending reset requests.</p>' : `
         <div class="card" style="padding:0; overflow-x:auto">
           <table>
             <thead><tr><th>Name</th><th>Email</th><th>Requested At</th><th>Actions</th></tr></thead>
             <tbody>
-              ${paginated.map(user => `
+              ${pendingResets.map(user => `
                 <tr>
                   <td>${escapeHtml(user.full_name)}</td>
                   <td>${escapeHtml(user.email)}</td>
@@ -517,13 +516,15 @@ async function renderAnalytics() {
   if (!content) return;
 
   try {
-    const [{ data: submissions }, { data: users }] = await Promise.all([
-      SupabaseDB.getSubmissions(),
-      SupabaseDB.getUsers()
+    // Optimization: Fetch counts and a limited set of submissions for the chart
+    const [totalSubs, activeUsers, { data: recentSubs }] = await Promise.all([
+      SupabaseDB.getCount('submissions'),
+      SupabaseDB.getCount('users', q => q.eq('active', true)),
+      SupabaseDB.getSubmissions(null, null, null, { limit: 1000 })
     ]);
 
     const submissionsByDate = {};
-    submissions.forEach(s => {
+    recentSubs.forEach(s => {
       const date = (s.submitted_at || new Date().toISOString()).split('T')[0];
       submissionsByDate[date] = (submissionsByDate[date] || 0) + 1;
     });
@@ -535,8 +536,8 @@ async function renderAnalytics() {
     <section>
       <h3>System Analytics</h3>
       <div class="stats-grid">
-        <div class="stat-card"><h4>Submission Rate</h4><div class="value">${escapeHtml(submissions.length)}</div></div>
-        <div class="stat-card"><h4>Active Users</h4><div class="value">${escapeHtml(users.filter(u => u.active).length)}</div></div>
+        <div class="stat-card"><h4>Total Submissions</h4><div class="value">${escapeHtml(totalSubs)}</div></div>
+        <div class="stat-card"><h4>Active Users</h4><div class="value">${escapeHtml(activeUsers)}</div></div>
       </div>
       <div class="card" style="margin-top:20px">
         <h4>Submission Activity</h4>
@@ -643,24 +644,30 @@ async function renderHealth() {
   if (!content) return;
 
   try {
-    const start = performance.now();
-    const [maint, { data: users }, { data: assignments }, { data: subs }] = await Promise.all([
+    const now = new Date();
+    const oneHourAgo = new Date(now.getTime() - (60 * 60 * 1000));
+    const thirtyMinsAgo = new Date(now.getTime() - (30 * 60 * 1000));
+
+    const [
+        maint,
+        totalUsers,
+        totalAssignments,
+        totalSubmissions,
+        loginsLastHour,
+        activeSessions
+    ] = await Promise.all([
       SupabaseDB.getMaintenance(true),
-      SupabaseDB.getUsers(),
-      SupabaseDB.getAssignments(),
-      SupabaseDB.getSubmissions()
+      SupabaseDB.getCount('users'),
+      SupabaseDB.getCount('assignments'),
+      SupabaseDB.getCount('submissions'),
+      SupabaseDB.getCount('users', q => q.gt('created_at', oneHourAgo.toISOString())),
+      SupabaseDB.getCount('users', q => q.gt('updated_at', thirtyMinsAgo.toISOString()))
     ]);
+
     const apiStats = SupabaseDB.getStats();
     const dbLatency = apiStats.lastRequestTime;
 
-    const now = new Date();
-    const oneHourAgo = new Date(now.getTime() - (60 * 60 * 1000));
-    const loginsLastHour = users.filter(u => new Date(u.created_at) > oneHourAgo).length;
-
-    const thirtyMinsAgo = new Date(now.getTime() - (30 * 60 * 1000));
-    const activeSessions = users.filter(u => new Date(u.updated_at) > thirtyMinsAgo).length;
-
-    const totalRecords = users.length + assignments.length + subs.length;
+    const totalRecords = totalUsers + totalAssignments + totalSubmissions;
     const estStorageUsage = (totalRecords * 0.5 / 1024).toFixed(2);
 
     content.innerHTML = `
@@ -677,8 +684,8 @@ async function renderHealth() {
           <div class="card">
             <h4>Real-time Traffic</h4>
             <ul style="list-style:none; padding:0">
-              <li style="padding:10px 0; border-bottom:1px solid var(--border)"><strong>New Users (1h):</strong> ${escapeHtml(loginsLastHour)}</li>
-              <li style="padding:10px 0; border-bottom:1px solid var(--border)"><strong>Active Users (30m):</strong> ${escapeHtml(activeSessions)}</li>
+              <li style="padding:10px 0; border-bottom:1px solid var(--border)"><strong>New Signups (1h):</strong> ${escapeHtml(loginsLastHour)}</li>
+              <li style="padding:10px 0; border-bottom:1px solid var(--border)"><strong>Active Sessions (30m):</strong> ${escapeHtml(activeSessions)}</li>
               <li style="padding:10px 0"><strong>Total Requests:</strong> ${escapeHtml(apiStats.totalRequests)}</li>
             </ul>
           </div>
@@ -745,9 +752,10 @@ async function renderManagement() {
 }
 
 async function previewCleanup() {
-  const [{ data: users }, { data: courses }] = await Promise.all([SupabaseDB.getUsers({ limit: 1000 }), SupabaseDB.getCourses(null, null, { limit: 1000 })]);
-  const inactiveUsers = (users || []).filter(u => !u.active);
-  const draftCourses = (courses || []).filter(c => c.status === 'draft');
+  const [inactiveCount, draftCount] = await Promise.all([
+      SupabaseDB.getCount('users', q => q.eq('active', false)),
+      SupabaseDB.getCount('courses', q => q.eq('status', 'draft'))
+  ]);
 
   const area = document.getElementById('mgt-area');
   area.innerHTML = `
@@ -755,8 +763,8 @@ async function previewCleanup() {
       <h4>Cleanup Preview</h4>
       <p class="small">The following items are candidates for cleanup:</p>
       <ul class="small">
-        <li>Inactive Users: ${escapeHtml(inactiveUsers.length)}</li>
-        <li>Draft Courses: ${escapeHtml(draftCourses.length)}</li>
+        <li>Inactive Users: ${escapeHtml(inactiveCount)}</li>
+        <li>Draft Courses: ${escapeHtml(draftCount)}</li>
       </ul>
       <button class="button danger" style="width:auto; margin-top:10px" onclick="executeCleanup()">Execute Cleanup Now</button>
     </div>
@@ -766,9 +774,17 @@ async function previewCleanup() {
 async function executeCleanup() {
   if (!confirm('Are you sure? This action is irreversible.')) return;
   try {
-    const [{ data: users }, { data: courses }] = await Promise.all([SupabaseDB.getUsers({ limit: 1000 }), SupabaseDB.getCourses(null, null, { limit: 1000 })]);
+    UI.showLoading('mgt-area', 'Performing cleanup...');
+
+    // For actual deletion, we still need IDs/emails, but we can do it in chunks if it were massive.
+    // For now, we'll fetch them, but only what we need.
+    const [{ data: users }, { data: courses }] = await Promise.all([
+        SupabaseDB.getUsers({ limit: 1000 }), // In a real app with 10k+ inactive, we'd loop
+        SupabaseDB.getCourses(null, 'draft', { limit: 1000 })
+    ]);
+
     const inactiveUsers = (users || []).filter(u => !u.active);
-    const draftCourses = (courses || []).filter(c => c.status === 'draft');
+    const draftCourses = courses || [];
 
     const userProms = inactiveUsers.map(u => SupabaseDB.deleteUser(u.email));
     const courseProms = draftCourses.map(c => SupabaseDB.deleteCourse(c.id));
@@ -776,9 +792,11 @@ async function executeCleanup() {
     await Promise.all([...userProms, ...courseProms]);
 
     alert(`Cleanup successful: ${inactiveUsers.length} users and ${draftCourses.length} courses removed.`);
-    renderManagement();
   } catch (e) {
     alert('Cleanup failed: ' + e.message);
+  } finally {
+    UI.hideLoading('mgt-area');
+    renderManagement();
   }
 }
 

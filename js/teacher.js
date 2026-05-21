@@ -361,45 +361,57 @@ async function renderGrading(page = 0) {
 
   try {
     const user = await SessionManager.getCurrentUser();
-    const [{ data: assignments }, { data: allSubmissions, total }] = await Promise.all([
-      SupabaseDB.getAssignments(user.email, null, null, { limit: 1000 }),
-      SupabaseDB.getSubmissions(null, null, user.email, { limit: 1000 })
+    // Optimization: Use server-side filtering for submitted status and regrade requests
+    const { data: submittedSubs, total } = await SupabaseDB.getSubmissions(null, null, user.email, {
+        limit,
+        offset,
+        pendingGradingOnly: true
+    });
+
+    const [{ data: assignments }] = await Promise.all([
+      SupabaseDB.getAssignments(user.email, null, null, { limit: 1000 })
     ]);
 
-    const mySubmissions = allSubmissions.slice(offset, offset + limit);
     const totalPages = Math.ceil(total / limit);
 
     let gradingHtml = `
       <div class="flex-between mb-20">
         <h2 class="m-0">Grading Queue</h2>
-        <div class="small text-muted">${total} Submissions</div>
+        <div class="small text-muted">${total} Submissions Pending</div>
       </div>
     `;
-    let hasPending = false;
-    assignments.sort((a,b) => new Date(a.due_date) - new Date(b.due_date));
 
-    assignments.forEach((assignment) => {
-      const pendingSubmissions = mySubmissions.filter(s => s.assignment_id === assignment.id && (s.status === 'submitted' || s.regrade_request));
-      if (pendingSubmissions.length > 0) {
-        hasPending = true;
+    // Group by assignment for display
+    const groups = {};
+    submittedSubs.forEach(s => {
+        if (!groups[s.assignment_id]) groups[s.assignment_id] = [];
+        groups[s.assignment_id].push(s);
+    });
+
+    let hasPending = submittedSubs.length > 0;
+
+    Object.keys(groups).forEach(assignmentId => {
+        const assignment = assignments.find(a => a.id === assignmentId);
+        const groupSubs = groups[assignmentId];
+
         gradingHtml += `
           <div class="card">
             <div class="flex-between">
-              <h3 class="m-0">${escapeHtml(assignment.title)}</h3>
-              <span class="badge">${pendingSubmissions.length} Pending</span>
+              <h3 class="m-0">${escapeHtml(assignment?.title || 'Unknown Assignment')}</h3>
+              <span class="badge">${groupSubs.length} in this page</span>
             </div>
             <div class="p-0 mt-10" style="overflow-x:auto">
                 <table>
                   <thead><tr><th>Student</th><th>Submitted</th><th>Status</th><th>Action</th></tr></thead>
                   <tbody>
-                    ${pendingSubmissions.map(s => {
+                    ${groupSubs.map(s => {
                       const isRegrade = !!s.regrade_request;
                       return `
                       <tr>
                         <td>${escapeHtml(s.student_email)}</td>
                         <td>${new Date(s.submitted_at).toLocaleString()}</td>
                         <td>${isRegrade ? '<span class="badge badge-warn">REGRADE REQ</span>' : '<span class="badge badge-active">NEW SUB</span>'}</td>
-                        <td><button class="button small w-auto" onclick="gradeSubmission('${escapeAttr(assignment.id)}', '${escapeAttr(s.student_email)}')">Review</button></td>
+                        <td><button class="button small w-auto" onclick="gradeSubmission('${escapeAttr(s.assignment_id)}', '${escapeAttr(s.student_email)}')">Review</button></td>
                       </tr>
                     `;}).join('')}
                   </tbody>
@@ -407,8 +419,8 @@ async function renderGrading(page = 0) {
             </div>
           </div>
         `;
-      }
     });
+
     if (totalPages > 1) {
         gradingHtml += `
           <div class="flex-center gap-10 mt-30">
@@ -925,7 +937,7 @@ async function renderDiscussions() {
       ${courses.map(c => `
         <div class="card">
           <h3 class="m-0">${escapeHtml(c.title)}</h3>
-          <button class="button w-auto mt-10" onclick="viewCourseDiscussions('${escapeAttr(c.id)}')">View Discussions</button>
+          <button class="button w-auto mt-10" onclick="viewCourseDiscussions('${escapeAttr(c.id)}', 0)">View Discussions</button>
         </div>
       `).join('')}
       </div>
@@ -940,9 +952,11 @@ async function renderDiscussions() {
   }
 }
 
-async function viewCourseDiscussions(courseId) {
+async function viewCourseDiscussions(courseId, page = 0) {
   const user = await SessionManager.getCurrentUser();
-  const disc = await SupabaseDB.getDiscussions(courseId);
+  const limit = 50;
+  const offset = page * limit;
+  const { data: disc, total } = await SupabaseDB.getDiscussions(courseId, { limit, offset });
   const container = document.getElementById('pageContent');
   if (!container) return;
 
@@ -950,9 +964,20 @@ async function viewCourseDiscussions(courseId) {
 
   UI.renderDiscussion('discussionArea', disc, user.email, {
       onPost: (content, parentId) => postTeacherDiscussion(courseId, parentId, content),
-      onEdit: (id) => editDiscussion(id, courseId),
-      onDelete: (id) => deleteDiscussion(id, courseId)
+      onEdit: (id) => editDiscussion(id, courseId, page),
+      onDelete: (id) => deleteDiscussion(id, courseId, page)
   });
+
+  if (total > limit) {
+      const pagination = document.createElement('div');
+      pagination.className = 'flex-center gap-10 mt-20';
+      pagination.innerHTML = `
+          <button class="button secondary small w-auto" ${page === 0 ? 'disabled' : ''} onclick="viewCourseDiscussions('${courseId}', ${page - 1})">Previous</button>
+          <span class="small">Page ${page + 1} of ${Math.ceil(total/limit)}</span>
+          <button class="button secondary small w-auto" ${page >= Math.ceil(total/limit)-1 ? 'disabled' : ''} onclick="viewCourseDiscussions('${courseId}', ${page + 1})">Next</button>
+      `;
+      document.getElementById('discussionArea').after(pagination);
+  }
 }
 
 async function postTeacherDiscussion(courseId, parentId = null, content = null) {
@@ -971,44 +996,44 @@ async function postTeacherDiscussion(courseId, parentId = null, content = null) 
         parent_id: parentId,
         created_at: new Date().toISOString()
     });
-    viewCourseDiscussions(courseId);
+    viewCourseDiscussions(courseId, 0);
   } catch (e) {
     alert('Error posting message: ' + e.message);
   }
 }
 
-async function editDiscussion(id, courseId) {
+async function editDiscussion(id, courseId, page = 0) {
   const div = document.getElementById(`disc-${id}`);
   const contentDiv = div.querySelector('.disc-content');
   const current = contentDiv.innerText;
   contentDiv.innerHTML = `
     <textarea class="input" style="margin-top:10px">${escapeHtml(current)}</textarea>
     <div style="margin-top:8px; display:flex; gap:8px">
-      <button class="button" style="padding:4px 8px; font-size:11px" onclick="saveDiscussionEdit('${id}', '${courseId}')">Save</button>
-      <button class="button secondary" style="padding:4px 8px; font-size:11px" onclick="viewCourseDiscussions('${courseId}')">Cancel</button>
+      <button class="button" style="padding:4px 8px; font-size:11px" onclick="saveDiscussionEdit('${id}', '${courseId}', ${page})">Save</button>
+      <button class="button secondary" style="padding:4px 8px; font-size:11px" onclick="viewCourseDiscussions('${courseId}', ${page})">Cancel</button>
     </div>
   `;
 }
 
-async function saveDiscussionEdit(id, courseId) {
+async function saveDiscussionEdit(id, courseId, page = 0) {
   const div = document.getElementById(`disc-${id}`);
   const content = div.querySelector('textarea').value;
   if (!content) return;
   try {
-    const disc = await SupabaseDB.getDiscussions(courseId);
+    const { data: disc } = await SupabaseDB.getDiscussions(courseId, { limit: 1000 });
     const existing = disc.find(d => d.id === id);
     await SupabaseDB.saveDiscussion({ ...existing, content });
-    viewCourseDiscussions(courseId);
+    viewCourseDiscussions(courseId, page);
   } catch (e) {
     alert('Error updating: ' + e.message);
   }
 }
 
-async function deleteDiscussion(id, courseId) {
+async function deleteDiscussion(id, courseId, page = 0) {
   if (!confirm('Delete this message?')) return;
   try {
     await SupabaseDB.deleteDiscussion(id);
-    viewCourseDiscussions(courseId);
+    viewCourseDiscussions(courseId, page);
   } catch (e) {
     alert('Error deleting: ' + e.message);
   }
@@ -1107,7 +1132,7 @@ async function viewAssessmentViolations(assessmentId, title) {
     area.scrollIntoView({ behavior: 'smooth' });
 
     try {
-        const violations = await SupabaseDB.getViolations(assessmentId, null, null, { limit: 2000 });
+        const { data: violations } = await SupabaseDB.getViolations(assessmentId, null, null, { limit: 2000 });
 
         // Group by student
         const studentMap = {};
@@ -1192,7 +1217,7 @@ async function viewStudentIntegrityReport(assessmentId, studentEmail) {
     document.body.appendChild(backdrop);
 
     try {
-        const violations = await SupabaseDB.getViolations(assessmentId, studentEmail, null, { limit: 1000 });
+        const { data: violations } = await SupabaseDB.getViolations(assessmentId, studentEmail, null, { limit: 1000 });
         UI.renderIntegrityReport('reportContentArea', violations, studentEmail);
     } catch (e) {
         document.getElementById('reportContentArea').innerHTML = `<div class="empty danger-text">Failed to load report: ${e.message}</div>`;
