@@ -39,7 +39,12 @@
                 assessmentType: null, // 'quiz' or 'assignment'
                 userEmail: null,
                 startTime: null,
-                lastViolationTime: {}
+                lastViolationTime: {},
+                sessionInfo: {
+                    browser: this.getBrowserInfo(),
+                    device: this.getDeviceInfo(),
+                    os: this.getOSInfo()
+                }
             };
 
             this.longPressTimers = new Map();
@@ -86,7 +91,7 @@
             if (this.config.DEBUG) console.log('Anti-Cheat: Initialized', { assessmentId, assessmentType, config: this.config });
         }
 
-        logViolation(type, details = {}) {
+        logViolation(type, metadata = {}) {
             if (!this.state.isActive) return;
 
             const now = Date.now();
@@ -95,15 +100,24 @@
 
             this.state.lastViolationTime[type] = now;
 
+            const severity = this.getViolationSeverity(type);
+            const score = this.getViolationScore(type);
+
             const violation = {
                 user_email: this.state.userEmail,
                 assessment_id: this.state.assessmentId,
                 assessment_type: this.state.assessmentType,
                 type,
-                details: {
-                    ...details,
-                    elapsed: now - this.state.startTime,
-                    url: window.location.href
+                browser: this.state.sessionInfo.browser,
+                device: this.state.sessionInfo.device,
+                os: this.state.sessionInfo.os,
+                elapsed_time: now - this.state.startTime,
+                score,
+                severity,
+                metadata: {
+                    ...metadata,
+                    url: window.location.href,
+                    visibilityState: document.visibilityState
                 },
                 timestamp: new Date(now).toISOString()
             };
@@ -119,10 +133,56 @@
             }
 
             if (this.config.DEBUG) {
-                console.log('Anti-Cheat Violation:', type, details);
+                console.log('Anti-Cheat Violation:', type, violation);
             }
 
             return violation;
+        }
+
+        static calculateStats(violations) {
+            const stats = {
+                totalCount: violations.length,
+                totalScore: 0,
+                riskLevel: 'Low',
+                lastViolation: 'None',
+                topViolation: 'None',
+                tabSwitchCount: 0,
+                blockedActionCount: 0,
+                criticalCount: 0,
+                highCount: 0,
+                lowCount: 0
+            };
+
+            if (violations.length === 0) return stats;
+
+            const counts = {};
+            violations.forEach(v => {
+                const type = v.type;
+                counts[type] = (counts[type] || 0) + 1;
+                stats.totalScore += v.score || 0;
+
+                if (v.severity === 'CRITICAL') stats.criticalCount++;
+                else if (v.severity === 'HIGH') stats.highCount++;
+                else stats.lowCount++;
+
+                if (type === 'TAB_SWITCH') stats.tabSwitchCount++;
+                if (type.includes('_ATTEMPT') || type.includes('BLOCK_')) stats.blockedActionCount++;
+            });
+
+            stats.lastViolation = violations[0].type.replace(/_/g, ' ');
+
+            let maxCount = 0;
+            for (const type in counts) {
+                if (counts[type] > maxCount) {
+                    maxCount = counts[type];
+                    stats.topViolation = type.replace(/_/g, ' ');
+                }
+            }
+
+            if (stats.totalScore >= 20 || stats.criticalCount > 0) stats.riskLevel = 'High';
+            else if (stats.totalScore >= 10 || stats.highCount > 1) stats.riskLevel = 'Medium';
+
+            return stats;
         }
 
         addGlobalListener(target, type, handler, options) {
@@ -389,6 +449,67 @@
                 this.resizeTimeout = setTimeout(check, 500);
             });
             setTimeout(check, 1000);
+        }
+
+        getViolationSeverity(type) {
+            const weights = {
+                'TAB_SWITCH': 'HIGH',
+                'DEVTOOLS_OPEN': 'CRITICAL',
+                'DEVTOOLS_ATTEMPT': 'HIGH',
+                'VIEW_SOURCE_ATTEMPT': 'HIGH',
+                'SCREENSHOT_ATTEMPT': 'HIGH',
+                'RIGHT_CLICK': 'LOW',
+                'COPY_ATTEMPT': 'LOW',
+                'PASTE_ATTEMPT': 'LOW',
+                'CUT_ATTEMPT': 'LOW',
+                'DRAG_ATTEMPT': 'LOW',
+                'DROP_ATTEMPT': 'LOW',
+                'EXIT_FULLSCREEN': 'HIGH',
+                'MULTIPLE_TABS': 'CRITICAL',
+                'LONG_PRESS': 'LOW',
+                'TEXT_SELECTION': 'LOW'
+            };
+            return weights[type] || 'LOW';
+        }
+
+        getViolationScore(type) {
+            const severity = this.getViolationSeverity(type);
+            const scores = {
+                'CRITICAL': 5,
+                'HIGH': 3,
+                'LOW': 2
+            };
+            return scores[severity] || 2;
+        }
+
+        getBrowserInfo() {
+            const ua = navigator.userAgent;
+            if (ua.includes("Firefox")) return "Firefox";
+            if (ua.includes("SamsungBrowser")) return "Samsung Browser";
+            if (ua.includes("Opera") || ua.includes("OPR")) return "Opera";
+            if (ua.includes("Trident")) return "Internet Explorer";
+            if (ua.includes("Edge")) return "Edge";
+            if (ua.includes("Chrome")) return "Chrome";
+            if (ua.includes("Safari")) return "Safari";
+            return "Unknown Browser";
+        }
+
+        getDeviceInfo() {
+            const ua = navigator.userAgent;
+            if (/(tablet|ipad|playbook|silk)|(android(?!.*mobi))/i.test(ua)) return "Tablet";
+            if (/Mobile|Android|iP(hone|od)|IEMobile|BlackBerry|Kindle|Silk-Accelerated|(hpw|web)OS|Opera M(obi|ini)/.test(ua)) return "Mobile";
+            return "Desktop";
+        }
+
+        getOSInfo() {
+            const ua = navigator.userAgent;
+            if (ua.indexOf("Win") !== -1) return "Windows";
+            if (ua.indexOf("Mac") !== -1) return "MacOS";
+            if (ua.indexOf("X11") !== -1) return "UNIX";
+            if (ua.indexOf("Linux") !== -1) return "Linux";
+            if (ua.indexOf("Android") !== -1) return "Android";
+            if (ua.indexOf("like Mac") !== -1) return "iOS";
+            return "Unknown OS";
         }
 
         destroy() {

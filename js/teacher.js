@@ -383,18 +383,26 @@ async function renderGrading() {
     </div>`;
   }
 }
-async function renderStudents() {
+async function renderStudents(page = 0) {
 
   const content = document.getElementById('pageContent');
   if (!content) return;
   clearActiveCountdowns();
+
+  const limit = 20;
+  const offset = page * limit;
+  const searchTerm = document.getElementById('studentSearch')?.value || '';
 
   try {
     const user = await SessionManager.getCurrentUser();
     const myCourses = await SupabaseDB.getCourses(user.email);
     const myCourseIds = myCourses.map(c => c.id);
 
-    const enrollments = await SupabaseDB.getEnrollmentsByCourses(myCourseIds);
+    const { data: enrollments, total } = await SupabaseDB.getEnrollmentsByCourses(myCourseIds, {
+        limit,
+        offset,
+        searchTerm
+    });
 
     const students = enrollments.map(e => {
         return {
@@ -405,9 +413,16 @@ async function renderStudents() {
         };
     }).filter(s => s.email);
 
+    const totalPages = Math.ceil(total / limit);
+
     content.innerHTML = `
     <div class="card">
-      <h2 class="m-0">My Enrolled Students</h2>
+      <div class="flex-between mb-20">
+        <h2 class="m-0">My Enrolled Students</h2>
+        <div class="flex gap-10">
+            <input type="text" id="studentSearch" placeholder="Search by name or email..." class="m-0" style="width:250px" value="${escapeAttr(searchTerm)}" oninput="renderStudents(0)">
+        </div>
+      </div>
       <div class="p-0 mt-15" style="overflow-x:auto">
           <table>
             <thead><tr><th>Name</th><th>Email</th><th>Course</th><th>Action</th></tr></thead>
@@ -422,10 +437,18 @@ async function renderStudents() {
                     <button class="button danger small w-auto" onclick="unenrollStudent('${escapeAttr(s.course_id)}', '${escapeAttr(s.email)}')">Unenroll</button>
                   </td>
                 </tr>
-              `).join('') || '<tr><td colspan="4" class="empty">No students enrolled.</td></tr>'}
+              `).join('') || '<tr><td colspan="4" class="empty">No students found.</td></tr>'}
             </tbody>
           </table>
       </div>
+
+      ${totalPages > 1 ? `
+        <div class="flex-center gap-10 mt-20">
+            <button class="button secondary small w-auto" ${page === 0 ? 'disabled' : ''} onclick="renderStudents(${page - 1})">Previous</button>
+            <span class="small">Page ${page + 1} of ${totalPages} (${total} Total)</span>
+            <button class="button secondary small w-auto" ${page >= totalPages - 1 ? 'disabled' : ''} onclick="renderStudents(${page + 1})">Next</button>
+        </div>
+      ` : ''}
     </div>
     <div id="certFormArea" class="hidden mt-20"></div>
     `;
@@ -985,46 +1008,153 @@ async function renderAntiCheat() {
 
   try {
     const user = await SessionManager.getCurrentUser();
-    const [violations, courses] = await Promise.all([
-      SupabaseDB.getViolations(null, null, user.email),
-      SupabaseDB.getCourses(user.email)
-    ]);
+    const summary = await SupabaseDB.getViolationSummary(user.email);
 
     content.innerHTML = `
       <div class="card flex-between">
-        <h2 class="m-0">Anti-Cheat Violations</h2>
-        <button class="button w-auto secondary" onclick="renderAntiCheat()">Refresh</button>
+        <div>
+            <h2 class="m-0">Security Monitoring</h2>
+            <p class="small text-muted mt-5">Overview of assessments with detected integrity violations.</p>
+        </div>
+        <button class="button w-auto secondary" onclick="renderAntiCheat()">Refresh Summary</button>
       </div>
-      <div class="card mt-20 p-0" style="overflow-x:auto">
-        <table>
-          <thead>
-            <tr>
-              <th>Timestamp</th>
-              <th>Student</th>
-              <th>Assessment</th>
-              <th>Type</th>
-              <th>Details</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${violations.map(v => `
-              <tr>
-                <td class="small">${new Date(v.timestamp).toLocaleString()}</td>
-                <td class="small">${escapeHtml(v.user_email)}</td>
-                <td class="small">${v.assessment_type.toUpperCase()}</td>
-                <td><span class="badge badge-warn">${escapeHtml(v.type)}</span></td>
-                <td class="small">${JSON.stringify(v.details)}</td>
-              </tr>
-            `).join('') || '<tr><td colspan="5" class="empty">No violations detected.</td></tr>'}
-          </tbody>
-        </table>
+
+      <div class="grid mt-20">
+        ${summary.map(s => {
+            const risk = s.criticalCount > 0 ? 'High' : (s.violationCount > 10 ? 'Medium' : 'Low');
+            return `
+            <div class="card">
+                <div class="flex-between">
+                    <span class="badge ${s.type === 'quiz' ? 'badge-purple' : 'badge-warn'} tiny">${s.type.toUpperCase()}</span>
+                    <span class="badge ${risk === 'High' ? 'badge-inactive' : (risk === 'Medium' ? 'badge-warn' : 'badge-active')} tiny">${risk} RISK</span>
+                </div>
+                <h3 class="m-0 mt-10" title="${escapeAttr(s.title)}">${escapeHtml(s.title.substring(0, 30))}${s.title.length > 30 ? '...' : ''}</h3>
+
+                <div class="stats-grid mt-15 mb-0" style="grid-template-columns: 1fr 1fr; gap: 10px">
+                    <div class="stat-card p-10" style="padding: 10px; border-radius: 6px">
+                        <h4>Violations</h4>
+                        <div class="value" style="font-size: 1.2rem">${s.violationCount}</div>
+                    </div>
+                    <div class="stat-card p-10" style="padding: 10px; border-radius: 6px; border-left-color: var(--ok)">
+                        <h4>Students</h4>
+                        <div class="value" style="font-size: 1.2rem">${s.studentCount}</div>
+                    </div>
+                </div>
+
+                <button class="button secondary small mt-15" onclick="viewAssessmentViolations('${s.id}', '${escapeAttr(s.title)}')">View Affected Students</button>
+            </div>
+            `;
+        }).join('') || '<div class="empty" style="grid-column: 1/-1">No integrity violations detected across your assessments.</div>'}
       </div>
+      <div id="violationDetailArea" class="mt-20"></div>
     `;
   } catch (error) {
     console.error('AntiCheat error:', error);
-    content.innerHTML = `<div class="card danger-border"><h3>Error Loading Violations</h3></div>`;
+    content.innerHTML = `<div class="card danger-border"><h3>Error Loading Summary</h3></div>`;
   }
 }
+
+async function viewAssessmentViolations(assessmentId, title) {
+    const area = document.getElementById('violationDetailArea');
+    if (!area) return;
+    area.innerHTML = `<div class="loading-spinner"></div>`;
+    area.scrollIntoView({ behavior: 'smooth' });
+
+    try {
+        const violations = await SupabaseDB.getViolations(assessmentId, null, null, { limit: 2000 });
+
+        // Group by student
+        const studentMap = {};
+        violations.forEach(v => {
+            if (!studentMap[v.user_email]) {
+                studentMap[v.user_email] = {
+                    email: v.user_email,
+                    violations: [],
+                    score: 0,
+                    critical: 0
+                };
+            }
+            studentMap[v.user_email].violations.push(v);
+            studentMap[v.user_email].score += (v.score || 0);
+            if (v.severity === 'CRITICAL') studentMap[v.user_email].critical++;
+        });
+
+        const students = Object.values(studentMap).sort((a,b) => b.score - a.score);
+
+        area.innerHTML = `
+            <div class="card">
+                <div class="flex-between mb-20">
+                    <h3 class="m-0">Assessment: ${escapeHtml(title)}</h3>
+                    <button class="button secondary tiny w-auto" onclick="document.getElementById('violationDetailArea').innerHTML=''">Close Details</button>
+                </div>
+
+                <div class="p-0" style="overflow-x:auto">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Student Email</th>
+                                <th>Violations</th>
+                                <th>Total Score</th>
+                                <th>Severity</th>
+                                <th>Action</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${students.map(s => {
+                                const severity = s.critical > 0 ? 'Critical' : (s.score >= 10 ? 'High' : 'Low');
+                                return `
+                                <tr>
+                                    <td><strong class="small">${escapeHtml(s.email)}</strong></td>
+                                    <td>${s.violations.length}</td>
+                                    <td><span class="bold">${s.score}</span></td>
+                                    <td>
+                                        <span class="badge ${severity === 'Critical' ? 'badge-inactive' : (severity === 'High' ? 'badge-warn' : 'badge-active')}">
+                                            ${severity}
+                                        </span>
+                                    </td>
+                                    <td>
+                                        <button class="button tiny w-auto" onclick="viewStudentIntegrityReport('${assessmentId}', '${escapeAttr(s.email)}')">View Detailed Report</button>
+                                    </td>
+                                </tr>
+                                `;
+                            }).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <div id="integrityReportModalArea"></div>
+        `;
+
+    } catch (e) {
+        area.innerHTML = `<div class="card danger-border">Error loading details: ${e.message}</div>`;
+    }
+}
+
+async function viewStudentIntegrityReport(assessmentId, studentEmail) {
+    const backdrop = document.createElement('div');
+    backdrop.className = 'modal-backdrop';
+    backdrop.style.display = 'flex';
+    backdrop.innerHTML = `
+        <div class="modal" style="max-width: 900px">
+            <div class="flex-between mb-20">
+                <h3 class="m-0">Integrity Report: ${escapeHtml(studentEmail)}</h3>
+                <button class="button secondary tiny w-auto" onclick="this.closest('.modal-backdrop').remove()">✕</button>
+            </div>
+            <div id="reportContentArea"></div>
+        </div>
+    `;
+    document.body.appendChild(backdrop);
+
+    try {
+        const violations = await SupabaseDB.getViolations(assessmentId, studentEmail, null, { limit: 1000 });
+        UI.renderIntegrityReport('reportContentArea', violations, studentEmail);
+    } catch (e) {
+        document.getElementById('reportContentArea').innerHTML = `<div class="empty danger-text">Failed to load report: ${e.message}</div>`;
+    }
+}
+
+window.viewAssessmentViolations = viewAssessmentViolations;
+window.viewStudentIntegrityReport = viewStudentIntegrityReport;
 window.renderAntiCheat = renderAntiCheat;
 
 function openAntiCheatModal(type) {

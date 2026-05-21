@@ -97,29 +97,35 @@ async function renderDashboard() {
 let allUsers = [];
 let filteredUsers = [];
 
-async function renderUsers() {
+async function renderUsers(page = 0) {
 
   const content = document.getElementById('pageContent');
   if (!content) return;
 
+  const limit = 20;
+  const offset = page * limit;
+  const searchTerm = document.getElementById('userSearch')?.value || '';
+  const roleFilter = document.getElementById('roleFilter')?.value || 'all';
+
   try {
-    allUsers = await SupabaseDB.getUsers();
+    const { data: users, total } = await SupabaseDB.getUsers({
+        limit,
+        offset,
+        searchTerm,
+        role: roleFilter === 'all' ? null : roleFilter
+    });
+
+    allUsers = users; // For legacy compatibility in some handlers
+
     content.innerHTML = `
     <section>
       <div class="controls-row">
-        <input type="text" id="userSearch" class="search-input no-margin" placeholder="Search by name or email" oninput="filterUsers()">
-        <select id="roleFilter" class="filter-select no-margin" onchange="filterUsers()">
-          <option value="all">All Roles</option>
-          <option value="student">Student</option>
-          <option value="teacher">Teacher</option>
-          <option value="admin">Admin</option>
-        </select>
-        <select id="statusFilter" class="filter-select no-margin" onchange="filterUsers()">
-          <option value="all">All Statuses</option>
-          <option value="active">Active</option>
-          <option value="inactive">Inactive</option>
-          <option value="locked">Locked</option>
-          <option value="flagged">Flagged</option>
+        <input type="text" id="userSearch" class="search-input no-margin" placeholder="Search by name or email" value="${escapeAttr(searchTerm)}" oninput="renderUsers(0)">
+        <select id="roleFilter" class="filter-select no-margin" onchange="renderUsers(0)">
+          <option value="all" ${roleFilter === 'all' ? 'selected' : ''}>All Roles</option>
+          <option value="student" ${roleFilter === 'student' ? 'selected' : ''}>Student</option>
+          <option value="teacher" ${roleFilter === 'teacher' ? 'selected' : ''}>Teacher</option>
+          <option value="admin" ${roleFilter === 'admin' ? 'selected' : ''}>Admin</option>
         </select>
         <button class="button secondary" style="width:auto;" onclick="exportUsersCSV()">Export CSV</button>
       </div>
@@ -129,10 +135,17 @@ async function renderUsers() {
       </div>
       
       <div id="usersList" class="grid"></div>
+
+      ${Math.ceil(total / limit) > 1 ? `
+        <div class="flex-center gap-10 mt-30">
+            <button class="button secondary small w-auto" ${page === 0 ? 'disabled' : ''} onclick="renderUsers(${page - 1})">Previous</button>
+            <span class="small">Page ${page + 1} of ${Math.ceil(total / limit)} (${total} Total)</span>
+            <button class="button secondary small w-auto" ${page >= Math.ceil(total / limit) - 1 ? 'disabled' : ''} onclick="renderUsers(${page + 1})">Next</button>
+        </div>
+      ` : ''}
     </section>
     `;
-    filteredUsers = allUsers;
-    displayUsers(allUsers);
+    displayUsers(users);
   } catch (error) {
     console.error('Users error:', error);
     content.innerHTML = `
@@ -145,31 +158,6 @@ async function renderUsers() {
   }
 }
 
-function filterUsers() {
-  const searchTerm = document.getElementById('userSearch').value.toLowerCase();
-  const roleFilter = document.getElementById('roleFilter').value;
-  const statusFilter = document.getElementById('statusFilter').value;
-
-  filteredUsers = allUsers.filter(user => {
-    const name = user.full_name || '';
-    const email = user.email || '';
-    const matchesSearch = name.toLowerCase().includes(searchTerm) || 
-                          email.toLowerCase().includes(searchTerm);
-    const matchesRole = roleFilter === 'all' || user.role === roleFilter;
-    
-    let matchesStatus = true;
-    if (statusFilter !== 'all') {
-      if (statusFilter === 'active') matchesStatus = user.active;
-      else if (statusFilter === 'inactive') matchesStatus = !user.active;
-      else if (statusFilter === 'flagged') matchesStatus = user.flagged;
-      else if (statusFilter === 'locked') matchesStatus = isAccountLocked(user);
-    }
-
-    return matchesSearch && matchesRole && matchesStatus;
-  });
-
-  displayUsers(filteredUsers);
-}
 
 function displayUsers(users) {
   const list = document.getElementById('usersList');
@@ -410,7 +398,7 @@ async function renderResets() {
   if (!content) return;
 
   try {
-    const users = await SupabaseDB.getUsers();
+    const { data: users } = await SupabaseDB.getUsers({ limit: 1000 }); // Fetch more for reset requests as they are few but spread out
     const pendingResets = users.filter(u => u.reset_request && u.reset_request.status === 'pending');
     content.innerHTML = `
     <section>
@@ -735,7 +723,7 @@ async function renderManagement() {
 }
 
 async function previewCleanup() {
-  const [users, courses] = await Promise.all([SupabaseDB.getUsers(), SupabaseDB.getCourses()]);
+  const [{ data: users }, courses] = await Promise.all([SupabaseDB.getUsers({ limit: 1000 }), SupabaseDB.getCourses()]);
   const inactiveUsers = users.filter(u => !u.active);
   const draftCourses = courses.filter(c => c.status === 'draft');
 
@@ -756,7 +744,7 @@ async function previewCleanup() {
 async function executeCleanup() {
   if (!confirm('Are you sure? This action is irreversible.')) return;
   try {
-    const [users, courses] = await Promise.all([SupabaseDB.getUsers(), SupabaseDB.getCourses()]);
+    const [{ data: users }, courses] = await Promise.all([SupabaseDB.getUsers({ limit: 1000 }), SupabaseDB.getCourses()]);
     const inactiveUsers = users.filter(u => !u.active);
     const draftCourses = courses.filter(c => c.status === 'draft');
 
@@ -773,7 +761,7 @@ async function executeCleanup() {
 }
 
 async function exportBackup() {
-  const [users, courses, assigns] = await Promise.all([SupabaseDB.getUsers(), SupabaseDB.getCourses(), SupabaseDB.getAssignments()]);
+  const [{ data: users }, courses, assigns] = await Promise.all([SupabaseDB.getUsers({ limit: 1000 }), SupabaseDB.getCourses(), SupabaseDB.getAssignments()]);
   const data = { users, courses, assigns, exportedAt: new Date().toISOString() };
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
