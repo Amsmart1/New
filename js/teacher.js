@@ -23,7 +23,7 @@ async function renderDashboard() {
       SupabaseDB.getCount('courses', q => q.eq('teacher_email', user.email)),
       SupabaseDB.getCount('assignments', q => q.eq('teacher_email', user.email)),
       SupabaseDB.getCount('submissions', q => q.eq('assignments.teacher_email', user.email), '*, assignments!inner(*)'),
-      SupabaseDB.getCount('submissions', q => q.eq('assignments.teacher_email', user.email).eq('status', 'submitted'), '*, assignments!inner(*)')
+      SupabaseDB.getCount('submissions', q => q.eq('assignments.teacher_email', user.email).or('status.eq.submitted,regrade_request.not.is.null'), '*, assignments!inner(*)')
     ]);
 
     content.innerHTML = `
@@ -362,13 +362,12 @@ async function renderGrading(page = 0) {
   try {
     const user = await SessionManager.getCurrentUser();
     // Optimization: Use server-side filtering for submitted status and regrade requests
-    const { data: submittedSubs, total } = await SupabaseDB.getSubmissions(null, null, user.email, {
+    const [{ data: submittedSubs, total }, { data: assignments }] = await Promise.all([
+      SupabaseDB.getSubmissions(null, null, user.email, {
         limit,
         offset,
         pendingGradingOnly: true
-    });
-
-    const [{ data: assignments }] = await Promise.all([
+      }),
       SupabaseDB.getAssignments(user.email, null, null, { limit: 1000 })
     ]);
 
@@ -379,47 +378,36 @@ async function renderGrading(page = 0) {
         <h2 class="m-0">Grading Queue</h2>
         <div class="small text-muted">${total} Submissions Pending</div>
       </div>
+      <div class="card p-0" style="overflow-x:auto">
+        <table class="m-0">
+          <thead>
+            <tr>
+              <th>Assignment</th>
+              <th>Student</th>
+              <th>Submitted</th>
+              <th>Status</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${submittedSubs.map(s => {
+              const assignment = assignments.find(a => a.id === s.assignment_id);
+              const isRegrade = !!s.regrade_request;
+              return `
+              <tr>
+                <td><strong>${escapeHtml(assignment?.title || 'Unknown')}</strong></td>
+                <td>${escapeHtml(s.student_email)}</td>
+                <td>${new Date(s.submitted_at).toLocaleString()}</td>
+                <td>${isRegrade ? '<span class="badge badge-warn">REGRADE REQ</span>' : '<span class="badge badge-active">NEW SUB</span>'}</td>
+                <td><button class="button small w-auto" onclick="gradeSubmission('${escapeAttr(s.assignment_id)}', '${escapeAttr(s.student_email)}')">Review</button></td>
+              </tr>
+            `;}).join('')}
+          </tbody>
+        </table>
+      </div>
     `;
 
-    // Group by assignment for display
-    const groups = {};
-    submittedSubs.forEach(s => {
-        if (!groups[s.assignment_id]) groups[s.assignment_id] = [];
-        groups[s.assignment_id].push(s);
-    });
-
     let hasPending = submittedSubs.length > 0;
-
-    Object.keys(groups).forEach(assignmentId => {
-        const assignment = assignments.find(a => a.id === assignmentId);
-        const groupSubs = groups[assignmentId];
-
-        gradingHtml += `
-          <div class="card">
-            <div class="flex-between">
-              <h3 class="m-0">${escapeHtml(assignment?.title || 'Unknown Assignment')}</h3>
-              <span class="badge">${groupSubs.length} in this page</span>
-            </div>
-            <div class="p-0 mt-10" style="overflow-x:auto">
-                <table>
-                  <thead><tr><th>Student</th><th>Submitted</th><th>Status</th><th>Action</th></tr></thead>
-                  <tbody>
-                    ${groupSubs.map(s => {
-                      const isRegrade = !!s.regrade_request;
-                      return `
-                      <tr>
-                        <td>${escapeHtml(s.student_email)}</td>
-                        <td>${new Date(s.submitted_at).toLocaleString()}</td>
-                        <td>${isRegrade ? '<span class="badge badge-warn">REGRADE REQ</span>' : '<span class="badge badge-active">NEW SUB</span>'}</td>
-                        <td><button class="button small w-auto" onclick="gradeSubmission('${escapeAttr(s.assignment_id)}', '${escapeAttr(s.student_email)}')">Review</button></td>
-                      </tr>
-                    `;}).join('')}
-                  </tbody>
-                </table>
-            </div>
-          </div>
-        `;
-    });
 
     if (totalPages > 1) {
         gradingHtml += `

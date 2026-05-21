@@ -6,9 +6,27 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBh
 // Initialize Supabase client
 if (!window.supabase) {
     console.error('Supabase library not loaded. Please check your internet connection or CDN availability.');
-    alert('Critical Error: Supabase connection could not be established.');
+    // Standard failover to prevent immediate crashes during script initialization
 }
-const { createClient } = window.supabase || { createClient: () => ({ from: () => ({ select: () => ({ eq: () => ({ single: () => ({}) }) }) }) }) };
+const { createClient } = window.supabase || {
+    createClient: () => ({
+        from: () => ({
+            select: () => ({
+                eq: () => ({ single: () => ({}), maybeSingle: () => ({}), order: () => ({ range: () => ({}) }) }),
+                or: () => ({ order: () => ({ range: () => ({}) }) }),
+                in: () => ({ order: () => ({ range: () => ({}) }) }),
+                order: () => ({ range: () => ({}) })
+            }),
+            insert: () => ({ select: () => ({}) }),
+            update: () => ({ eq: () => ({ select: () => ({}) }) }),
+            upsert: () => ({ select: () => ({}) }),
+            delete: () => ({ eq: () => ({}) }),
+            rpc: () => ({})
+        }),
+        storage: { from: () => ({ upload: () => ({}), getPublicUrl: () => ({}), remove: () => ({}) }) },
+        auth: { getSession: () => ({ data: { session: null } }), onAuthStateChange: () => ({ data: { subscription: { unsubscribe: () => {} } } }) }
+    })
+};
 
 // Standard client options with dynamic header injection via custom fetch
 const clientOptions = {
