@@ -363,6 +363,7 @@ label {
 
 .toast.info { background: var(--p); }
 .toast.error { background: var(--danger); }
+.toast.danger { background: var(--danger); }
 .toast.success { background: var(--ok); }
 .toast.warn { background: var(--warn); }
 
