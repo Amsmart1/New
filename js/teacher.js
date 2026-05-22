@@ -169,11 +169,12 @@ function showCourseForm(course = null) {
 }
 async function editCourse(id) {
   const user = await SessionManager.getCurrentUser();
-  const [{ data: courses }, lessons, { data: courseAssignments }] = await Promise.all([
-    SupabaseDB.getCourses(user.email),
+  const [{ data: courses }, lessonRes, { data: courseAssignments }] = await Promise.all([
+    SupabaseDB.getCourses(user.email, null, { limit: 1000 }),
     SupabaseDB.getLessons(id),
-    SupabaseDB.getAssignments(user.email, id)
+    SupabaseDB.getAssignments(user.email, id, null, { limit: 1000 })
   ]);
+  const lessons = lessonRes.data || [];
   const course = (courses || []).find(c => c.id === id);
   const content = document.getElementById('pageContent');
   if (!content) return;
@@ -254,7 +255,12 @@ function showLessonForm(courseId, lesson = null) {
     await SupabaseDB.saveLesson(data); editCourse(courseId);
   });
 }
-async function editLesson(lessonId, courseId) { const lessons = await SupabaseDB.getLessons(courseId); const lesson = lessons.find(l => l.id === lessonId); showLessonForm(courseId, lesson); }
+async function editLesson(lessonId, courseId) {
+  const lessonRes = await SupabaseDB.getLessons(courseId);
+  const lessons = lessonRes.data || [];
+  const lesson = lessons.find(l => l.id === lessonId);
+  showLessonForm(courseId, lesson);
+}
 async function deleteLessonById(id, courseId) {
   if (confirm('Delete?')) {
     try {
@@ -1341,10 +1347,11 @@ async function renderLiveClasses() {
 
   try {
     const user = await SessionManager.getCurrentUser();
-    const [liveClasses, { data: courses }] = await Promise.all([
-      SupabaseDB.getLiveClasses(null, user.email),
+    const [liveRes, { data: courses }] = await Promise.all([
+      SupabaseDB.getLiveClasses(null, user.email, null, { limit: 1000 }),
       SupabaseDB.getCourses(user.email, null, { limit: 1000 })
     ]);
+    const liveClasses = liveRes.data || [];
 
     const activeClass = liveClasses.find(liveClass => liveClass.status === 'live');
 
@@ -1443,10 +1450,11 @@ async function showLiveClassForm(liveClass = null) {
 
   try {
     const user = await SessionManager.getCurrentUser();
-    const [{ data: courses }, allLiveClasses] = await Promise.all([
+    const [{ data: courses }, liveRes] = await Promise.all([
         SupabaseDB.getCourses(user.email, null, { limit: 1000 }),
-        SupabaseDB.getLiveClasses(null, user.email)
+        SupabaseDB.getLiveClasses(null, user.email, null, { limit: 1000 })
     ]);
+    const allLiveClasses = liveRes.data || [];
 
     area.innerHTML = `
       <div class="card">
@@ -1819,8 +1827,48 @@ async function deleteLiveClass(id) {
 }
 
 async function viewAttendance(classId) {
-  const att = await SupabaseDB.getAttendance(classId);
-  alert(`Attendance:\n${att.map(a => `${a.student_email}: ${Math.floor(a.duration / 60)} mins (${a.is_present ? 'Present' : 'Absent'})`).join('\n') || 'No records yet.'}`);
+  try {
+    const { data: att } = await SupabaseDB.getAttendance(classId, null, { limit: 1000 });
+
+    const content = `
+      <div class="modal-backdrop" onclick="this.remove()">
+        <div class="modal-content" onclick="event.stopPropagation()">
+          <div class="flex-between mb-20">
+            <h3 class="m-0">Attendance Report</h3>
+            <button class="icon-button" onclick="this.closest('.modal-backdrop').remove()">&times;</button>
+          </div>
+          <div class="table-container">
+            <table>
+              <thead>
+                <tr>
+                  <th>Student</th>
+                  <th>Join Time</th>
+                  <th>Duration</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${att.length > 0 ? att.map(a => `
+                  <tr>
+                    <td>${escapeHtml(a.student_email)}</td>
+                    <td>${new Date(a.join_time).toLocaleString()}</td>
+                    <td>${Math.floor(a.duration / 60)} mins</td>
+                    <td><span class="status-badge ${a.is_present ? 'success' : 'danger'}">${a.is_present ? 'Present' : 'Absent'}</span></td>
+                  </tr>
+                `).join('') : '<tr><td colspan="4" class="text-center">No records found</td></tr>'}
+              </tbody>
+            </table>
+          </div>
+          <div class="mt-20 flex-end">
+            <button class="button w-auto" onclick="this.closest('.modal-backdrop').remove()">Close</button>
+          </div>
+        </div>
+      </div>
+    `;
+    document.body.insertAdjacentHTML('beforeend', content);
+  } catch (e) {
+    alert('Failed to load attendance: ' + e.message);
+  }
 }
 
 window.showLiveClassForm = showLiveClassForm;
@@ -2489,7 +2537,8 @@ async function renderMaterials() {
     const user = await SessionManager.getCurrentUser();
     const { data: courses } = await SupabaseDB.getCourses(user.email, null, { limit: 1000 });
     const courseIds = (courses || []).map(c => c.id);
-    const materials = await SupabaseDB.getMaterials(null, courseIds);
+    const materialsRes = await SupabaseDB.getMaterials(null, courseIds, { limit: 1000 });
+    const materials = materialsRes.data || [];
 
     content.innerHTML = `
       <div class="card flex-between">

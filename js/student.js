@@ -35,7 +35,8 @@ async function updateHeaderStats() {
 
 async function _getDueSoonCount(email) {
   try {
-    const enrollments = await SupabaseDB.getEnrollments(email);
+    const enrollRes = await SupabaseDB.getEnrollments(email);
+    const enrollments = enrollRes.data || [];
     const enrolledCourseIds = enrollments.map(e => e.course_id);
     if (enrolledCourseIds.length === 0) return 0;
 
@@ -68,10 +69,11 @@ async function renderCourses(page = 0) {
 
   try {
     const user = await SessionManager.getCurrentUser();
-    const [{ data: courses, total }, enrollments] = await Promise.all([
+    const [{ data: courses, total }, enrollRes] = await Promise.all([
       SupabaseDB.getCourses(null, 'published', { limit, offset, searchTerm }),
       SupabaseDB.getEnrollments(user.email)
     ]);
+    const enrollments = enrollRes.data || [];
 
     const totalPages = Math.ceil(total / limit);
 
@@ -147,10 +149,11 @@ async function renderMyCourses(page = 0) {
 
   try {
     const user = await SessionManager.getCurrentUser();
-    const [{ data: myCourses, total }, enrollments] = await Promise.all([
+    const [{ data: myCourses, total }, enrollRes] = await Promise.all([
       SupabaseDB.getEnrolledCourses(user.email, { limit, offset }),
       SupabaseDB.getEnrollments(user.email)
     ]);
+    const enrollments = enrollRes.data || [];
 
     const totalPages = Math.ceil(total / limit);
 
@@ -218,10 +221,11 @@ async function viewCourse(courseId, fromMyCourses = false) {
 
   // Ensure any active study session is stopped if navigating to course view
   if (studyInterval) await stopStudySession();
-  const [lessons, { data: allCourseAssignments }] = await Promise.all([
+  const [lessonRes, { data: allCourseAssignments }] = await Promise.all([
       SupabaseDB.getLessons(courseId),
-      SupabaseDB.getAssignments(null, courseId)
+      SupabaseDB.getAssignments(null, courseId, null, { limit: 1000 })
   ]);
+  const lessons = lessonRes.data || [];
   const courseAssignments = (allCourseAssignments || []).filter(a => a.status === 'published');
   const container = document.getElementById('pageContent');
   if (!container) return;
@@ -258,7 +262,8 @@ async function viewCourse(courseId, fromMyCourses = false) {
 }
 async function showLesson(lessonId, courseId, fromMyCourses = false) {
 
-  const lessons = await SupabaseDB.getLessons(courseId);
+  const lessonRes = await SupabaseDB.getLessons(courseId);
+  const lessons = lessonRes.data || [];
   const lesson = lessons.find(l => l.id === lessonId);
   const container = document.getElementById('pageContent');
   if (!container) return;
@@ -297,11 +302,12 @@ async function renderAssignments(openId = null, page = 0){
     const user = await SessionManager.getCurrentUser();
     if(!user || user.role!=='student'){ alert('Login as student'); window.location.href='index.html'; return; }
 
-    const enrollments = await SupabaseDB.getEnrollments(user.email);
+    const enrollRes = await SupabaseDB.getEnrollments(user.email);
+    const enrollments = enrollRes.data || [];
     const enrolledCourseIds = enrollments.map(e => e.course_id);
 
     const [{ data: courses }, { data: paginated, total }, { data: submissions }] = await Promise.all([
-      SupabaseDB.getEnrolledCourses(user.email),
+      SupabaseDB.getEnrolledCourses(user.email, { limit: 1000 }),
       SupabaseDB.getAssignments(null, null, enrolledCourseIds, { limit, offset }),
       SupabaseDB.getSubmissions(null, user.email)
     ]);
@@ -643,10 +649,11 @@ async function renderDashboardOverview() {
   try {
     const user = await SessionManager.getCurrentUser();
 
-    const [enrollments, gradedCount] = await Promise.all([
+    const [enrollRes, gradedCount] = await Promise.all([
       SupabaseDB.getEnrollments(user.email),
       SupabaseDB.getCount('submissions', q => q.eq('student_email', user.email).eq('status', 'graded'))
     ]);
+    const enrollments = enrollRes.data || [];
 
     const enrolledCourseIds = enrollments.map(e => e.course_id);
 
@@ -726,11 +733,13 @@ async function renderProgress() {
 
   try {
     const user = await SessionManager.getCurrentUser();
-    const [sessions, enrollments, { data: courses }] = await Promise.all([
-      SupabaseDB.getStudySessions(user.email),
+    const [sessionsRes, enrollRes, { data: courses }] = await Promise.all([
+      SupabaseDB.getStudySessions(user.email, { limit: 1000 }),
       SupabaseDB.getEnrollments(user.email),
-      SupabaseDB.getCourses()
+      SupabaseDB.getCourses(null, null, { limit: 1000 })
     ]);
+    const sessions = sessionsRes.data || [];
+    const enrollments = enrollRes.data || [];
 
   const totalSeconds = sessions.reduce((acc, s) => acc + s.duration, 0);
   const h = Math.floor(totalSeconds / 3600);
@@ -976,13 +985,15 @@ async function renderMaterials() {
 
   try {
     const user = await SessionManager.getCurrentUser();
-    const enrollments = await SupabaseDB.getEnrollments(user.email);
+    const enrollRes = await SupabaseDB.getEnrollments(user.email);
+    const enrollments = enrollRes.data || [];
     const enrolledIds = enrollments.map(e => e.course_id);
 
-    const [{ data: myCourses }, myMaterials] = await Promise.all([
+    const [{ data: myCourses }, materialsRes] = await Promise.all([
       SupabaseDB.getEnrolledCourses(user.email, { limit: 1000 }),
-      SupabaseDB.getMaterials(null, enrolledIds)
+      SupabaseDB.getMaterials(null, enrolledIds, { limit: 1000 })
     ]);
+    const myMaterials = materialsRes.data || [];
 
     content.innerHTML = `
       <h2 class="m-0">Course Materials</h2>
@@ -1022,7 +1033,8 @@ async function renderDiscussions() {
 
   try {
     const user = await SessionManager.getCurrentUser();
-    const enrollments = await SupabaseDB.getEnrollments(user.email);
+    const enrollRes = await SupabaseDB.getEnrollments(user.email);
+    const enrollments = enrollRes.data || [];
     const { data: courses } = await SupabaseDB.getCourses(null, null, { limit: 1000 });
     const myCourses = (courses || []).filter(c => enrollments.some(e => e.course_id === c.id));
 
@@ -1175,7 +1187,8 @@ async function renderCertificates() {
 
   try {
     const user = await SessionManager.getCurrentUser();
-    const certs = await SupabaseDB.getCertificates(user.email);
+    const certsRes = await SupabaseDB.getCertificates(user.email, { limit: 1000 });
+    const certs = certsRes.data || [];
 
   container.innerHTML = `
     <h2 class="m-0">My Certificates</h2>
@@ -1204,7 +1217,8 @@ async function renderPlanner() {
 
   try {
     const user = await SessionManager.getCurrentUser();
-    const items = await SupabaseDB.getPlannerItems(user.email);
+    const itemsRes = await SupabaseDB.getPlannerItems(user.email, { limit: 1000 });
+    const items = itemsRes.data || [];
 
     const now = new Date();
     now.setHours(0,0,0,0);
@@ -1283,7 +1297,8 @@ async function renderPlanner() {
 async function togglePlannerItem(id, completed) {
   try {
     const user = await SessionManager.getCurrentUser();
-    const items = await SupabaseDB.getPlannerItems(user.email);
+    const itemsRes = await SupabaseDB.getPlannerItems(user.email, { limit: 1000 });
+    const items = itemsRes.data || [];
     const item = items.find(i => i.id === id);
     if (item) {
         item.completed = completed;
@@ -1324,10 +1339,12 @@ async function renderLiveClasses() {
 
   try {
     const user = await SessionManager.getCurrentUser();
-    const enrollments = await SupabaseDB.getEnrollments(user.email);
+    const enrollRes = await SupabaseDB.getEnrollments(user.email);
+    const enrollments = enrollRes.data || [];
     const enrolledCourseIds = enrollments.map(e => e.course_id);
 
-    const myClasses = await SupabaseDB.getLiveClasses(null, null, enrolledCourseIds);
+    const liveRes = await SupabaseDB.getLiveClasses(null, null, enrolledCourseIds, { limit: 1000 });
+    const myClasses = liveRes.data || [];
     const now = Date.now();
 
     content.innerHTML = `
@@ -1546,7 +1563,8 @@ async function stopAttendanceTracking(classId) {
     const duration = Math.floor((leaveTime - attendanceStartTime) / 1000);
 
     // Fetch the live class to get total duration
-    const classes = await SupabaseDB.getLiveClasses();
+    const liveRes = await SupabaseDB.getLiveClasses(null, null, null, { limit: 1000 });
+    const classes = liveRes.data || [];
     const liveClass = classes.find(x => x.id === classId);
     let isPresent = false;
     if (liveClass) {
@@ -1558,7 +1576,8 @@ async function stopAttendanceTracking(classId) {
     }
 
     const user = await SessionManager.getCurrentUser();
-    const records = await SupabaseDB.getAttendance(classId, user.email);
+    const attRes = await SupabaseDB.getAttendance(classId, user.email);
+    const records = attRes.data || [];
     const existing = records.find(r => r.id === attendanceRecordId);
 
     await SupabaseDB.saveAttendance({
@@ -1700,7 +1719,8 @@ async function renderQuizzes(openId = null, page = 0) {
 
   try {
     const user = await SessionManager.getCurrentUser();
-    const enrollments = await SupabaseDB.getEnrollments(user.email);
+    const enrollRes = await SupabaseDB.getEnrollments(user.email);
+    const enrollments = enrollRes.data || [];
     const enrolledCourseIds = (enrollments || []).map(e => e.course_id);
 
     const [{ data: allQuizzes, total }, { data: allSubs }, { data: courses }] = await Promise.all([

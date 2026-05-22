@@ -1226,7 +1226,11 @@ CREATE POLICY "Lessons: Teachers Manage" ON lessons FOR ALL USING (
 
 -- 4. Enrollments Table
 DROP POLICY IF EXISTS "Enrollments: User Access" ON enrollments;
-CREATE POLICY "Enrollments: User Access" ON enrollments FOR SELECT USING (student_email = get_auth_email() OR is_teacher() OR is_admin());
+CREATE POLICY "Enrollments: User Access" ON enrollments FOR SELECT USING (
+  student_email = get_auth_email() OR
+  is_admin() OR
+  (is_teacher() AND EXISTS (SELECT 1 FROM courses WHERE id = enrollments.course_id AND teacher_email = get_auth_email()))
+);
 DROP POLICY IF EXISTS "Enrollments: Self Enroll" ON enrollments;
 CREATE POLICY "Enrollments: Self Enroll" ON enrollments FOR INSERT WITH CHECK (student_email = get_auth_email());
 DROP POLICY IF EXISTS "Enrollments: Manage for Admins" ON enrollments;
@@ -1266,7 +1270,11 @@ CREATE POLICY "Live Classes: Teachers Manage" ON live_classes FOR ALL USING (tea
 
 -- 8. Attendance Table
 DROP POLICY IF EXISTS "Attendance: Access" ON attendance;
-CREATE POLICY "Attendance: Access" ON attendance FOR SELECT USING (student_email = get_auth_email() OR is_teacher() OR is_admin());
+CREATE POLICY "Attendance: Access" ON attendance FOR SELECT USING (
+  student_email = get_auth_email() OR
+  is_admin() OR
+  (is_teacher() AND EXISTS (SELECT 1 FROM live_classes WHERE id = attendance.live_class_id AND teacher_email = get_auth_email()))
+);
 DROP POLICY IF EXISTS "Attendance: Insert" ON attendance;
 CREATE POLICY "Attendance: Insert" ON attendance FOR INSERT WITH CHECK (student_email = get_auth_email());
 
@@ -1332,7 +1340,14 @@ CREATE POLICY "System Logs: Insert" ON system_logs FOR INSERT WITH CHECK (true);
 
 -- 17. Violations Table
 DROP POLICY IF EXISTS "Violations: User Access" ON violations;
-CREATE POLICY "Violations: User Access" ON violations FOR SELECT USING (user_email = get_auth_email() OR is_teacher() OR is_admin());
+CREATE POLICY "Violations: User Access" ON violations FOR SELECT USING (
+  user_email = get_auth_email() OR
+  is_admin() OR
+  (is_teacher() AND (
+    EXISTS (SELECT 1 FROM assignments WHERE id = violations.assessment_id AND assessment_type = 'assignment' AND teacher_email = get_auth_email()) OR
+    EXISTS (SELECT 1 FROM quizzes WHERE id = violations.assessment_id AND assessment_type = 'quiz' AND teacher_email = get_auth_email())
+  ))
+);
 DROP POLICY IF EXISTS "Violations: Insert" ON violations;
 CREATE POLICY "Violations: Insert" ON violations FOR INSERT WITH CHECK (user_email = get_auth_email());
 
@@ -1346,7 +1361,11 @@ CREATE POLICY "Study Sessions: User Access" ON study_sessions FOR ALL USING (use
 
 -- 20. Certificates Table
 DROP POLICY IF EXISTS "Certificates: User Access" ON certificates;
-CREATE POLICY "Certificates: User Access" ON certificates FOR SELECT USING (student_email = get_auth_email() OR is_teacher() OR is_admin());
+CREATE POLICY "Certificates: User Access" ON certificates FOR SELECT USING (
+  student_email = get_auth_email() OR
+  is_admin() OR
+  (is_teacher() AND EXISTS (SELECT 1 FROM courses WHERE id = certificates.course_id AND teacher_email = get_auth_email()))
+);
 
 -- 21. Invites Table
 DROP POLICY IF EXISTS "Invites: Manage for Admins" ON invites;

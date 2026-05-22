@@ -32,31 +32,32 @@ class CalendarManager {
             if (this.user.role === 'teacher') {
                 const [aRes, lRes, qRes] = await Promise.all([
                     SupabaseDB.getAssignments(this.user.email, null, null, { limit: 1000 }),
-                    SupabaseDB.getLiveClasses(null, this.user.email),
+                    SupabaseDB.getLiveClasses(null, this.user.email, null, { limit: 1000 }),
                     SupabaseDB.getQuizzes(null, this.user.email, null, { limit: 1000 })
                 ]);
                 assignments = aRes.data || [];
-                liveClasses = lRes || [];
+                liveClasses = lRes.data || [];
                 quizzes = qRes.data || [];
             } else {
-                const enrollments = await SupabaseDB.getEnrollments(this.user.email);
-                const enrolledIds = (enrollments || []).map(e => e.course_id);
+                const enrollRes = await SupabaseDB.getEnrollments(this.user.email);
+                const enrollments = enrollRes.data || [];
+                const enrolledIds = enrollments.map(e => e.course_id);
 
-                const promises = [SupabaseDB.getPlannerItems(this.user.email)];
+                const promises = [SupabaseDB.getPlannerItems(this.user.email, { limit: 1000 })];
                 if (enrolledIds.length > 0) {
                     promises.push(SupabaseDB.getAssignments(null, null, enrolledIds, { limit: 1000 }));
-                    promises.push(SupabaseDB.getLiveClasses(null, null, enrolledIds));
+                    promises.push(SupabaseDB.getLiveClasses(null, null, enrolledIds, { limit: 1000 }));
                     promises.push(SupabaseDB.getQuizzes(null, null, enrolledIds, { limit: 1000 }));
                 } else {
                     promises.push(Promise.resolve({ data: [] }));
-                    promises.push(Promise.resolve([]));
+                    promises.push(Promise.resolve({ data: [] }));
                     promises.push(Promise.resolve({ data: [] }));
                 }
 
                 const results = await Promise.all(promises);
-                plannerItems = results[0] || [];
+                plannerItems = results[0].data || [];
                 assignments = results[1].data || [];
-                liveClasses = results[2] || [];
+                liveClasses = results[2].data || [];
                 quizzes = results[3].data || [];
             }
         } catch (e) {

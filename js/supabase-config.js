@@ -148,24 +148,24 @@ class SupabaseDB {
 
     static async getUsersByRole(role) {
         return this._request(async () => {
-            const { data, error } = await supabaseClient
+            const { data, count, error } = await supabaseClient
                 .from('users')
-                .select('*')
+                .select('*', { count: 'exact' })
                 .eq('role', role);
             if (error) throw error;
-            return data || [];
+            return { data: data || [], total: count || 0 };
         });
     }
 
     static async getEnrolledStudents(courseIds) {
-        if (!courseIds || courseIds.length === 0) return [];
+        if (!courseIds || courseIds.length === 0) return { data: [], total: 0 };
         return this._request(async () => {
-            const { data, error } = await supabaseClient
+            const { data, count, error } = await supabaseClient
                 .from('users')
-                .select('*, enrollments!inner(*)')
+                .select('*, enrollments!inner(*)', { count: 'exact' })
                 .in('enrollments.course_id', courseIds);
             if (error) throw error;
-            return data || [];
+            return { data: data || [], total: count || 0 };
         });
     }
 
@@ -295,7 +295,7 @@ class SupabaseDB {
     static async deleteUser(email) {
         try {
             // Cleanup files before deleting user record
-            const [certs, { data: submissions }] = await Promise.all([
+            const [{ data: certs }, { data: submissions }] = await Promise.all([
                 this.getCertificates(email),
                 this.getSubmissions(null, email)
             ]);
@@ -538,12 +538,12 @@ class SupabaseDB {
     // Enrollment operations
     static async getEnrollments(studentEmail) {
         return _cache.fetch(`enrollments_${studentEmail}`, async () => {
-            const { data, error } = await supabaseClient
+            const { data, count, error } = await supabaseClient
                 .from('enrollments')
-                .select('*')
+                .select('*', { count: 'exact' })
                 .eq('student_email', studentEmail);
             if (error) throw error;
-            return data || [];
+            return { data: data || [], total: count || 0 };
         });
     }
 
@@ -610,7 +610,7 @@ class SupabaseDB {
                 .match({ course_id: courseId, user_email: studentEmail });
 
             // Delete attendance
-            const liveClasses = await this.getLiveClasses(courseId);
+            const { data: liveClasses } = await this.getLiveClasses(courseId);
             const classIds = liveClasses.map(lc => lc.id);
             if (classIds.length > 0) {
                 await supabaseClient
@@ -662,7 +662,7 @@ class SupabaseDB {
 
     static async updateCourseProgress(courseId, studentEmail) {
         try {
-            const [lessons, { data: courseAssignments }, { data: courseQuizzes }, { data: submissions }, { data: quizSubs }] = await Promise.all([
+            const [{ data: lessons }, { data: courseAssignments }, { data: courseQuizzes }, { data: submissions }, { data: quizSubs }] = await Promise.all([
                 this.getLessons(courseId),
                 this.getAssignments(null, courseId),
                 this.getQuizzes(courseId),
@@ -759,7 +759,7 @@ class SupabaseDB {
 
     static async deleteCourse(id) {
         try {
-            const [materials, { data: assignments }, liveClasses, certs] = await Promise.all([
+            const [{ data: materials }, { data: assignments }, { data: liveClasses }, certs] = await Promise.all([
                 this.getMaterials(id),
                 this.getAssignments(null, id),
                 this.getLiveClasses(id),
@@ -796,13 +796,15 @@ class SupabaseDB {
 
     // Lesson operations
     static async getLessons(courseId) {
-        const { data, error } = await supabaseClient
-            .from('lessons')
-            .select('*')
-            .eq('course_id', courseId)
-            .order('order_index', { ascending: true });
-        if (error) throw error;
-        return data || [];
+        return this._request(async () => {
+            const { data, count, error } = await supabaseClient
+                .from('lessons')
+                .select('*', { count: 'exact' })
+                .eq('course_id', courseId)
+                .order('order_index', { ascending: true });
+            if (error) throw error;
+            return { data: data || [], total: count || 0 };
+        });
     }
 
     static async saveLesson(lesson) {
@@ -833,14 +835,20 @@ class SupabaseDB {
     }
 
     // Discussion operations
-    static async getMaterials(courseId = null, courseIds = null) {
-        if (courseIds && courseIds.length === 0) return [];
-        let query = supabaseClient.from('materials').select('*');
-        if (courseId) query = query.eq('course_id', courseId);
-        if (courseIds && courseIds.length > 0) query = query.in('course_id', courseIds);
-        const { data, error } = await query;
-        if (error) throw error;
-        return data || [];
+    static async getMaterials(courseId = null, courseIds = null, options = {}) {
+        if (courseIds && courseIds.length === 0) return { data: [], total: 0 };
+        const { limit = 50, offset = 0 } = options;
+        return this._request(async () => {
+            let query = supabaseClient.from('materials').select('*', { count: 'exact' });
+            if (courseId) query = query.eq('course_id', courseId);
+            if (courseIds && courseIds.length > 0) query = query.in('course_id', courseIds);
+
+            const { data, count, error } = await query
+                .order('created_at', { ascending: false })
+                .range(offset, offset + limit - 1);
+            if (error) throw error;
+            return { data: data || [], total: count || 0 };
+        });
     }
 
     static async saveMaterial(material) {
@@ -1063,27 +1071,35 @@ class SupabaseDB {
         return data?.[0];
     }
 
-    static async getNotifications(userEmail) {
-        return _cache.fetch(`notifications_${userEmail}`, async () => {
-            const { data, error } = await supabaseClient
-                .from('notifications')
-                .select('*')
-                .eq('user_email', userEmail)
-                .order('created_at', { ascending: false });
-            if (error) throw error;
-            return data || [];
+    static async getNotifications(userEmail, options = {}) {
+        const { limit = 50, offset = 0 } = options;
+        return _cache.fetch(`notifications_${userEmail}_${limit}_${offset}`, async () => {
+            return this._request(async () => {
+                const { data, count, error } = await supabaseClient
+                    .from('notifications')
+                    .select('*', { count: 'exact' })
+                    .eq('user_email', userEmail)
+                    .order('created_at', { ascending: false })
+                    .range(offset, offset + limit - 1);
+                if (error) throw error;
+                return { data: data || [], total: count || 0 };
+            });
         });
     }
 
-    static async getBroadcasts() {
-        return _cache.fetch('broadcasts_active', async () => {
-            const { data, error } = await supabaseClient
-                .from('broadcasts')
-                .select('*')
-                .gt('expires_at', new Date().toISOString())
-                .order('created_at', { ascending: false });
-            if (error) throw error;
-            return data || [];
+    static async getBroadcasts(options = {}) {
+        const { limit = 50, offset = 0 } = options;
+        return _cache.fetch(`broadcasts_active_${limit}_${offset}`, async () => {
+            return this._request(async () => {
+                const { data, count, error } = await supabaseClient
+                    .from('broadcasts')
+                    .select('*', { count: 'exact' })
+                    .gt('expires_at', new Date().toISOString())
+                    .order('created_at', { ascending: false })
+                    .range(offset, offset + limit - 1);
+                if (error) throw error;
+                return { data: data || [], total: count || 0 };
+            });
         });
     }
 
@@ -1164,24 +1180,32 @@ class SupabaseDB {
         return data?.[0];
     }
 
-    static async getCertificates(studentEmail) {
-        const { data, error } = await supabaseClient
-            .from('certificates')
-            .select('*, courses(*)')
-            .eq('student_email', studentEmail);
-        if (error) throw error;
-        return data || [];
+    static async getCertificates(studentEmail, options = {}) {
+        const { limit = 50, offset = 0 } = options;
+        return this._request(async () => {
+            const { data, count, error } = await supabaseClient
+                .from('certificates')
+                .select('*, courses(*)', { count: 'exact' })
+                .eq('student_email', studentEmail)
+                .range(offset, offset + limit - 1);
+            if (error) throw error;
+            return { data: data || [], total: count || 0 };
+        });
     }
 
     // Planner operations
-    static async getPlannerItems(email) {
-        const { data, error } = await supabaseClient
-            .from('planner')
-            .select('*')
-            .eq('user_email', email)
-            .order('due_date', { ascending: true });
-        if (error) throw error;
-        return data || [];
+    static async getPlannerItems(email, options = {}) {
+        const { limit = 100, offset = 0 } = options;
+        return this._request(async () => {
+            const { data, count, error } = await supabaseClient
+                .from('planner')
+                .select('*', { count: 'exact' })
+                .eq('user_email', email)
+                .order('due_date', { ascending: true })
+                .range(offset, offset + limit - 1);
+            if (error) throw error;
+            return { data: data || [], total: count || 0 };
+        });
     }
 
     static async savePlannerItem(item) {
@@ -1245,26 +1269,36 @@ class SupabaseDB {
         return data?.[0];
     }
 
-    static async getStudySessions(email) {
-        const { data, error } = await supabaseClient
-            .from('study_sessions')
-            .select('*')
-            .eq('user_email', email)
-            .order('started_at', { ascending: false });
-        if (error) throw error;
-        return data || [];
+    static async getStudySessions(email, options = {}) {
+        const { limit = 50, offset = 0 } = options;
+        return this._request(async () => {
+            const { data, count, error } = await supabaseClient
+                .from('study_sessions')
+                .select('*', { count: 'exact' })
+                .eq('user_email', email)
+                .order('started_at', { ascending: false })
+                .range(offset, offset + limit - 1);
+            if (error) throw error;
+            return { data: data || [], total: count || 0 };
+        });
     }
 
     // Live Class operations
-    static async getLiveClasses(courseId = null, teacherEmail = null, courseIds = null) {
-        if (courseIds && courseIds.length === 0) return [];
-        let query = supabaseClient.from('live_classes').select('*');
-        if (courseId) query = query.eq('course_id', courseId);
-        if (teacherEmail) query = query.eq('teacher_email', teacherEmail);
-        if (courseIds && courseIds.length > 0) query = query.in('course_id', courseIds);
-        const { data, error } = await query.order('start_at', { ascending: true });
-        if (error) throw error;
-        return data || [];
+    static async getLiveClasses(courseId = null, teacherEmail = null, courseIds = null, options = {}) {
+        if (courseIds && courseIds.length === 0) return { data: [], total: 0 };
+        const { limit = 50, offset = 0 } = options;
+        return this._request(async () => {
+            let query = supabaseClient.from('live_classes').select('*', { count: 'exact' });
+            if (courseId) query = query.eq('course_id', courseId);
+            if (teacherEmail) query = query.eq('teacher_email', teacherEmail);
+            if (courseIds && courseIds.length > 0) query = query.in('course_id', courseIds);
+
+            const { data, count, error } = await query
+                .order('start_at', { ascending: true })
+                .range(offset, offset + limit - 1);
+            if (error) throw error;
+            return { data: data || [], total: count || 0 };
+        });
     }
 
     static async getLiveClass(id) {
@@ -1338,12 +1372,21 @@ class SupabaseDB {
         return data?.[0];
     }
 
-    static async getAttendance(classId, studentEmail = null) {
-        let query = supabaseClient.from('attendance').select('*').eq('live_class_id', classId);
-        if (studentEmail) query = query.eq('student_email', studentEmail);
-        const { data, error } = await query;
-        if (error) throw error;
-        return data || [];
+    static async getAttendance(classId, studentEmail = null, options = {}) {
+        const { limit = 100, offset = 0 } = options;
+        return this._request(async () => {
+            let query = supabaseClient
+                .from('attendance')
+                .select('*', { count: 'exact' })
+                .eq('live_class_id', classId);
+            if (studentEmail) query = query.eq('student_email', studentEmail);
+
+            const { data, count, error } = await query
+                .order('join_time', { ascending: true })
+                .range(offset, offset + limit - 1);
+            if (error) throw error;
+            return { data: data || [], total: count || 0 };
+        });
     }
 
     // Maintenance operations

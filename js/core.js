@@ -282,11 +282,15 @@ const NotificationManager = {
             if (!user) return [];
 
             // 1. Fetch personal notifications and active broadcasts
-            const [personal, broadcasts, enrollments] = await Promise.all([
-                SupabaseDB.getNotifications(user.email),
-                SupabaseDB.getBroadcasts(),
-                user.role === 'student' ? SupabaseDB.getEnrollments(user.email) : Promise.resolve([])
+            const [personalRes, broadcastsRes, enrollmentsRes] = await Promise.all([
+                SupabaseDB.getNotifications(user.email, { limit: 1000 }),
+                SupabaseDB.getBroadcasts({ limit: 1000 }),
+                user.role === 'student' ? SupabaseDB.getEnrollments(user.email) : Promise.resolve({ data: [] })
             ]);
+
+            const personal = personalRes.data || [];
+            const broadcasts = broadcastsRes.data || [];
+            const enrollments = enrollmentsRes.data || [];
 
             const enrolledCourseIds = enrollments.map(e => e.course_id);
 
@@ -1269,3 +1273,18 @@ const IdleManager = {
 };
 
 window.IdleManager = IdleManager;
+
+// Global error handling for unhandled promise rejections
+window.addEventListener('unhandledrejection', (event) => {
+    console.error('Unhandled Promise Rejection:', event.reason);
+    // Suppress notification for background sync errors to avoid UI noise
+    const reason = event.reason?.message || String(event.reason);
+    if (!reason.includes('background sync')) {
+        UI.showNotification('A background operation failed. Please refresh if the issue persists.', 'warn');
+    }
+
+    // Log to system logs if possible
+    if (window.SupabaseDB && typeof SupabaseDB.invokeFunction === 'function') {
+        // Placeholder for remote logging if a function is set up
+    }
+});
