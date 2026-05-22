@@ -1134,8 +1134,7 @@ BEGIN
 
     -- 1. Check for existing in-progress attempt
     SELECT * INTO v_attempt FROM quiz_submissions
-    WHERE quiz_id = p_quiz_id AND student_email = v_student_email AND status = 'in-progress'
-    LIMIT 1;
+    WHERE quiz_id = p_quiz_id AND student_email = v_student_email AND status = 'in-progress';
 
     IF FOUND THEN
         RETURN to_jsonb(v_attempt);
