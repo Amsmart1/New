@@ -41,15 +41,15 @@ async function _getDueSoonCount(email) {
     if (enrolledCourseIds.length === 0) return 0;
 
     const [{ data: assigns }, { data: submissions }] = await Promise.all([
-      SupabaseDB.getAssignments(null, null, enrolledCourseIds),
-      SupabaseDB.getSubmissions(null, email)
+      SupabaseDB.getAssignments(null, null, enrolledCourseIds, { status: 'published', limit: 1000 }),
+      SupabaseDB.getSubmissions(null, email, null, { limit: 1000 })
     ]);
 
     const now = Date.now();
     return assigns.filter(a => {
       const dueDate = new Date(a.due_date).getTime();
       const isSubmitted = submissions.some(s => s.assignment_id === a.id);
-      return a.status === 'published' && !isSubmitted && dueDate > now && (dueDate - now) < (7 * 24 * 60 * 60 * 1000);
+      return !isSubmitted && dueDate > now && (dueDate - now) < (7 * 24 * 60 * 60 * 1000);
     }).length;
   } catch (e) {
     console.warn('Due soon count error:', e);
@@ -221,12 +221,11 @@ async function viewCourse(courseId, fromMyCourses = false) {
 
   // Ensure any active study session is stopped if navigating to course view
   if (studyInterval) await stopStudySession();
-  const [lessonRes, { data: allCourseAssignments }] = await Promise.all([
+  const [lessonRes, { data: courseAssignments }] = await Promise.all([
       SupabaseDB.getLessons(courseId),
-      SupabaseDB.getAssignments(null, courseId, null, { limit: 1000 })
+      SupabaseDB.getAssignments(null, courseId, null, { limit: 1000, status: 'published' })
   ]);
   const lessons = lessonRes.data || [];
-  const courseAssignments = (allCourseAssignments || []).filter(a => a.status === 'published');
   const container = document.getElementById('pageContent');
   if (!container) return;
 
@@ -308,8 +307,8 @@ async function renderAssignments(openId = null, page = 0){
 
     const [{ data: courses }, { data: paginated, total }, { data: submissions }] = await Promise.all([
       SupabaseDB.getEnrolledCourses(user.email, { limit: 1000 }),
-      SupabaseDB.getAssignments(null, null, enrolledCourseIds, { limit, offset }),
-      SupabaseDB.getSubmissions(null, user.email)
+      SupabaseDB.getAssignments(null, null, enrolledCourseIds, { limit, offset, status: 'published' }),
+      SupabaseDB.getSubmissions(null, user.email, null, { limit: 1000 })
     ]);
 
     const totalPages = Math.ceil(total / limit);
@@ -351,8 +350,6 @@ async function renderAssignments(openId = null, page = 0){
   if(!paginated.length){ tbody.innerHTML = '<tr><td colspan="6" class="empty">No assignments found.</td></tr>'; return; }
 
   paginated.forEach(a => {
-    if (a.status !== 'published') return;
-
     const submission = submissions.find(s => s.assignment_id === a.id);
     const startAt = a.start_at ? new Date(a.start_at).getTime() : 0;
     const isUpcoming = startAt > now;
@@ -658,8 +655,8 @@ async function renderDashboardOverview() {
     const enrolledCourseIds = enrollments.map(e => e.course_id);
 
     const [{ data: assigns }, { data: submissions }] = await Promise.all([
-        SupabaseDB.getAssignments(null, null, enrolledCourseIds),
-        SupabaseDB.getSubmissions(null, user.email)
+        SupabaseDB.getAssignments(null, null, enrolledCourseIds, { status: 'published', limit: 1000 }),
+        SupabaseDB.getSubmissions(null, user.email, null, { limit: 1000 })
     ]);
 
     updateHeaderStats().catch(e => console.warn('Header stats error:', e));
@@ -1724,7 +1721,7 @@ async function renderQuizzes(openId = null, page = 0) {
     const enrolledCourseIds = (enrollments || []).map(e => e.course_id);
 
     const [{ data: allQuizzes, total }, { data: allSubs }, { data: courses }] = await Promise.all([
-      SupabaseDB.getQuizzes(null, null, enrolledCourseIds, { limit, offset }),
+      SupabaseDB.getQuizzes(null, null, enrolledCourseIds, { limit, offset, status: 'published' }),
       SupabaseDB.getQuizSubmissions(null, user.email, null, { limit: 1000 }),
       SupabaseDB.getEnrolledCourses(user.email, { limit: 1000 })
     ]);

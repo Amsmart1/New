@@ -323,13 +323,14 @@ class SupabaseDB {
     // Assignment operations
     static async getAssignments(teacherEmail = null, courseId = null, courseIds = null, options = {}) {
         if (courseIds && courseIds.length === 0) return { data: [], total: 0 };
-        const { limit = 50, offset = 0, searchTerm = '' } = options;
+        const { limit = 50, offset = 0, searchTerm = '', status = null } = options;
 
         return this._request(async () => {
             let query = supabaseClient.from('assignments').select('*', { count: 'exact' });
             if (teacherEmail) query = query.eq('teacher_email', teacherEmail);
             if (courseId) query = query.eq('course_id', courseId);
             if (courseIds && courseIds.length > 0) query = query.in('course_id', courseIds);
+            if (status) query = query.eq('status', status);
             if (searchTerm) query = query.ilike('title', `%${searchTerm}%`);
 
             const { data, count, error } = await query
@@ -921,13 +922,14 @@ class SupabaseDB {
     // Quiz operations
     static async getQuizzes(courseId = null, teacherEmail = null, courseIds = null, options = {}) {
         if (courseIds && courseIds.length === 0) return { data: [], total: 0 };
-        const { limit = 50, offset = 0, searchTerm = '' } = options;
+        const { limit = 50, offset = 0, searchTerm = '', status = null } = options;
 
         return this._request(async () => {
             let query = supabaseClient.from('quizzes').select('*', { count: 'exact' });
             if (courseId) query = query.eq('course_id', courseId);
             if (teacherEmail) query = query.eq('teacher_email', teacherEmail);
             if (courseIds && courseIds.length > 0) query = query.in('course_id', courseIds);
+            if (status) query = query.eq('status', status);
             if (searchTerm) query = query.ilike('title', `%${searchTerm}%`);
 
             const { data, count, error } = await query
@@ -990,7 +992,10 @@ class SupabaseDB {
     static async getQuizSubmissions(quizId = null, studentEmail = null, teacherEmail = null, options = {}) {
         const { limit = 100, offset = 0, status = null } = options;
         return this._request(async () => {
-            let query = supabaseClient.from('quiz_submissions').select('*, quizzes!quiz_id(*)', { count: 'exact' });
+            let selectStr = '*, quizzes!quiz_id(*)';
+            if (teacherEmail) selectStr = '*, quizzes!quiz_id!inner(*)';
+
+            let query = supabaseClient.from('quiz_submissions').select(selectStr, { count: 'exact' });
             if (quizId) query = query.eq('quiz_id', quizId);
             if (studentEmail) query = query.eq('student_email', studentEmail);
             if (teacherEmail) query = query.eq('quizzes.teacher_email', teacherEmail);

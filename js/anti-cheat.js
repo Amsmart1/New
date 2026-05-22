@@ -143,7 +143,7 @@
             return violation;
         }
 
-        static calculateStats(violations) {
+        calculateStats(violations) {
             const stats = {
                 totalCount: violations.length,
                 totalScore: 0,
