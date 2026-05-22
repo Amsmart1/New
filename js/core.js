@@ -348,8 +348,8 @@ const NotificationManager = {
 
             // 1. Fetch personal notifications and active broadcasts
             const [personalRes, broadcastsRes, enrollmentsRes] = await Promise.all([
-                SupabaseDB.getNotifications(user.email, { limit: 1000 }),
-                SupabaseDB.getBroadcasts({ limit: 1000 }),
+                SupabaseDB.getNotifications(user.email),
+                SupabaseDB.getBroadcasts(),
                 user.role === 'student' ? SupabaseDB.getEnrollments(user.email) : Promise.resolve({ data: [] })
             ]);
 

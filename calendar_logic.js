@@ -31,9 +31,9 @@ class CalendarManager {
         try {
             if (this.user.role === 'teacher') {
                 const [aRes, lRes, qRes] = await Promise.all([
-                    SupabaseDB.getAssignments(this.user.email, null, null, { limit: 1000 }),
-                    SupabaseDB.getLiveClasses(null, this.user.email, null, { limit: 1000 }),
-                    SupabaseDB.getQuizzes(null, this.user.email, null, { limit: 1000 })
+                    SupabaseDB.getAssignments(this.user.email, null, null),
+                    SupabaseDB.getLiveClasses(null, this.user.email, null),
+                    SupabaseDB.getQuizzes(null, this.user.email, null)
                 ]);
                 assignments = aRes.data || [];
                 liveClasses = lRes.data || [];
@@ -43,11 +43,11 @@ class CalendarManager {
                 const enrollments = enrollRes.data || [];
                 const enrolledIds = enrollments.map(e => e.course_id);
 
-                const promises = [SupabaseDB.getPlannerItems(this.user.email, { limit: 1000 })];
+                const promises = [SupabaseDB.getPlannerItems(this.user.email)];
                 if (enrolledIds.length > 0) {
-                    promises.push(SupabaseDB.getAssignments(null, null, enrolledIds, { limit: 1000 }));
-                    promises.push(SupabaseDB.getLiveClasses(null, null, enrolledIds, { limit: 1000 }));
-                    promises.push(SupabaseDB.getQuizzes(null, null, enrolledIds, { limit: 1000 }));
+                    promises.push(SupabaseDB.getAssignments(null, null, enrolledIds));
+                    promises.push(SupabaseDB.getLiveClasses(null, null, enrolledIds));
+                    promises.push(SupabaseDB.getQuizzes(null, null, enrolledIds));
                 } else {
                     promises.push(Promise.resolve({ data: [] }));
                     promises.push(Promise.resolve({ data: [] }));

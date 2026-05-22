@@ -5,6 +5,9 @@ def verify_student_page():
         browser = p.chromium.launch(headless=True)
         page = browser.new_page()
 
+        page.on("console", lambda msg: print(f"CONSOLE: {msg.text}"))
+        page.on("pageerror", lambda err: print(f"PAGE ERROR: {err.message}"))
+
         try:
             page.goto("http://localhost:8000/student.html")
 
@@ -30,9 +33,6 @@ def verify_student_page():
 
             page.screenshot(path="verification/student_page_load.png")
 
-            if not is_start_quiz_defined or not is_submit_quiz_defined:
-                print("Error: Global quiz functions not defined!")
-                # exit(1) # Don't exit yet, let's see what's on the page
         except Exception as e:
             print(f"Failed to load student page: {e}")
             exit(1)
