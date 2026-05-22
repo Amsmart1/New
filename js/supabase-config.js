@@ -416,6 +416,21 @@ class SupabaseDB {
         return data?.[0];
     }
 
+    static async startQuizAttempt(quizId) {
+        const { data, error } = await supabaseClient.rpc('start_quiz_attempt', { p_quiz_id: quizId });
+        if (error) throw error;
+        return data;
+    }
+
+    static async submitQuizAttempt(submissionId, answers) {
+        const { data, error } = await supabaseClient.rpc('submit_quiz_attempt', {
+            p_submission_id: submissionId,
+            p_answers: answers
+        });
+        if (error) throw error;
+        return data;
+    }
+
     static async deleteAssignment(id) {
         try {
             const [assignment, { data: submissions }] = await Promise.all([
