@@ -1531,14 +1531,14 @@ class SupabaseDB {
     static async getViolationSummary(teacherEmail) {
         const { data: courses } = await this.getCourses(teacherEmail, null, { limit: 2000 });
         const courseIds = (courses || []).map(c => c.id);
-        if (courseIds.length === 0) return [];
+        if (courseIds.length === 0) return { data: [], total: 0 };
 
         const [{ data: assigns }, { data: quizzes }] = await Promise.all([
             this.getAssignments(null, null, courseIds, { limit: 2000 }),
             this.getQuizzes(null, null, courseIds, { limit: 2000 })
         ]);
         const assessmentIds = [...(assigns || []).map(a => a.id), ...(quizzes || []).map(q => q.id)];
-        if (assessmentIds.length === 0) return [];
+        if (assessmentIds.length === 0) return { data: [], total: 0 };
 
         // PostgREST doesn't support complex aggregation well, so we fetch and aggregate in JS for now
         // This is safe for thousands of records as it's just the violations table
@@ -1570,10 +1570,12 @@ class SupabaseDB {
             if (v.severity === 'CRITICAL') summaryMap[key].criticalCount++;
         });
 
-        return Object.values(summaryMap).map(s => ({
+        const result = Object.values(summaryMap).map(s => ({
             ...s,
             studentCount: s.studentCount.size
         }));
+
+        return { data: result, total: result.length };
     }
 
     // Storage operations

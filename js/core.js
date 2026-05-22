@@ -1,3 +1,19 @@
+// Common Utilities
+window.escapeHtml = function(s) {
+    if (s === null || s === undefined) return '';
+    return String(s)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+};
+
+window.escapeAttr = function(s) {
+    if (s === null || s === undefined) return '';
+    return String(s).replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+};
+
 // Common UI and Logic
 const UI = {
     renderStats(containerId, stats) {
@@ -855,21 +871,6 @@ window.hashPassword = async function(password, salt = '') {
     const hashBuffer = await crypto.subtle.digest('SHA-256', data);
     const hashArray = Array.from(new Uint8Array(hashBuffer));
     return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-};
-
-window.escapeHtml = function(s) {
-    if (s === null || s === undefined) return '';
-    return String(s)
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;')
-        .replace(/'/g, '&#39;');
-};
-
-window.escapeAttr = function(s) {
-    if (s === null || s === undefined) return '';
-    return String(s).replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 };
 
 const CertificateGenerator = {
