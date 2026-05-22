@@ -41,8 +41,8 @@ async function _getDueSoonCount(email) {
     if (enrolledCourseIds.length === 0) return 0;
 
     const [{ data: assigns }, { data: submissions }] = await Promise.all([
-      SupabaseDB.getAssignments(null, null, enrolledCourseIds),
-      SupabaseDB.getSubmissions(null, email)
+      SupabaseDB.getAssignments(null, null, enrolledCourseIds, { limit: 1000 }),
+      SupabaseDB.getSubmissions(null, email, null, { limit: 1000 })
     ]);
 
     const now = Date.now();
@@ -206,15 +206,40 @@ async function enroll(courseId) {
 
     let enrollmentId = null;
     if (course.enrollment_id) {
-        enrollmentId = prompt('This course requires an Enrollment ID. Please enter it:');
-        if (enrollmentId === null) return; // User cancelled prompt
+        enrollmentId = await new Promise((resolve) => {
+            const backdrop = document.createElement('div');
+            backdrop.className = 'modal-backdrop';
+            backdrop.style.display = 'flex';
+            backdrop.innerHTML = `
+                <div class="modal" style="max-width:400px">
+                    <h3>Enrollment Required</h3>
+                    <p class="small">This course requires an Enrollment ID to join.</p>
+                    <input type="text" id="enrollmentIdInput" class="input mt-15" placeholder="Enter Enrollment ID">
+                    <div class="flex gap-10 mt-20">
+                        <button class="button w-auto" id="confirmEnroll">Enroll</button>
+                        <button class="button secondary w-auto" id="cancelEnroll">Cancel</button>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(backdrop);
+            document.getElementById('confirmEnroll').onclick = () => {
+                const val = document.getElementById('enrollmentIdInput').value;
+                backdrop.remove();
+                resolve(val || null);
+            };
+            document.getElementById('cancelEnroll').onclick = () => {
+                backdrop.remove();
+                resolve(null);
+            };
+        });
+        if (enrollmentId === null) return; // User cancelled
     }
 
     await SupabaseDB.enrollInCourse(courseId, user.email, enrollmentId);
-    alert('Successfully enrolled!');
+    UI.showNotification('Successfully enrolled!', 'success');
     renderCourses();
   } catch (e) {
-    alert('Enrollment failed: ' + e.message);
+    UI.showNotification('Enrollment failed: ' + e.message, 'danger');
   }
 }
 async function viewCourse(courseId, fromMyCourses = false) {
@@ -300,7 +325,7 @@ async function renderAssignments(openId = null, page = 0){
 
   try {
     const user = await SessionManager.getCurrentUser();
-    if(!user || user.role!=='student'){ alert('Login as student'); window.location.href='index.html'; return; }
+    if(!user || user.role!=='student'){ UI.showNotification('Login as student'); window.location.href='index.html'; return; }
 
     const enrollRes = await SupabaseDB.getEnrollments(user.email);
     const enrollments = enrollRes.data || [];
@@ -309,7 +334,7 @@ async function renderAssignments(openId = null, page = 0){
     const [{ data: courses }, { data: paginated, total }, { data: submissions }] = await Promise.all([
       SupabaseDB.getEnrolledCourses(user.email, { limit: 1000 }),
       SupabaseDB.getAssignments(null, null, enrolledCourseIds, { limit, offset }),
-      SupabaseDB.getSubmissions(null, user.email)
+      SupabaseDB.getSubmissions(null, user.email, null, { limit: 1000 })
     ]);
 
     const totalPages = Math.ceil(total / limit);
@@ -475,7 +500,7 @@ async function showAssignmentForm(assignmentId) {
   const now = new Date();
   const startAt = a.start_at ? new Date(a.start_at) : null;
   if (startAt && now < startAt) {
-      alert('This assignment is not open for submission yet.');
+      UI.showNotification('This assignment is not open for submission yet.');
       if (formWrap) formWrap.style.display = 'none';
       return;
   }
@@ -571,7 +596,7 @@ async function viewFeedback(assignmentId) {
 
   const now = Date.now();
   if (assignment.start_at && new Date(assignment.start_at).getTime() > now) {
-      alert('This assignment is not available yet.');
+      UI.showNotification('This assignment is not available yet.');
       return;
   }
 
@@ -658,8 +683,8 @@ async function renderDashboardOverview() {
     const enrolledCourseIds = enrollments.map(e => e.course_id);
 
     const [{ data: assigns }, { data: submissions }] = await Promise.all([
-        SupabaseDB.getAssignments(null, null, enrolledCourseIds),
-        SupabaseDB.getSubmissions(null, user.email)
+        SupabaseDB.getAssignments(null, null, enrolledCourseIds, { limit: 1000 }),
+        SupabaseDB.getSubmissions(null, user.email, null, { limit: 1000 })
     ]);
 
     updateHeaderStats().catch(e => console.warn('Header stats error:', e));
@@ -1033,10 +1058,7 @@ async function renderDiscussions() {
 
   try {
     const user = await SessionManager.getCurrentUser();
-    const enrollRes = await SupabaseDB.getEnrollments(user.email);
-    const enrollments = enrollRes.data || [];
-    const { data: courses } = await SupabaseDB.getCourses(null, null, { limit: 1000 });
-    const myCourses = (courses || []).filter(c => enrollments.some(e => e.course_id === c.id));
+    const { data: myCourses } = await SupabaseDB.getEnrolledCourses(user.email, { limit: 1000 });
 
   container.innerHTML = `
     <h2 class="m-0">Discussions</h2>
@@ -1101,7 +1123,7 @@ async function postDiscussion(courseId, parentId = null, content = null) {
     });
     viewStudentDiscussions(courseId, 0);
   } catch (e) {
-    alert('Failed to post message: ' + e.message);
+    UI.showNotification('Failed to post message: ' + e.message);
   }
 }
 
@@ -1128,7 +1150,7 @@ async function saveStudentDiscussionEdit(id, courseId, page = 0) {
     await SupabaseDB.saveDiscussion({ ...existing, content });
     viewStudentDiscussions(courseId, page);
   } catch (e) {
-    alert('Error updating: ' + e.message);
+    UI.showNotification('Error updating: ' + e.message);
   }
 }
 
@@ -1138,7 +1160,7 @@ async function deleteStudentDiscussion(id, courseId, page = 0) {
     await SupabaseDB.deleteDiscussion(id);
     viewStudentDiscussions(courseId, page);
   } catch (e) {
-    alert('Error deleting: ' + e.message);
+    UI.showNotification('Error deleting: ' + e.message);
   }
 }
 
@@ -1306,7 +1328,7 @@ async function togglePlannerItem(id, completed) {
         renderPlanner();
     }
   } catch (e) {
-      alert('Failed to update task.');
+      UI.showNotification('Failed to update task.');
   }
 }
 window.togglePlannerItem = togglePlannerItem;
@@ -1596,6 +1618,7 @@ window.joinLiveClass = joinLiveClass;
 window.renderLiveClasses = renderLiveClasses;
 
 async function renderHelp() {
+  clearActiveCountdowns();
   const content = document.getElementById('pageContent');
   if (!content) return;
 
@@ -1629,21 +1652,21 @@ async function renderHelp() {
             </div>
           </div>
         </div>
-        <button class="button mt-20" onclick="alert('Chat feature coming soon!')">Open Live Chat</button>
+        <button class="button mt-20" onclick="UI.showNotification('Chat feature coming soon!')">Open Live Chat</button>
       </div>
 
       <div class="card">
         <h3 class="m-0">Quick Resources</h3>
         <div class="mt-15">
-          <div class="list-item flex-between" style="cursor: pointer" onclick="alert('Downloading Student Guide...')">
+          <div class="list-item flex-between" style="cursor: pointer" onclick="UI.showNotification('Downloading Student Guide...')">
             <span class="small">📕 Student Handbook.pdf</span>
             <span class="tiny text-muted">2.4 MB</span>
           </div>
-          <div class="list-item flex-between" style="cursor: pointer" onclick="alert('Opening Tutorial...')">
+          <div class="list-item flex-between" style="cursor: pointer" onclick="UI.showNotification('Opening Tutorial...')">
             <span class="small">🎥 How to use SmartLMS</span>
             <span class="tiny text-muted">Video</span>
           </div>
-          <div class="list-item flex-between" style="cursor: pointer" onclick="alert('Opening Troubleshooting...')">
+          <div class="list-item flex-between" style="cursor: pointer" onclick="UI.showNotification('Opening Troubleshooting...')">
             <span class="small">🔧 Troubleshooting Guide</span>
             <span class="tiny text-muted">Web</span>
           </div>
@@ -1679,6 +1702,7 @@ async function renderHelp() {
 }
 
 async function renderSettings() {
+    clearActiveCountdowns();
     NotificationManager.renderSettings('Settings', 'Enable real-time desktop notifications even when the app is closed.');
 }
 
@@ -1888,14 +1912,14 @@ async function startQuiz(quizId) {
     const endAt = quiz.end_at ? new Date(quiz.end_at).getTime() : Infinity;
 
     if (now < startAt) {
-        alert('This quiz is not available yet.');
+        UI.showNotification('This quiz is not available yet.');
         if (listBtn) { listBtn.disabled = false; listBtn.textContent = 'Start New Attempt'; }
         if (quizArea) quizArea.style.display = 'none';
         isStartingQuiz = false;
         return;
     }
     if (now > endAt) {
-        alert('This quiz has ended.');
+        UI.showNotification('This quiz has ended.');
         if (listBtn) { listBtn.disabled = true; listBtn.textContent = 'Quiz Ended'; }
         if (quizArea) quizArea.style.display = 'none';
         isStartingQuiz = false;
@@ -1994,7 +2018,7 @@ async function startQuiz(quizId) {
           compact: true,
           label: 'Time:',
           onEnd: () => {
-              alert('Time is up! Submitting your quiz automatically.');
+              UI.showNotification('Time is up! Submitting your quiz automatically.');
               submitQuiz(true);
           }
       });
@@ -2007,7 +2031,7 @@ async function startQuiz(quizId) {
   } catch (err) {
       isStartingQuiz = false;
       console.error('Failed to start quiz:', err);
-      alert('Error starting quiz: ' + err.message);
+      UI.showNotification('Error starting quiz: ' + err.message);
       if (listBtn) {
           listBtn.disabled = false;
           listBtn.textContent = 'Start New Attempt';
@@ -2256,7 +2280,7 @@ async function submitQuiz(isAuto = false) {
 
   } catch (err) {
       console.error('Quiz submission failed:', err);
-      alert('Quiz Submission Failed: ' + (err.message || 'Unknown error'));
+      UI.showNotification('Quiz Submission Failed: ' + (err.message || 'Unknown error'));
       return;
   } finally {
       if (!currentSubmission || currentSubmission.status !== 'submitted') {
@@ -2402,23 +2426,23 @@ async function viewQuizResults(quizId, submissionId = null) {
 
 async function requestRegrade(assignmentId) {
     const reason = document.getElementById('regradeReason').value;
-    if (!reason) return alert('Please provide a reason.');
+    if (!reason) return UI.showNotification('Please provide a reason.');
 
     try {
         const user = await SessionManager.getCurrentUser();
         const submission = await SupabaseDB.getSubmission(assignmentId, user.email);
         submission.regrade_request = reason;
         await SupabaseDB.saveSubmission(submission);
-        alert('Regrade request submitted!');
+        UI.showNotification('Regrade request submitted!');
         viewFeedback(assignmentId);
     } catch (e) {
-        alert('Failed to submit regrade request.');
+        UI.showNotification('Failed to submit regrade request.');
     }
 }
 window.requestRegrade = requestRegrade;
 
 async function deleteSubmissionById(assignmentId, studentEmail) {
-  if (confirm('Delete submission?')) { try { await SupabaseDB.deleteSubmission(assignmentId, studentEmail); renderAssignments(); } catch (e) { alert('Error'); } }
+  if (confirm('Delete submission?')) { try { await SupabaseDB.deleteSubmission(assignmentId, studentEmail); renderAssignments(); } catch (e) { UI.showNotification('Error'); } }
 }
 async function submitAssignment(assignmentId, studentEmail) {
   const btn = document.getElementById('submitAssignBtn');
@@ -2468,14 +2492,14 @@ async function submitAssignment(assignmentId, studentEmail) {
       const a = await SupabaseDB.getAssignment(assignmentId);
       if (a) await SupabaseDB.updateCourseProgress(a.course_id, studentEmail);
 
-      alert('Submitted!');
+      UI.showNotification('Submitted!');
       renderAssignments();
     } else {
         throw new Error('Save failed');
     }
   } catch (e) {
     console.error('Submission failed:', e);
-    alert(`Submission failed: ${e.message || 'Unknown error'}. ${e.details || ''}`);
+    UI.showNotification(`Submission failed: ${e.message || 'Unknown error'}. ${e.details || ''}`);
   } finally {
     UI.hideLoading('assignmentForm');
     if (btn) { btn.disabled = false; btn.textContent = 'Submit Assignment'; }
