@@ -1466,6 +1466,14 @@ CREATE POLICY "Violations: User Access" ON violations FOR SELECT USING (
 );
 DROP POLICY IF EXISTS "Violations: Insert" ON violations;
 CREATE POLICY "Violations: Insert" ON violations FOR INSERT WITH CHECK (user_email = get_auth_email());
+DROP POLICY IF EXISTS "Violations: Delete" ON violations;
+CREATE POLICY "Violations: Delete" ON violations FOR DELETE USING (
+  is_admin() OR
+  (is_teacher() AND (
+    EXISTS (SELECT 1 FROM assignments WHERE id = violations.assessment_id AND assessment_type = 'assignment' AND teacher_email = get_auth_email()) OR
+    EXISTS (SELECT 1 FROM quizzes WHERE id = violations.assessment_id AND assessment_type = 'quiz' AND teacher_email = get_auth_email())
+  ))
+);
 
 -- 18. Planner Table
 DROP POLICY IF EXISTS "Planner: User Access" ON planner;

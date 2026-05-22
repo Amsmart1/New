@@ -637,9 +637,10 @@ async function renderDashboardOverview() {
   try {
     const user = await SessionManager.getCurrentUser();
 
-    const [enrollRes, gradedCount] = await Promise.all([
+    const [enrollRes, gradedCount, violationsCount] = await Promise.all([
       SupabaseDB.getEnrollments(user.email),
-      SupabaseDB.getCount('submissions', q => q.eq('student_email', user.email).eq('status', 'graded'))
+      SupabaseDB.getCount('submissions', q => q.eq('student_email', user.email).eq('status', 'graded')),
+      SupabaseDB.getCount('violations', q => q.eq('user_email', user.email))
     ]);
     const enrollments = enrollRes.data || [];
 
@@ -663,6 +664,10 @@ async function renderDashboardOverview() {
       <div class="stats-grid">
         <div class="stat-card"><h4>Enrolled Courses</h4><div class="value">${escapeHtml(enrollments.length)}</div></div>
         <div class="stat-card"><h4>Completed Assignments</h4><div class="value">${escapeHtml(gradedCount)}</div></div>
+        <div class="stat-card ${violationsCount > 0 ? 'danger' : ''}">
+          <h4>Security Violations</h4>
+          <div class="value">${escapeHtml(violationsCount)}</div>
+        </div>
       </div>
 
       <div class="grid-2">

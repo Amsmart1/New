@@ -19,12 +19,14 @@ async function renderDashboard() {
 
   try {
     const user = await SessionManager.getCurrentUser();
-    const [coursesCount, assignmentsCount, submissionsCount, pendingCount] = await Promise.all([
+    const [coursesCount, assignmentsCount, submissionsCount, pendingCount, violationsRes] = await Promise.all([
       SupabaseDB.getCount('courses', q => q.eq('teacher_email', user.email)),
       SupabaseDB.getCount('assignments', q => q.eq('teacher_email', user.email)),
       SupabaseDB.getCount('submissions', q => q.eq('assignments.teacher_email', user.email), '*, assignments!inner(*)'),
-      SupabaseDB.getCount('submissions', q => q.eq('assignments.teacher_email', user.email).or('status.eq.submitted,regrade_request.not.is.null'), '*, assignments!inner(*)')
+      SupabaseDB.getCount('submissions', q => q.eq('assignments.teacher_email', user.email).or('status.eq.submitted,regrade_request.not.is.null'), '*, assignments!inner(*)'),
+      SupabaseDB.getViolations(null, null, user.email)
     ]);
+    const violationsCount = violationsRes.total || 0;
 
     content.innerHTML = `
     <div class="stats-grid">
@@ -32,6 +34,7 @@ async function renderDashboard() {
       <div class="stat-card"><h4>Assignments</h4><div class="value">${escapeHtml(assignmentsCount)}</div></div>
       <div class="stat-card"><h4>Total Submissions</h4><div class="value">${escapeHtml(submissionsCount)}</div></div>
       <div class="stat-card warn"><h4>Pending Grading</h4><div class="value">${escapeHtml(pendingCount)}</div></div>
+      <div class="stat-card ${violationsCount > 0 ? 'danger' : ''}"><h4>Security Alerts</h4><div class="value">${escapeHtml(violationsCount)}</div></div>
     </div>
       <section><h3>Teacher Overview</h3><p>Welcome back! You have ${escapeHtml(pendingCount)} submissions waiting to be graded.</p></section>
     `;
@@ -1162,7 +1165,10 @@ async function viewAssessmentViolations(assessmentId, title) {
                                         </span>
                                     </td>
                                     <td>
-                                        <button class="button tiny w-auto" onclick="viewStudentIntegrityReport('${assessmentId}', '${escapeAttr(s.email)}')">View Detailed Report</button>
+                                        <div class="flex gap-5">
+                                            <button class="button tiny w-auto" onclick="viewStudentIntegrityReport('${assessmentId}', '${escapeAttr(s.email)}')">View Report</button>
+                                            <button class="button danger tiny w-auto" onclick="clearStudentViolations('${assessmentId}', '${escapeAttr(s.email)}', '${escapeAttr(title)}')">Clear History</button>
+                                        </div>
                                     </td>
                                 </tr>
                                 `;
@@ -1202,6 +1208,19 @@ async function viewStudentIntegrityReport(assessmentId, studentEmail) {
     }
 }
 
+async function clearStudentViolations(assessmentId, studentEmail, title) {
+    if (await UI.confirm(`Are you sure you want to clear all violation history for ${studentEmail} on this assessment? This action is irreversible.`, 'Clear Integrity Record')) {
+        try {
+            await SupabaseDB.deleteViolations(assessmentId, studentEmail);
+            UI.showNotification('Integrity record cleared.', 'success');
+            viewAssessmentViolations(assessmentId, title);
+        } catch (e) {
+            UI.showNotification('Failed to clear record: ' + e.message, 'error');
+        }
+    }
+}
+
+window.clearStudentViolations = clearStudentViolations;
 window.viewAssessmentViolations = viewAssessmentViolations;
 window.viewStudentIntegrityReport = viewStudentIntegrityReport;
 window.renderAntiCheat = renderAntiCheat;
