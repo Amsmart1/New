@@ -41,8 +41,8 @@ async function _getDueSoonCount(email) {
     if (enrolledCourseIds.length === 0) return 0;
 
     const [{ data: assigns }, { data: submissions }] = await Promise.all([
-      SupabaseDB.getAssignments(null, null, enrolledCourseIds, { limit: 1000 }),
-      SupabaseDB.getSubmissions(null, email, null, { limit: 1000 })
+      SupabaseDB.getAssignments(null, null, enrolledCourseIds),
+      SupabaseDB.getSubmissions(null, email, null)
     ]);
 
     const now = Date.now();
@@ -58,41 +58,29 @@ async function _getDueSoonCount(email) {
 }
 window._getDueSoonCount = _getDueSoonCount;
 
-async function renderCourses(page = 0) {
+async function renderCourses() {
   const container = document.getElementById('pageContent');
   if (!container) return;
   clearActiveCountdowns();
 
-  const limit = 12;
-  const offset = page * limit;
   const searchTerm = document.getElementById('catalogSearch')?.value || '';
 
   try {
     const user = await SessionManager.getCurrentUser();
-    const [{ data: courses, total }, enrollRes] = await Promise.all([
-      SupabaseDB.getCourses(null, 'published', { limit, offset, searchTerm }),
+    const [{ data: courses }, enrollRes] = await Promise.all([
+      SupabaseDB.getCourses(null, 'published', { searchTerm }),
       SupabaseDB.getEnrollments(user.email)
     ]);
     const enrollments = enrollRes.data || [];
-
-    const totalPages = Math.ceil(total / limit);
 
     container.innerHTML = `
       <div class="flex-between mb-20">
         <h2 class="m-0">Course Catalog</h2>
         <div class="flex gap-10">
-          <input type="text" id="catalogSearch" placeholder="Search courses..." class="m-0" style="width:200px" value="${escapeAttr(searchTerm)}" oninput="renderCourses(0)">
+          <input type="text" id="catalogSearch" placeholder="Search courses..." class="m-0" style="width:200px" value="${escapeAttr(searchTerm)}" oninput="renderCourses()">
         </div>
       </div>
       <div class="grid" id="catalogGrid" style="grid-template-columns: repeat(auto-fill, minmax(280px, 1fr))"></div>
-
-      ${totalPages > 1 ? `
-        <div class="flex-center gap-10 mt-30">
-            <button class="button secondary small w-auto" ${page === 0 ? 'disabled' : ''} onclick="renderCourses(${page - 1})">Previous</button>
-            <span class="small">Page ${page + 1} of ${totalPages} (${total} Total)</span>
-            <button class="button secondary small w-auto" ${page >= totalPages - 1 ? 'disabled' : ''} onclick="renderCourses(${page + 1})">Next</button>
-        </div>
-      ` : ''}
     `;
 
     window.myEnrollments = enrollments;
@@ -139,23 +127,18 @@ function displayCatalog(courses) {
 }
 
 
-async function renderMyCourses(page = 0) {
+async function renderMyCourses() {
   clearActiveCountdowns();
   const container = document.getElementById('pageContent');
   if (!container) return;
 
-  const limit = 12;
-  const offset = page * limit;
-
   try {
     const user = await SessionManager.getCurrentUser();
-    const [{ data: myCourses, total }, enrollRes] = await Promise.all([
-      SupabaseDB.getEnrolledCourses(user.email, { limit, offset }),
+    const [{ data: myCourses }, enrollRes] = await Promise.all([
+      SupabaseDB.getEnrolledCourses(user.email),
       SupabaseDB.getEnrollments(user.email)
     ]);
     const enrollments = enrollRes.data || [];
-
-    const totalPages = Math.ceil(total / limit);
 
     container.innerHTML = `
       <h2 class="mb-20">My Enrolled Courses</h2>
@@ -181,14 +164,6 @@ async function renderMyCourses(page = 0) {
           `;
         }).join('') || '<div class="empty" style="grid-column:1/-1">You haven\'t enrolled in any courses yet. Visit the Catalog to find some!</div>'}
       </div>
-
-      ${totalPages > 1 ? `
-        <div class="flex-center gap-10 mt-30">
-            <button class="button secondary small w-auto" ${page === 0 ? 'disabled' : ''} onclick="renderMyCourses(${page - 1})">Previous</button>
-            <span class="small">Page ${page + 1} of ${totalPages} (${total} Total)</span>
-            <button class="button secondary small w-auto" ${page >= totalPages - 1 ? 'disabled' : ''} onclick="renderMyCourses(${page + 1})">Next</button>
-        </div>
-      ` : ''}
     `;
   } catch (error) {
     console.error('My Courses error:', error);
@@ -248,7 +223,7 @@ async function viewCourse(courseId, fromMyCourses = false) {
   if (studyInterval) await stopStudySession();
   const [lessonRes, { data: allCourseAssignments }] = await Promise.all([
       SupabaseDB.getLessons(courseId),
-      SupabaseDB.getAssignments(null, courseId, null, { limit: 1000 })
+      SupabaseDB.getAssignments(null, courseId, null)
   ]);
   const lessons = lessonRes.data || [];
   const courseAssignments = (allCourseAssignments || []).filter(a => a.status === 'published');
@@ -315,13 +290,10 @@ async function stopAndNavigateToViewCourse(courseId, fromMyCourses) {
   viewCourse(courseId, fromMyCourses);
 }
 window.stopAndNavigateToViewCourse = stopAndNavigateToViewCourse;
-async function renderAssignments(openId = null, page = 0){
+async function renderAssignments(openId = null){
   const container = document.getElementById('pageContent');
   if (!container) return;
   clearActiveCountdowns();
-
-  const limit = 20;
-  const offset = page * limit;
 
   try {
     const user = await SessionManager.getCurrentUser();
@@ -331,13 +303,12 @@ async function renderAssignments(openId = null, page = 0){
     const enrollments = enrollRes.data || [];
     const enrolledCourseIds = enrollments.map(e => e.course_id);
 
-    const [{ data: courses }, { data: paginated, total }, { data: submissions }] = await Promise.all([
-      SupabaseDB.getEnrolledCourses(user.email, { limit: 1000 }),
-      SupabaseDB.getAssignments(null, null, enrolledCourseIds, { limit, offset }),
-      SupabaseDB.getSubmissions(null, user.email, null, { limit: 1000 })
+    const [{ data: courses }, { data: allAssignments, total }, { data: submissions }] = await Promise.all([
+      SupabaseDB.getEnrolledCourses(user.email),
+      SupabaseDB.getAssignments(null, null, enrolledCourseIds),
+      SupabaseDB.getSubmissions(null, user.email, null)
     ]);
 
-    const totalPages = Math.ceil(total / limit);
     const now = Date.now();
 
     container.innerHTML = `
@@ -361,21 +332,13 @@ async function renderAssignments(openId = null, page = 0){
         </table>
       </div>
 
-      ${totalPages > 1 ? `
-        <div class="flex-center gap-10 mt-20">
-            <button class="button secondary small w-auto" ${page === 0 ? 'disabled' : ''} onclick="renderAssignments(null, ${page - 1})">Previous</button>
-            <span class="small">Page ${page + 1} of ${totalPages}</span>
-            <button class="button secondary small w-auto" ${page >= totalPages - 1 ? 'disabled' : ''} onclick="renderAssignments(null, ${page + 1})">Next</button>
-        </div>
-      ` : ''}
-
       <div id="assignmentForm" class="hidden" style="margin-top:20px"></div>
     `;
 
   const tbody = document.getElementById('assignTableBody');
-  if(!paginated.length){ tbody.innerHTML = '<tr><td colspan="6" class="empty">No assignments found.</td></tr>'; return; }
+  if(!allAssignments.length){ tbody.innerHTML = '<tr><td colspan="6" class="empty">No assignments found.</td></tr>'; return; }
 
-  paginated.forEach(a => {
+  allAssignments.forEach(a => {
     if (a.status !== 'published') return;
 
     const submission = submissions.find(s => s.assignment_id === a.id);
@@ -683,8 +646,8 @@ async function renderDashboardOverview() {
     const enrolledCourseIds = enrollments.map(e => e.course_id);
 
     const [{ data: assigns }, { data: submissions }] = await Promise.all([
-        SupabaseDB.getAssignments(null, null, enrolledCourseIds, { limit: 1000 }),
-        SupabaseDB.getSubmissions(null, user.email, null, { limit: 1000 })
+        SupabaseDB.getAssignments(null, null, enrolledCourseIds),
+        SupabaseDB.getSubmissions(null, user.email, null)
     ]);
 
     updateHeaderStats().catch(e => console.warn('Header stats error:', e));
@@ -759,9 +722,9 @@ async function renderProgress() {
   try {
     const user = await SessionManager.getCurrentUser();
     const [sessionsRes, enrollRes, { data: courses }] = await Promise.all([
-      SupabaseDB.getStudySessions(user.email, { limit: 1000 }),
+      SupabaseDB.getStudySessions(user.email),
       SupabaseDB.getEnrollments(user.email),
-      SupabaseDB.getCourses(null, null, { limit: 1000 })
+      SupabaseDB.getCourses(null, null)
     ]);
     const sessions = sessionsRes.data || [];
     const enrollments = enrollRes.data || [];
@@ -888,8 +851,8 @@ async function renderGrades() {
     const user = await SessionManager.getCurrentUser();
     // Optimization: Filter graded status on the server
     const [{ data: submissions }, { data: assigns }] = await Promise.all([
-      SupabaseDB.getSubmissions(null, user.email, null, { limit: 1000, status: 'graded' }),
-      SupabaseDB.getAssignments(null, null, null, { limit: 1000 })
+      SupabaseDB.getSubmissions(null, user.email, null, { status: 'graded' }),
+      SupabaseDB.getAssignments(null, null, null)
     ]);
 
     // Sort graded submissions by date
@@ -929,8 +892,8 @@ async function renderAnalytics() {
     const user = await SessionManager.getCurrentUser();
     // Optimization: Filter graded status on the server
     const [{ data: submissions }, { data: assigns }] = await Promise.all([
-      SupabaseDB.getSubmissions(null, user.email, null, { limit: 1000, status: 'graded' }),
-      SupabaseDB.getAssignments(null, null, null, { limit: 1000 })
+      SupabaseDB.getSubmissions(null, user.email, null, { status: 'graded' }),
+      SupabaseDB.getAssignments(null, null, null)
     ]);
 
     // Sort graded submissions by date
@@ -1015,8 +978,8 @@ async function renderMaterials() {
     const enrolledIds = enrollments.map(e => e.course_id);
 
     const [{ data: myCourses }, materialsRes] = await Promise.all([
-      SupabaseDB.getEnrolledCourses(user.email, { limit: 1000 }),
-      SupabaseDB.getMaterials(null, enrolledIds, { limit: 1000 })
+      SupabaseDB.getEnrolledCourses(user.email),
+      SupabaseDB.getMaterials(null, enrolledIds)
     ]);
     const myMaterials = materialsRes.data || [];
 
@@ -1058,7 +1021,7 @@ async function renderDiscussions() {
 
   try {
     const user = await SessionManager.getCurrentUser();
-    const { data: myCourses } = await SupabaseDB.getEnrolledCourses(user.email, { limit: 1000 });
+    const { data: myCourses } = await SupabaseDB.getEnrolledCourses(user.email);
 
   container.innerHTML = `
     <h2 class="m-0">Discussions</h2>
@@ -1077,11 +1040,9 @@ async function renderDiscussions() {
   }
 }
 
-async function viewStudentDiscussions(courseId, page = 0) {
+async function viewStudentDiscussions(courseId) {
   const user = await SessionManager.getCurrentUser();
-  const limit = 50;
-  const offset = page * limit;
-  const { data: disc, total } = await SupabaseDB.getDiscussions(courseId, { limit, offset });
+  const { data: disc } = await SupabaseDB.getDiscussions(courseId);
   const container = document.getElementById('pageContent');
   if (!container) return;
 
@@ -1089,20 +1050,9 @@ async function viewStudentDiscussions(courseId, page = 0) {
 
   UI.renderDiscussion('discussionArea', disc, user.email, {
       onPost: (content, parentId) => postDiscussion(courseId, parentId, content),
-      onEdit: (id) => editStudentDiscussion(id, courseId, page),
-      onDelete: (id) => deleteStudentDiscussion(id, courseId, page)
+      onEdit: (id) => editStudentDiscussion(id, courseId),
+      onDelete: (id) => deleteStudentDiscussion(id, courseId)
   });
-
-  if (total > limit) {
-      const pagination = document.createElement('div');
-      pagination.className = 'flex-center gap-10 mt-20';
-      pagination.innerHTML = `
-          <button class="button secondary small w-auto" ${page === 0 ? 'disabled' : ''} onclick="viewStudentDiscussions('${courseId}', ${page - 1})">Previous</button>
-          <span class="small">Page ${page + 1} of ${Math.ceil(total/limit)}</span>
-          <button class="button secondary small w-auto" ${page >= Math.ceil(total/limit)-1 ? 'disabled' : ''} onclick="viewStudentDiscussions('${courseId}', ${page + 1})">Next</button>
-      `;
-      document.getElementById('discussionArea').after(pagination);
-  }
 }
 
 async function postDiscussion(courseId, parentId = null, content = null) {
@@ -1127,38 +1077,38 @@ async function postDiscussion(courseId, parentId = null, content = null) {
   }
 }
 
-async function editStudentDiscussion(id, courseId, page = 0) {
+async function editStudentDiscussion(id, courseId) {
   const div = document.getElementById(`disc-${id}`);
   const contentDiv = div.querySelector('.disc-content');
   const current = contentDiv.innerText;
   contentDiv.innerHTML = `
     <textarea class="input" style="margin-top:10px">${escapeHtml(current)}</textarea>
     <div style="margin-top:8px; display:flex; gap:8px">
-      <button class="button" style="padding:4px 8px; font-size:11px" onclick="saveStudentDiscussionEdit('${id}', '${courseId}', ${page})">Save</button>
-      <button class="button secondary" style="padding:4px 8px; font-size:11px" onclick="viewStudentDiscussions('${courseId}', ${page})">Cancel</button>
+      <button class="button" style="padding:4px 8px; font-size:11px" onclick="saveStudentDiscussionEdit('${id}', '${courseId}')">Save</button>
+      <button class="button secondary" style="padding:4px 8px; font-size:11px" onclick="viewStudentDiscussions('${courseId}')">Cancel</button>
     </div>
   `;
 }
 
-async function saveStudentDiscussionEdit(id, courseId, page = 0) {
+async function saveStudentDiscussionEdit(id, courseId) {
   const div = document.getElementById(`disc-${id}`);
   const content = div.querySelector('textarea').value;
   if (!content) return;
   try {
-    const { data: disc } = await SupabaseDB.getDiscussions(courseId, { limit: 1000 });
+    const { data: disc } = await SupabaseDB.getDiscussions(courseId);
     const existing = disc.find(d => d.id === id);
     await SupabaseDB.saveDiscussion({ ...existing, content });
-    viewStudentDiscussions(courseId, page);
+    viewStudentDiscussions(courseId);
   } catch (e) {
     UI.showNotification('Error updating: ' + e.message);
   }
 }
 
-async function deleteStudentDiscussion(id, courseId, page = 0) {
+async function deleteStudentDiscussion(id, courseId) {
   if (!confirm('Delete this message?')) return;
   try {
     await SupabaseDB.deleteDiscussion(id);
-    viewStudentDiscussions(courseId, page);
+    viewStudentDiscussions(courseId);
   } catch (e) {
     UI.showNotification('Error deleting: ' + e.message);
   }
@@ -1197,7 +1147,7 @@ window.submitQuiz = submitQuiz;
 window.postDiscussion = postDiscussion;
 window.addPlannerItem = addPlannerItem;
 window.deletePlannerItem = deletePlannerItem;
-function filterCatalog() { renderCourses(0); }
+function filterCatalog() { renderCourses(); }
 window.filterCatalog = filterCatalog;
 window.viewStudentDiscussions = viewStudentDiscussions;
 
@@ -1209,7 +1159,7 @@ async function renderCertificates() {
 
   try {
     const user = await SessionManager.getCurrentUser();
-    const certsRes = await SupabaseDB.getCertificates(user.email, { limit: 1000 });
+    const certsRes = await SupabaseDB.getCertificates(user.email);
     const certs = certsRes.data || [];
 
   container.innerHTML = `
@@ -1239,7 +1189,7 @@ async function renderPlanner() {
 
   try {
     const user = await SessionManager.getCurrentUser();
-    const itemsRes = await SupabaseDB.getPlannerItems(user.email, { limit: 1000 });
+    const itemsRes = await SupabaseDB.getPlannerItems(user.email);
     const items = itemsRes.data || [];
 
     const now = new Date();
@@ -1319,7 +1269,7 @@ async function renderPlanner() {
 async function togglePlannerItem(id, completed) {
   try {
     const user = await SessionManager.getCurrentUser();
-    const itemsRes = await SupabaseDB.getPlannerItems(user.email, { limit: 1000 });
+    const itemsRes = await SupabaseDB.getPlannerItems(user.email);
     const items = itemsRes.data || [];
     const item = items.find(i => i.id === id);
     if (item) {
@@ -1365,7 +1315,7 @@ async function renderLiveClasses() {
     const enrollments = enrollRes.data || [];
     const enrolledCourseIds = enrollments.map(e => e.course_id);
 
-    const liveRes = await SupabaseDB.getLiveClasses(null, null, enrolledCourseIds, { limit: 1000 });
+    const liveRes = await SupabaseDB.getLiveClasses(null, null, enrolledCourseIds);
     const myClasses = liveRes.data || [];
     const now = Date.now();
 
@@ -1585,7 +1535,7 @@ async function stopAttendanceTracking(classId) {
     const duration = Math.floor((leaveTime - attendanceStartTime) / 1000);
 
     // Fetch the live class to get total duration
-    const liveRes = await SupabaseDB.getLiveClasses(null, null, null, { limit: 1000 });
+    const liveRes = await SupabaseDB.getLiveClasses(null, null, null);
     const classes = liveRes.data || [];
     const liveClass = classes.find(x => x.id === classId);
     let isPresent = false;
@@ -1733,13 +1683,10 @@ async function renderAntiCheat() {
 }
 window.renderAntiCheat = renderAntiCheat;
 
-async function renderQuizzes(openId = null, page = 0) {
+async function renderQuizzes(openId = null) {
   clearActiveCountdowns();
   const container = document.getElementById('pageContent');
   if (!container) return;
-
-  const limit = 12;
-  const offset = page * limit;
 
   try {
     const user = await SessionManager.getCurrentUser();
@@ -1748,12 +1695,10 @@ async function renderQuizzes(openId = null, page = 0) {
     const enrolledCourseIds = (enrollments || []).map(e => e.course_id);
 
     const [{ data: allQuizzes, total }, { data: allSubs }, { data: courses }] = await Promise.all([
-      SupabaseDB.getQuizzes(null, null, enrolledCourseIds, { limit, offset }),
-      SupabaseDB.getQuizSubmissions(null, user.email, null, { limit: 1000 }),
-      SupabaseDB.getEnrolledCourses(user.email, { limit: 1000 })
+      SupabaseDB.getQuizzes(null, null, enrolledCourseIds),
+      SupabaseDB.getQuizSubmissions(null, user.email, null),
+      SupabaseDB.getEnrolledCourses(user.email)
     ]);
-
-    const totalPages = Math.ceil(total / limit);
 
     // Only show submissions for quizzes that belong to enrolled courses
     const subs = (allSubs || []).filter(s => enrolledCourseIds.includes(s.quizzes?.course_id));
@@ -1852,17 +1797,6 @@ async function renderQuizzes(openId = null, page = 0) {
         });
         activeCountdowns.push(c);
     });
-
-    if (totalPages > 1) {
-        const pagination = document.createElement('div');
-        pagination.className = 'flex-center gap-10 mt-30';
-        pagination.innerHTML = `
-            <button class="button secondary small w-auto" ${page === 0 ? 'disabled' : ''} onclick="renderQuizzes(null, ${page - 1})">Previous</button>
-            <span class="small">Page ${page + 1} of ${totalPages}</span>
-            <button class="button secondary small w-auto" ${page >= totalPages - 1 ? 'disabled' : ''} onclick="renderQuizzes(null, ${page + 1})">Next</button>
-        `;
-        container.appendChild(pagination);
-    }
 
     if (openId) {
         startQuiz(openId);

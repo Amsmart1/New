@@ -130,7 +130,7 @@ class SupabaseDB {
 
     // User operations
     static async getUsers(options = {}) {
-        const { limit = 50, offset = 0, searchTerm = '', role = null, resetStatus = null } = options;
+        const { searchTerm = '', role = null, resetStatus = null } = options;
         return this._request(async () => {
             let query = supabaseClient.from('users').select('*', { count: 'exact' });
             if (role) query = query.eq('role', role);
@@ -139,8 +139,7 @@ class SupabaseDB {
                 query = query.or(`full_name.ilike.%${searchTerm}%,email.ilike.%${searchTerm}%`);
             }
             const { data, count, error } = await query
-                .order('full_name', { ascending: true })
-                .range(offset, offset + limit - 1);
+                .order('full_name', { ascending: true });
             if (error) throw error;
             return { data: data || [], total: count || 0 };
         });
@@ -171,7 +170,7 @@ class SupabaseDB {
 
     static async getEnrollmentsByCourses(courseIds, options = {}) {
         if (!courseIds || courseIds.length === 0) return { data: [], total: 0 };
-        const { limit = 50, offset = 0, searchTerm = '' } = options;
+        const { searchTerm = '' } = options;
 
         return this._request(async () => {
             let query = supabaseClient
@@ -184,8 +183,7 @@ class SupabaseDB {
             }
 
             const { data, count, error } = await query
-                .order('enrolled_at', { ascending: false })
-                .range(offset, offset + limit - 1);
+                .order('enrolled_at', { ascending: false });
 
             if (error) throw error;
             return { data: data || [], total: count || 0 };
@@ -323,7 +321,7 @@ class SupabaseDB {
     // Assignment operations
     static async getAssignments(teacherEmail = null, courseId = null, courseIds = null, options = {}) {
         if (courseIds && courseIds.length === 0) return { data: [], total: 0 };
-        const { limit = 50, offset = 0, searchTerm = '' } = options;
+        const { searchTerm = '' } = options;
 
         return this._request(async () => {
             let query = supabaseClient.from('assignments').select('*', { count: 'exact' });
@@ -333,15 +331,13 @@ class SupabaseDB {
             if (searchTerm) query = query.ilike('title', `%${searchTerm}%`);
 
             const { data, count, error } = await query
-                .order('due_date', { ascending: false })
-                .range(offset, offset + limit - 1);
+                .order('due_date', { ascending: false });
             if (error) throw error;
             return { data: data || [], total: count || 0 };
         });
     }
 
     static async getEnrolledCourses(studentEmail, options = {}) {
-        const { limit = 50, offset = 0 } = options;
         return this._request(async () => {
             const { data: enrollments, error: eError } = await supabaseClient
                 .from('enrollments')
@@ -356,8 +352,7 @@ class SupabaseDB {
                 .from('courses')
                 .select('*', { count: 'exact' })
                 .in('id', courseIds)
-                .order('title', { ascending: true })
-                .range(offset, offset + limit - 1);
+                .order('title', { ascending: true });
 
             if (error) throw error;
             return { data: data || [], total: count || 0 };
@@ -467,7 +462,7 @@ class SupabaseDB {
 
     // Submission operations
     static async getSubmissions(assignmentId = null, studentEmail = null, teacherEmail = null, options = {}) {
-        const { limit = 100, offset = 0, status = null, pendingGradingOnly = false } = options;
+        const { status = null, pendingGradingOnly = false } = options;
         return this._request(async () => {
             let selectStr = '*, assignments(*)';
             if (teacherEmail) selectStr = '*, assignments!inner(*)';
@@ -484,8 +479,7 @@ class SupabaseDB {
             }
 
             const { data, count, error } = await query
-                .order('submitted_at', { ascending: false })
-                .range(offset, offset + limit - 1);
+                .order('submitted_at', { ascending: false });
             if (error) throw error;
             return { data: data || [], total: count || 0 };
         });
@@ -740,7 +734,7 @@ class SupabaseDB {
 
     // Course operations
     static async getCourses(teacherEmail = null, status = null, options = {}) {
-        const { limit = 50, offset = 0, searchTerm = '' } = options;
+        const { searchTerm = '' } = options;
         return this._request(async () => {
             let query = supabaseClient.from('courses').select('*', { count: 'exact' });
             if (teacherEmail) query = query.eq('teacher_email', teacherEmail);
@@ -748,8 +742,7 @@ class SupabaseDB {
             if (searchTerm) query = query.ilike('title', `%${searchTerm}%`);
 
             const { data, count, error } = await query
-                .order('title', { ascending: true })
-                .range(offset, offset + limit - 1);
+                .order('title', { ascending: true });
             if (error) throw error;
             return { data: data || [], total: count || 0 };
         });
@@ -859,15 +852,13 @@ class SupabaseDB {
     // Discussion operations
     static async getMaterials(courseId = null, courseIds = null, options = {}) {
         if (courseIds && courseIds.length === 0) return { data: [], total: 0 };
-        const { limit = 50, offset = 0 } = options;
         return this._request(async () => {
             let query = supabaseClient.from('materials').select('*', { count: 'exact' });
             if (courseId) query = query.eq('course_id', courseId);
             if (courseIds && courseIds.length > 0) query = query.in('course_id', courseIds);
 
             const { data, count, error } = await query
-                .order('created_at', { ascending: false })
-                .range(offset, offset + limit - 1);
+                .order('created_at', { ascending: false });
             if (error) throw error;
             return { data: data || [], total: count || 0 };
         });
@@ -908,14 +899,12 @@ class SupabaseDB {
 
     // Discussion operations
     static async getDiscussions(courseId, options = {}) {
-        const { limit = 200, offset = 0 } = options;
         return this._request(async () => {
             const { data, count, error } = await supabaseClient
                 .from('discussions')
                 .select('*', { count: 'exact' })
                 .eq('course_id', courseId)
-                .order('created_at', { ascending: true })
-                .range(offset, offset + limit - 1);
+                .order('created_at', { ascending: true });
             if (error) throw error;
             return { data: data || [], total: count || 0 };
         });
@@ -943,7 +932,7 @@ class SupabaseDB {
     // Quiz operations
     static async getQuizzes(courseId = null, teacherEmail = null, courseIds = null, options = {}) {
         if (courseIds && courseIds.length === 0) return { data: [], total: 0 };
-        const { limit = 50, offset = 0, searchTerm = '' } = options;
+        const { searchTerm = '' } = options;
 
         return this._request(async () => {
             let query = supabaseClient.from('quizzes').select('*', { count: 'exact' });
@@ -953,8 +942,7 @@ class SupabaseDB {
             if (searchTerm) query = query.ilike('title', `%${searchTerm}%`);
 
             const { data, count, error } = await query
-                .order('created_at', { ascending: false })
-                .range(offset, offset + limit - 1);
+                .order('created_at', { ascending: false });
             if (error) throw error;
             return { data: data || [], total: count || 0 };
         });
@@ -1010,7 +998,7 @@ class SupabaseDB {
     }
 
     static async getQuizSubmissions(quizId = null, studentEmail = null, teacherEmail = null, options = {}) {
-        const { limit = 100, offset = 0, status = null } = options;
+        const { status = null } = options;
         return this._request(async () => {
             let query = supabaseClient.from('quiz_submissions').select('*, quizzes!quiz_id(*)', { count: 'exact' });
             if (quizId) query = query.eq('quiz_id', quizId);
@@ -1019,8 +1007,7 @@ class SupabaseDB {
             if (status) query = query.eq('status', status);
 
             const { data, count, error } = await query
-                .order('started_at', { ascending: false })
-                .range(offset, offset + limit - 1);
+                .order('started_at', { ascending: false });
             if (error) throw error;
             return { data: data || [], total: count || 0 };
         });
@@ -1094,15 +1081,13 @@ class SupabaseDB {
     }
 
     static async getNotifications(userEmail, options = {}) {
-        const { limit = 50, offset = 0 } = options;
-        return _cache.fetch(`notifications_${userEmail}_${limit}_${offset}`, async () => {
+        return _cache.fetch(`notifications_${userEmail}`, async () => {
             return this._request(async () => {
                 const { data, count, error } = await supabaseClient
                     .from('notifications')
                     .select('*', { count: 'exact' })
                     .eq('user_email', userEmail)
-                    .order('created_at', { ascending: false })
-                    .range(offset, offset + limit - 1);
+                    .order('created_at', { ascending: false });
                 if (error) throw error;
                 return { data: data || [], total: count || 0 };
             });
@@ -1110,15 +1095,13 @@ class SupabaseDB {
     }
 
     static async getBroadcasts(options = {}) {
-        const { limit = 50, offset = 0 } = options;
-        return _cache.fetch(`broadcasts_active_${limit}_${offset}`, async () => {
+        return _cache.fetch(`broadcasts_active`, async () => {
             return this._request(async () => {
                 const { data, count, error } = await supabaseClient
                     .from('broadcasts')
                     .select('*', { count: 'exact' })
                     .gt('expires_at', new Date().toISOString())
-                    .order('created_at', { ascending: false })
-                    .range(offset, offset + limit - 1);
+                    .order('created_at', { ascending: false });
                 if (error) throw error;
                 return { data: data || [], total: count || 0 };
             });
@@ -1203,13 +1186,11 @@ class SupabaseDB {
     }
 
     static async getCertificates(studentEmail, options = {}) {
-        const { limit = 50, offset = 0 } = options;
         return this._request(async () => {
             const { data, count, error } = await supabaseClient
                 .from('certificates')
                 .select('*, courses(*)', { count: 'exact' })
-                .eq('student_email', studentEmail)
-                .range(offset, offset + limit - 1);
+                .eq('student_email', studentEmail);
             if (error) throw error;
             return { data: data || [], total: count || 0 };
         });
@@ -1217,14 +1198,12 @@ class SupabaseDB {
 
     // Planner operations
     static async getPlannerItems(email, options = {}) {
-        const { limit = 100, offset = 0 } = options;
         return this._request(async () => {
             const { data, count, error } = await supabaseClient
                 .from('planner')
                 .select('*', { count: 'exact' })
                 .eq('user_email', email)
-                .order('due_date', { ascending: true })
-                .range(offset, offset + limit - 1);
+                .order('due_date', { ascending: true });
             if (error) throw error;
             return { data: data || [], total: count || 0 };
         });
@@ -1278,7 +1257,7 @@ class SupabaseDB {
     }
 
     static async getSystemLogs(options = {}) {
-        const { limit = 100, offset = 0, level = null, category = null, userEmail = null } = options;
+        const { level = null, category = null, userEmail = null } = options;
         return this._request(async () => {
             let query = supabaseClient.from('system_logs').select('*', { count: 'exact' });
             if (level) query = query.eq('level', level);
@@ -1286,8 +1265,7 @@ class SupabaseDB {
             if (userEmail) query = query.eq('user_email', userEmail);
 
             const { data, count, error } = await query
-                .order('created_at', { ascending: false })
-                .range(offset, offset + limit - 1);
+                .order('created_at', { ascending: false });
             if (error) throw error;
             return { data: data || [], total: count || 0 };
         });
@@ -1340,14 +1318,12 @@ class SupabaseDB {
     }
 
     static async getStudySessions(email, options = {}) {
-        const { limit = 50, offset = 0 } = options;
         return this._request(async () => {
             const { data, count, error } = await supabaseClient
                 .from('study_sessions')
                 .select('*', { count: 'exact' })
                 .eq('user_email', email)
-                .order('started_at', { ascending: false })
-                .range(offset, offset + limit - 1);
+                .order('started_at', { ascending: false });
             if (error) throw error;
             return { data: data || [], total: count || 0 };
         });
@@ -1356,7 +1332,6 @@ class SupabaseDB {
     // Live Class operations
     static async getLiveClasses(courseId = null, teacherEmail = null, courseIds = null, options = {}) {
         if (courseIds && courseIds.length === 0) return { data: [], total: 0 };
-        const { limit = 50, offset = 0 } = options;
         return this._request(async () => {
             let query = supabaseClient.from('live_classes').select('*', { count: 'exact' });
             if (courseId) query = query.eq('course_id', courseId);
@@ -1364,8 +1339,7 @@ class SupabaseDB {
             if (courseIds && courseIds.length > 0) query = query.in('course_id', courseIds);
 
             const { data, count, error } = await query
-                .order('start_at', { ascending: true })
-                .range(offset, offset + limit - 1);
+                .order('start_at', { ascending: true });
             if (error) throw error;
             return { data: data || [], total: count || 0 };
         });
@@ -1443,7 +1417,6 @@ class SupabaseDB {
     }
 
     static async getAttendance(classId, studentEmail = null, options = {}) {
-        const { limit = 100, offset = 0 } = options;
         return this._request(async () => {
             let query = supabaseClient
                 .from('attendance')
@@ -1452,8 +1425,7 @@ class SupabaseDB {
             if (studentEmail) query = query.eq('student_email', studentEmail);
 
             const { data, count, error } = await query
-                .order('join_time', { ascending: true })
-                .range(offset, offset + limit - 1);
+                .order('join_time', { ascending: true });
             if (error) throw error;
             return { data: data || [], total: count || 0 };
         });
@@ -1559,19 +1531,17 @@ class SupabaseDB {
     }
 
     static async getViolations(assessmentId = null, userEmail = null, teacherEmail = null, options = {}) {
-        const { limit = 100, offset = 0 } = options;
-
         return this._request(async () => {
             if (teacherEmail) {
                 // Get teacher's course IDs first
-                const { data: courses } = await this.getCourses(teacherEmail, null, { limit: 2000 });
+                const { data: courses } = await this.getCourses(teacherEmail, null);
                 const courseIds = (courses || []).map(c => c.id);
                 if (courseIds.length === 0) return { data: [], total: 0 };
 
                 // Get assignments and quizzes for these courses
                 const [{ data: assigns }, { data: quizzes }] = await Promise.all([
-                    this.getAssignments(null, null, courseIds, { limit: 2000 }),
-                    this.getQuizzes(null, null, courseIds, { limit: 2000 })
+                    this.getAssignments(null, null, courseIds),
+                    this.getQuizzes(null, null, courseIds)
                 ]);
                 const assessmentIds = [...(assigns || []).map(a => a.id), ...(quizzes || []).map(q => q.id)];
                 if (assessmentIds.length === 0) return { data: [], total: 0 };
@@ -1580,8 +1550,7 @@ class SupabaseDB {
                     .from('violations')
                     .select('*', { count: 'exact' })
                     .in('assessment_id', assessmentIds)
-                    .order('timestamp', { ascending: false })
-                    .range(offset, offset + limit - 1);
+                    .order('timestamp', { ascending: false });
                 if (error) throw error;
                 return { data: data || [], total: count || 0 };
             }
@@ -1591,21 +1560,20 @@ class SupabaseDB {
             if (userEmail) query = query.eq('user_email', userEmail);
 
             const { data, count, error } = await query
-                .order('timestamp', { ascending: false })
-                .range(offset, offset + limit - 1);
+                .order('timestamp', { ascending: false });
             if (error) throw error;
             return { data: data || [], total: count || 0 };
         });
     }
 
     static async getViolationSummary(teacherEmail) {
-        const { data: courses } = await this.getCourses(teacherEmail, null, { limit: 2000 });
+        const { data: courses } = await this.getCourses(teacherEmail, null);
         const courseIds = (courses || []).map(c => c.id);
         if (courseIds.length === 0) return { data: [], total: 0 };
 
         const [{ data: assigns }, { data: quizzes }] = await Promise.all([
-            this.getAssignments(null, null, courseIds, { limit: 2000 }),
-            this.getQuizzes(null, null, courseIds, { limit: 2000 })
+            this.getAssignments(null, null, courseIds),
+            this.getQuizzes(null, null, courseIds)
         ]);
         const assessmentIds = [...(assigns || []).map(a => a.id), ...(quizzes || []).map(q => q.id)];
         if (assessmentIds.length === 0) return { data: [], total: 0 };

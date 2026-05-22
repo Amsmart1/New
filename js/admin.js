@@ -38,7 +38,7 @@ async function renderDashboard() {
       SupabaseDB.getCount('quizzes'),
       SupabaseDB.getCount('enrollments'),
       SupabaseDB.getCount('violations'),
-      SupabaseDB.getSystemLogs({ limit: 5 })
+      SupabaseDB.getSystemLogs()
     ]);
     const stats = {
       totalUsers,
@@ -129,20 +129,16 @@ async function renderDashboard() {
 let allUsers = [];
 let filteredUsers = [];
 
-async function renderUsers(page = 0) {
+async function renderUsers() {
 
   const content = document.getElementById('pageContent');
   if (!content) return;
 
-  const limit = 20;
-  const offset = page * limit;
   const searchTerm = document.getElementById('userSearch')?.value || '';
   const roleFilter = document.getElementById('roleFilter')?.value || 'all';
 
   try {
-    const { data: users, total } = await SupabaseDB.getUsers({
-        limit,
-        offset,
+    const { data: users } = await SupabaseDB.getUsers({
         searchTerm,
         role: roleFilter === 'all' ? null : roleFilter
     });
@@ -152,8 +148,8 @@ async function renderUsers(page = 0) {
     content.innerHTML = `
     <section>
       <div class="controls-row">
-        <input type="text" id="userSearch" class="search-input no-margin" placeholder="Search by name or email" value="${escapeAttr(searchTerm)}" oninput="renderUsers(0)">
-        <select id="roleFilter" class="filter-select no-margin" onchange="renderUsers(0)">
+        <input type="text" id="userSearch" class="search-input no-margin" placeholder="Search by name or email" value="${escapeAttr(searchTerm)}" oninput="renderUsers()">
+        <select id="roleFilter" class="filter-select no-margin" onchange="renderUsers()">
           <option value="all" ${roleFilter === 'all' ? 'selected' : ''}>All Roles</option>
           <option value="student" ${roleFilter === 'student' ? 'selected' : ''}>Student</option>
           <option value="teacher" ${roleFilter === 'teacher' ? 'selected' : ''}>Teacher</option>
@@ -167,14 +163,6 @@ async function renderUsers(page = 0) {
       </div>
       
       <div id="usersList" class="grid"></div>
-
-      ${Math.ceil(total / limit) > 1 ? `
-        <div class="flex-center gap-10 mt-30">
-            <button class="button secondary small w-auto" ${page === 0 ? 'disabled' : ''} onclick="renderUsers(${page - 1})">Previous</button>
-            <span class="small">Page ${page + 1} of ${Math.ceil(total / limit)} (${total} Total)</span>
-            <button class="button secondary small w-auto" ${page >= Math.ceil(total / limit) - 1 ? 'disabled' : ''} onclick="renderUsers(${page + 1})">Next</button>
-        </div>
-      ` : ''}
     </section>
     `;
     displayUsers(users);
@@ -267,7 +255,7 @@ window.denyReset = denyReset;
 window.broadcastNotif = broadcastNotif;
 window.showAddScheduleForm = showAddScheduleForm;
 window.removeSchedule = removeSchedule;
-function filterUsers() { renderUsers(0); }
+function filterUsers() { renderUsers(); }
 window.filterUsers = filterUsers;
 window.previewCleanup = previewCleanup;
 window.executeCleanup = executeCleanup;
@@ -433,22 +421,15 @@ async function removeSchedule(idx) {
 }
 
 
-async function renderResets(page = 0) {
+async function renderResets() {
   const content = document.getElementById('pageContent');
   if (!content) return;
-
-  const limit = 20;
-  const offset = page * limit;
 
   try {
     // Optimization: Use server-side filtering for pending resets
     const { data: pendingResets, total } = await SupabaseDB.getUsers({
-        limit,
-        offset,
         resetStatus: 'pending'
     });
-
-    const totalPages = Math.ceil(total / limit);
 
     content.innerHTML = `
     <section>
@@ -475,14 +456,6 @@ async function renderResets(page = 0) {
             </tbody>
           </table>
         </div>
-
-        ${totalPages > 1 ? `
-            <div class="flex-center gap-10 mt-20">
-                <button class="button secondary small w-auto" ${page === 0 ? 'disabled' : ''} onclick="renderResets(${page - 1})">Previous</button>
-                <span class="small">Page ${page + 1} of ${totalPages}</span>
-                <button class="button secondary small w-auto" ${page >= totalPages - 1 ? 'disabled' : ''} onclick="renderResets(${page + 1})">Next</button>
-            </div>
-        ` : ''}
       `}
     </section>
     `;
@@ -586,7 +559,7 @@ async function renderAnalytics() {
       SupabaseDB.getCount('courses'),
       SupabaseDB.getCount('enrollments'),
       SupabaseDB.getCount('violations'),
-      SupabaseDB.getSubmissions(null, null, null, { limit: 1000 })
+      SupabaseDB.getSubmissions(null, null, null)
     ]);
 
     const submissionsByDate = {};
@@ -889,8 +862,8 @@ async function executeCleanup() {
     UI.showLoading('mgt-area', 'Performing cleanup...');
 
     const [{ data: users }, { data: courses }] = await Promise.all([
-        SupabaseDB.getUsers({ limit: 1000 }),
-        SupabaseDB.getCourses(null, 'draft', { limit: 1000 })
+        SupabaseDB.getUsers(),
+        SupabaseDB.getCourses(null, 'draft')
     ]);
 
     const inactiveUsers = (users || []).filter(u => !u.active);
@@ -1335,16 +1308,12 @@ async function saveAutoTask(task, enabled) {
   }
 }
 
-async function renderSystemLogs(page = 0) {
+async function renderSystemLogs() {
     const content = document.getElementById('pageContent');
     if (!content) return;
 
-    const limit = 50;
-    const offset = page * limit;
-
     try {
-        const { data: logs, total } = await SupabaseDB.getSystemLogs({ limit, offset });
-        const totalPages = Math.ceil(total / limit);
+        const { data: logs } = await SupabaseDB.getSystemLogs();
 
         content.innerHTML = `
             <section>
@@ -1376,13 +1345,6 @@ async function renderSystemLogs(page = 0) {
                         </tbody>
                     </table>
                 </div>
-                ${totalPages > 1 ? `
-                    <div class="flex-center gap-10 mt-20">
-                        <button class="button secondary small w-auto" ${page === 0 ? 'disabled' : ''} onclick="renderSystemLogs(${page - 1})">Previous</button>
-                        <span class="small">Page ${page + 1} of ${totalPages}</span>
-                        <button class="button secondary small w-auto" ${page >= totalPages - 1 ? 'disabled' : ''} onclick="renderSystemLogs(${page + 1})">Next</button>
-                    </div>
-                ` : ''}
             </section>
         `;
     } catch (err) {
