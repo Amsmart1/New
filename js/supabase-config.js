@@ -1271,6 +1271,16 @@ class SupabaseDB {
         });
     }
 
+    static async deleteSystemLogs() {
+        return this._request(async () => {
+            const { error } = await supabaseClient
+                .from('system_logs')
+                .delete()
+                .neq('id', '00000000-0000-0000-0000-000000000000'); // Delete all
+            if (error) throw error;
+        });
+    }
+
     // Backup helper
     static async getAllTableData(table) {
         return this._request(async () => {
@@ -1546,6 +1556,17 @@ class SupabaseDB {
                 .order('timestamp', { ascending: false });
             if (error) throw error;
             return { data: data || [], total: count || 0 };
+        });
+    }
+
+    static async deleteViolations(assessmentId = null, userEmail = null) {
+        return this._request(async () => {
+            let query = supabaseClient.from('violations').delete();
+            if (assessmentId) query = query.eq('assessment_id', assessmentId);
+            if (userEmail) query = query.eq('user_email', userEmail);
+
+            const { error } = await query;
+            if (error) throw error;
         });
     }
 

@@ -21,8 +21,7 @@ async function renderDashboard() {
       courses,
       quizzes,
       enrollments,
-      violations,
-      { data: recentLogs }
+      violations
     ] = await Promise.all([
       SupabaseDB.getCount('users'),
       SupabaseDB.getCount('users', q => q.eq('role', 'student')),
@@ -37,8 +36,7 @@ async function renderDashboard() {
       SupabaseDB.getCount('courses'),
       SupabaseDB.getCount('quizzes'),
       SupabaseDB.getCount('enrollments'),
-      SupabaseDB.getCount('violations'),
-      SupabaseDB.getSystemLogs()
+      SupabaseDB.getCount('violations')
     ]);
     const stats = {
       totalUsers,
@@ -94,25 +92,6 @@ async function renderDashboard() {
         <h4>Maintenance</h4><div class="value">${escapeHtml(stats.maintStatus)}</div>
       </div>
     </div>
-
-    <section>
-      <h3>Recent System Activity</h3>
-      <div class="card" style="padding:0">
-        <table class="small">
-          <thead><tr><th>Time</th><th>Level</th><th>Category</th><th>Message</th></tr></thead>
-          <tbody>
-            ${recentLogs.length === 0 ? '<tr><td colspan="4" class="empty">No recent activity.</td></tr>' : recentLogs.map(log => `
-              <tr>
-                <td>${new Date(log.created_at).toLocaleTimeString()}</td>
-                <td><span class="badge ${log.level === 'error' ? 'badge-inactive' : (log.level === 'warn' ? 'badge-warn' : 'badge-active')}">${escapeHtml(log.level)}</span></td>
-                <td>${escapeHtml(log.category || 'general')}</td>
-                <td>${escapeHtml(log.message)}</td>
-              </tr>
-            `).join('')}
-          </tbody>
-        </table>
-      </div>
-    </section>
     `;
   } catch (error) {
     console.error('Dashboard error:', error);
@@ -1293,6 +1272,20 @@ function initNav() {
   }
 }
 
+async function clearAllLogs() {
+    if (await UI.confirm('Are you sure you want to permanently delete all system logs? This action cannot be undone.', 'Clear System Logs')) {
+        try {
+            await SupabaseDB.deleteSystemLogs();
+            UI.showNotification('System logs cleared.', 'success');
+            renderSystemLogs();
+        } catch (e) {
+            UI.showNotification('Failed to clear logs: ' + e.message, 'error');
+        }
+    }
+}
+
+window.clearAllLogs = clearAllLogs;
+
 async function saveAutoTask(task, enabled) {
   try {
     const maintenance = await SupabaseDB.getMaintenance();
@@ -1318,7 +1311,10 @@ async function renderSystemLogs() {
             <section>
                 <div class="flex-between mb-20">
                     <h3 class="m-0">System Activity Logs</h3>
-                    <button class="button secondary small w-auto" onclick="renderManagement()">Back to Management</button>
+                    <div class="flex gap-10">
+                        <button class="button danger small w-auto" onclick="clearAllLogs()">Clear All Logs</button>
+                        <button class="button secondary small w-auto" onclick="renderManagement()">Back to Management</button>
+                    </div>
                 </div>
                 <div class="card" style="padding:0; overflow-x:auto">
                     <table class="small">
