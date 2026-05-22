@@ -1073,7 +1073,7 @@ async function renderAntiCheat() {
 
   try {
     const user = await SessionManager.getCurrentUser();
-    const summary = await SupabaseDB.getViolationSummary(user.email);
+    const { data: summary } = await SupabaseDB.getViolationSummary(user.email);
 
     content.innerHTML = `
       <div class="card flex-between">
