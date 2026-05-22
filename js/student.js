@@ -1903,10 +1903,6 @@ async function startQuiz(quizId) {
     const user = await SessionManager.getCurrentUser();
     const quiz = await SupabaseDB.getQuiz(quizId);
 
-    const [{ data: subs }] = await Promise.all([
-      SupabaseDB.getQuizSubmissions(quizId, user.email)
-    ]);
-
     const now = Date.now();
     const startAt = quiz.start_at ? new Date(quiz.start_at).getTime() : 0;
     const endAt = quiz.end_at ? new Date(quiz.end_at).getTime() : Infinity;
@@ -1990,19 +1986,8 @@ async function startQuiz(quizId) {
       });
     }
 
-    const inProgress = (subs || []).find(s => s.status === 'in-progress');
-
-    if (inProgress) {
-      currentSubmission = inProgress;
-    } else {
-      currentSubmission = await SupabaseDB.saveQuizSubmission({
-        quiz_id: quizId,
-        student_email: user.email,
-        status: 'in-progress',
-        answers: {},
-        started_at: new Date().toISOString()
-      });
-    }
+    // Authoritative start via RPC
+    currentSubmission = await SupabaseDB.startQuizAttempt(quizId);
 
     renderQuizQuestion(0);
     isStartingQuiz = false;
@@ -2246,37 +2231,12 @@ async function submitQuiz(isAuto = false) {
   }
   const user = await SessionManager.getCurrentUser();
   const answers = currentSubmission.answers;
-  
-  let score = 0;
-  let totalPoints = 0;
-  currentQuiz.questions.forEach((q, idx) => {
-    totalPoints += q.points;
-    const studentAnswer = answers[idx];
-    if (studentAnswer !== undefined && studentAnswer !== null) {
-      if (studentAnswer.toString().trim().toLowerCase() === q.correct.toString().trim().toLowerCase()) {
-        score += q.points;
-      }
-    }
-  });
-
-  const percentage = totalPoints > 0 ? Math.round((score / totalPoints) * 100) : 0;
-  const isPassed = percentage >= (currentQuiz.passing_score || 0);
   const now = new Date();
-  
   const timeSpent = currentSubmission ? Math.round((now - new Date(currentSubmission.started_at)) / 1000) : 0;
 
   try {
-    const finalSub = await SupabaseDB.saveQuizSubmission({
-      ...currentSubmission,
-      answers: answers,
-      score: percentage,
-      total_points: totalPoints,
-      status: 'submitted',
-      time_spent: timeSpent,
-      submitted_at: now.toISOString()
-    });
-
-    currentSubmission = finalSub;
+    // Authoritative submission via RPC
+    currentSubmission = await SupabaseDB.submitQuizAttempt(currentSubmission.id, answers, timeSpent);
 
   } catch (err) {
       console.error('Quiz submission failed:', err);
@@ -2296,9 +2256,12 @@ async function submitQuiz(isAuto = false) {
 
   const quizArea = document.getElementById('quizArea');
   if (quizArea) {
-      const durationMin = Math.floor(timeSpent / 60);
-      const durationSec = timeSpent % 60;
-      const avgTimePerQ = (timeSpent / (currentQuiz.questions?.length || 1)).toFixed(1);
+      const percentage = currentSubmission.score || 0;
+      const isPassed = percentage >= (currentQuiz.passing_score || 0);
+      const timeSpentFinal = currentSubmission.time_spent || 0;
+      const durationMin = Math.floor(timeSpentFinal / 60);
+      const durationSec = timeSpentFinal % 60;
+      const avgTimePerQ = (timeSpentFinal / (currentQuiz.questions?.length || 1)).toFixed(1);
 
       quizArea.innerHTML = `
         <div class="card text-center p-40">

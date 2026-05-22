@@ -387,6 +387,28 @@ class SupabaseDB {
         });
     }
 
+    static async startQuizAttempt(quizId) {
+        return this._request(async () => {
+            const { data, error } = await supabaseClient.rpc('start_quiz_attempt', {
+                p_quiz_id: quizId
+            });
+            if (error) throw error;
+            return data;
+        });
+    }
+
+    static async submitQuizAttempt(submissionId, answers, timeSpent) {
+        return this._request(async () => {
+            const { data, error } = await supabaseClient.rpc('submit_quiz_attempt', {
+                p_submission_id: submissionId,
+                p_answers: answers,
+                p_time_spent: timeSpent
+            });
+            if (error) throw error;
+            return data;
+        });
+    }
+
     static async saveAssignment(assignment) {
         // Sanitize payload to avoid 400 error from extra fields (e.g. from joins)
         const payload = {
