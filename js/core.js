@@ -704,7 +704,9 @@ const NotificationManager = {
 
         // Optional callback for specific dashboard table changes
         if (onTableChange) {
-            const filter = role === 'student' ? `student_email=eq.${email}` : undefined;
+            // Apply status filter for teacher/admin to avoid huge in-progress payloads
+            // Student only sees their own, but teacher/admin sees everyone
+            const filter = role === 'student' ? `student_email=eq.${email}` : `status=eq.submitted`;
             channel.on('postgres_changes', {
                 event: '*',
                 schema: 'public',

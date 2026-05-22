@@ -2138,7 +2138,7 @@ async function autoSubmitQuiz() {
           console.warn('Auto-save failed:', e);
           if (statusEl) statusEl.textContent = 'Save failed (offline?)';
       }
-  }, 1000);
+  }, 5000);
 }
 
 async function submitQuiz(isAuto = false) {
