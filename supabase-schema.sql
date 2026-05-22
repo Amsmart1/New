@@ -441,17 +441,19 @@ BEGIN
     ALTER TABLE quiz_submissions ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
     ALTER TABLE quiz_submissions ADD COLUMN IF NOT EXISTS attempt_number INTEGER;
 
-    -- Migrate quiz_submissions attempt numbers if needed
-    -- (Used EXECUTE to ensure it works even if attempt_number was just added)
+    -- Authoritative migration to fix any existing inconsistent attempt numbers
+    UPDATE quiz_submissions SET attempt_number = NULL WHERE status = 'in-progress';
+
     EXECUTE '
     WITH numbered_attempts AS (
-        SELECT id, ROW_NUMBER() OVER (PARTITION BY quiz_id, student_email ORDER BY started_at ASC) as row_num
+        SELECT id, ROW_NUMBER() OVER (PARTITION BY quiz_id, student_email ORDER BY submitted_at ASC, started_at ASC) as new_num
         FROM quiz_submissions
+        WHERE status = ''submitted''
     )
     UPDATE quiz_submissions
-    SET attempt_number = numbered_attempts.row_num
+    SET attempt_number = numbered_attempts.new_num
     FROM numbered_attempts
-    WHERE quiz_submissions.id = numbered_attempts.id AND quiz_submissions.attempt_number IS NULL';
+    WHERE quiz_submissions.id = numbered_attempts.id';
 
     -- Removed forced NOT NULL/DEFAULT for attempt_number to allow drafts to have NULL attempts
 
@@ -703,32 +705,31 @@ DECLARE
     v_attempts_allowed INTEGER;
     v_next_attempt INTEGER;
 BEGIN
-    -- Force attempt_number to NULL if it's in-progress to ensure it doesn't count towards used attempts
+    -- Authoritative: Force attempt_number to NULL if it's in-progress
     IF (NEW.status = 'in-progress') THEN
         NEW.attempt_number := NULL;
     END IF;
 
-    -- Only allocate attempt number when status transition to 'submitted'
-    -- This prevents multiple attempts being registered for the same start if multiple updates happen
-    IF (NEW.status = 'submitted' AND (TG_OP = 'INSERT' OR (TG_OP = 'UPDATE' AND (OLD.status IS DISTINCT FROM 'submitted')))) THEN
-        -- Only allocate if not already allocated (e.g. if explicitly provided and we want to allow that,
-        -- but usually we want the server to manage it)
-        IF (NEW.attempt_number IS NULL) THEN
-            SELECT attempts_allowed INTO v_attempts_allowed FROM quizzes WHERE id = NEW.quiz_id;
+    -- Authoritative: Always allocate/re-allocate attempt number when status transitions to 'submitted'
+    -- This ensures attempt_number is ALWAYS sequential and server-managed.
+    IF (NEW.status = 'submitted' AND (TG_OP = 'INSERT' OR (TG_OP = 'UPDATE' AND (COALESCE(OLD.status, '') != 'submitted')))) THEN
+        SELECT attempts_allowed INTO v_attempts_allowed FROM quizzes WHERE id = NEW.quiz_id;
 
-            -- Atomically allocate next attempt number among ALREADY SUBMITTED attempts
-            SELECT COALESCE(MAX(attempt_number), 0) + 1 INTO v_next_attempt
-            FROM quiz_submissions
-            WHERE quiz_id = NEW.quiz_id AND student_email = NEW.student_email AND status = 'submitted';
+        -- Atomically allocate next attempt number among ALREADY SUBMITTED attempts
+        SELECT COALESCE(MAX(attempt_number), 0) + 1 INTO v_next_attempt
+        FROM quiz_submissions
+        WHERE quiz_id = NEW.quiz_id
+          AND student_email = NEW.student_email
+          AND status = 'submitted'
+          AND id != NEW.id;
 
-            IF v_attempts_allowed IS NOT NULL AND v_attempts_allowed > 0 THEN
-                IF v_next_attempt > v_attempts_allowed THEN
-                    RAISE EXCEPTION 'You have reached the maximum number of attempts allowed for this quiz.';
-                END IF;
+        IF v_attempts_allowed IS NOT NULL AND v_attempts_allowed > 0 THEN
+            IF v_next_attempt > v_attempts_allowed THEN
+                RAISE EXCEPTION 'You have reached the maximum number of attempts allowed for this quiz.';
             END IF;
-
-            NEW.attempt_number := v_next_attempt;
         END IF;
+
+        NEW.attempt_number := v_next_attempt;
     END IF;
 
     RETURN NEW;
@@ -1113,6 +1114,122 @@ CREATE OR REPLACE FUNCTION get_server_time()
 RETURNS TIMESTAMP WITH TIME ZONE AS $$
   SELECT NOW();
 $$ LANGUAGE sql STABLE;
+
+-- Authoritative Quiz Management RPCs
+
+CREATE OR REPLACE FUNCTION start_quiz_attempt(p_quiz_id UUID)
+RETURNS JSONB AS $$
+DECLARE
+    v_email VARCHAR;
+    v_quiz RECORD;
+    v_attempts_used INTEGER;
+    v_existing_id UUID;
+    v_submission JSONB;
+BEGIN
+    v_email := get_auth_email();
+    IF v_email IS NULL THEN
+        RAISE EXCEPTION 'Not authenticated';
+    END IF;
+
+    -- 1. Get Quiz info and check if it's available
+    SELECT * INTO v_quiz FROM quizzes WHERE id = p_quiz_id;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'Quiz not found';
+    END IF;
+
+    IF v_quiz.status != 'published' THEN
+        RAISE EXCEPTION 'Quiz is not available';
+    END IF;
+
+    -- 2. Check for existing in-progress attempt
+    SELECT id INTO v_existing_id
+    FROM quiz_submissions
+    WHERE quiz_id = p_quiz_id AND student_email = v_email AND status = 'in-progress'
+    LIMIT 1;
+
+    IF v_existing_id IS NOT NULL THEN
+        SELECT to_jsonb(t.*) INTO v_submission FROM quiz_submissions t WHERE id = v_existing_id;
+        RETURN v_submission;
+    END IF;
+
+    -- 3. Check attempt limits
+    SELECT COUNT(*) INTO v_attempts_used
+    FROM quiz_submissions
+    WHERE quiz_id = p_quiz_id AND student_email = v_email AND status = 'submitted';
+
+    IF v_quiz.attempts_allowed IS NOT NULL AND v_quiz.attempts_allowed > 0 THEN
+        IF v_attempts_used >= v_quiz.attempts_allowed THEN
+            RAISE EXCEPTION 'You have reached the maximum number of attempts allowed for this quiz.';
+        END IF;
+    END IF;
+
+    -- 4. Create new attempt
+    INSERT INTO quiz_submissions (quiz_id, student_email, status, started_at, answers, attempt_number)
+    VALUES (p_quiz_id, v_email, 'in-progress', NOW(), '{}'::jsonb, NULL)
+    RETURNING to_jsonb(quiz_submissions.*) INTO v_submission;
+
+    RETURN v_submission;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+CREATE OR REPLACE FUNCTION submit_quiz_attempt(p_submission_id UUID, p_answers JSONB)
+RETURNS JSONB AS $$
+DECLARE
+    v_email VARCHAR;
+    v_submission RECORD;
+    v_quiz RECORD;
+    v_score INTEGER := 0;
+    v_total_points INTEGER := 0;
+    v_q JSONB;
+    v_student_ans TEXT;
+    v_correct_ans TEXT;
+    v_idx INTEGER := 0;
+    v_final_submission JSONB;
+    v_now TIMESTAMP WITH TIME ZONE := NOW();
+BEGIN
+    v_email := get_auth_email();
+    IF v_email IS NULL THEN RAISE EXCEPTION 'Not authenticated'; END IF;
+
+    -- 1. Get and validate submission
+    SELECT * INTO v_submission FROM quiz_submissions WHERE id = p_submission_id;
+    IF NOT FOUND THEN RAISE EXCEPTION 'Submission not found'; END IF;
+    IF v_submission.student_email != v_email THEN RAISE EXCEPTION 'Unauthorized'; END IF;
+    IF v_submission.status != 'in-progress' THEN RAISE EXCEPTION 'Attempt is already submitted or invalid'; END IF;
+
+    -- 2. Get Quiz and calculate score
+    SELECT * INTO v_quiz FROM quizzes WHERE id = v_submission.quiz_id;
+
+    -- Iterate through quiz questions and calculate score
+    FOR v_q IN SELECT * FROM jsonb_array_elements(v_quiz.questions)
+    LOOP
+        v_total_points := v_total_points + (v_q->>'points')::INTEGER;
+        v_student_ans := p_answers->>(v_idx::TEXT);
+        v_correct_ans := v_q->>'correct';
+
+        IF v_student_ans IS NOT NULL AND
+           TRIM(LOWER(v_student_ans)) = TRIM(LOWER(v_correct_ans)) THEN
+            v_score := v_score + (v_q->>'points')::INTEGER;
+        END IF;
+
+        v_idx := v_idx + 1;
+    END LOOP;
+
+    v_score := CASE WHEN v_total_points > 0 THEN ROUND((v_score::FLOAT / v_total_points::FLOAT) * 100) ELSE 0 END;
+
+    -- 3. Update and finalize submission
+    UPDATE quiz_submissions SET
+        status = 'submitted',
+        answers = p_answers,
+        score = v_score,
+        total_points = v_total_points,
+        submitted_at = v_now,
+        time_spent = ROUND(EXTRACT(EPOCH FROM (v_now - started_at)))
+    WHERE id = p_submission_id
+    RETURNING to_jsonb(quiz_submissions.*) INTO v_final_submission;
+
+    RETURN v_final_submission;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
 
 -- Periodic Purge Function
 CREATE OR REPLACE FUNCTION purge_expired_records()
