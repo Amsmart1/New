@@ -101,7 +101,7 @@ async function loadAndEditCourse(id) {
         const course = await SupabaseDB.getCourse(id);
         if (course) showCourseForm(course);
     } catch (e) {
-        alert('Error loading course: ' + e.message);
+        UI.showNotification('Error loading course: ' + e.message, 'error');
     }
 }
 window.loadAndEditCourse = loadAndEditCourse;
@@ -145,6 +145,11 @@ function showCourseForm(course = null) {
   `;
   document.getElementById('courseForm').addEventListener('submit', async (e) => {
     e.preventDefault();
+    const btn = e.target.querySelector('button[type="submit"]');
+    btn.disabled = true;
+    const originalText = btn.textContent;
+    btn.textContent = 'Saving...';
+
     try {
       const user = await SessionManager.getCurrentUser();
       const courseId = isEdit ? course.id : crypto.randomUUID();
@@ -161,9 +166,13 @@ function showCourseForm(course = null) {
       };
 
       await SupabaseDB.saveCourse(courseData);
+      UI.showNotification('Course saved successfully', 'success');
       renderCourses();
     } catch (err) {
-      alert('Error saving course: ' + err.message);
+      UI.showNotification('Error saving course: ' + err.message, 'error');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = originalText;
     }
   });
 }
@@ -244,15 +253,29 @@ function showLessonForm(courseId, lesson = null) {
   `;
   document.getElementById('lessonForm').addEventListener('submit', async (e) => {
     e.preventDefault();
-    const data = {
-        ...lesson,
-        id: isEdit ? lesson.id : crypto.randomUUID(),
-        course_id: courseId,
-        title: document.getElementById('lessonTitle').value,
-        content: document.getElementById('lessonContent').value,
-        order_index: parseInt(document.getElementById('lessonOrder').value) || 0
-    };
-    await SupabaseDB.saveLesson(data); editCourse(courseId);
+    const btn = e.target.querySelector('button[type="submit"]');
+    btn.disabled = true;
+    const originalText = btn.textContent;
+    btn.textContent = 'Saving...';
+
+    try {
+      const data = {
+          ...lesson,
+          id: isEdit ? lesson.id : crypto.randomUUID(),
+          course_id: courseId,
+          title: document.getElementById('lessonTitle').value,
+          content: document.getElementById('lessonContent').value,
+          order_index: parseInt(document.getElementById('lessonOrder').value) || 0
+      };
+      await SupabaseDB.saveLesson(data);
+      UI.showNotification('Lesson saved successfully', 'success');
+      editCourse(courseId);
+    } catch (e) {
+      UI.showNotification('Error saving lesson: ' + e.message, 'error');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = originalText;
+    }
   });
 }
 async function editLesson(lessonId, courseId) {
@@ -262,22 +285,25 @@ async function editLesson(lessonId, courseId) {
   showLessonForm(courseId, lesson);
 }
 async function deleteLessonById(id, courseId) {
-  if (confirm('Delete?')) {
+  if (confirm('Are you sure you want to delete this lesson?')) {
     try {
       await SupabaseDB.deleteLesson(id);
+      UI.showNotification('Lesson deleted', 'success');
       editCourse(courseId);
     } catch (e) {
-      alert('Error deleting lesson: ' + e.message);
+      UI.showNotification('Error deleting lesson: ' + e.message, 'error');
     }
   }
 }
 async function deleteCourseById(id) {
-  if (confirm('Delete?')) {
+  if (confirm('Are you sure you want to delete this course and all its content?')) {
+    UI.showNotification('Deleting course...', 'info');
     try {
       await SupabaseDB.deleteCourse(id);
+      UI.showNotification('Course deleted successfully', 'success');
       renderCourses();
     } catch (e) {
-      alert('Error deleting course: ' + e.message);
+      UI.showNotification('Error deleting course: ' + e.message, 'error');
     }
   }
 }
@@ -518,10 +544,10 @@ async function unenrollStudent(courseId, studentEmail) {
   if (!confirm('Are you sure you want to completely unenroll this student? This will delete all their progress in this course.')) return;
   try {
     await SupabaseDB.deleteEnrollment(courseId, studentEmail);
-    alert('Student unenrolled successfully.');
+    UI.showNotification('Student unenrolled successfully.', 'success');
     renderStudents();
   } catch (e) {
-    alert('Unenrollment failed: ' + e.message);
+    UI.showNotification('Unenrollment failed: ' + e.message, 'error');
   }
 }
 window.unenrollStudent = unenrollStudent;
@@ -574,13 +600,13 @@ async function issueCert(studentEmail) {
       issued_at: issueDate
     });
 
-    alert('Certificate issued successfully!');
+    UI.showNotification('Certificate issued successfully!', 'success');
     renderStudents();
     const area = document.getElementById('certFormArea');
     if (area) area.style.display = 'none';
   } catch (e) {
     console.error('Cert Issue error:', e);
-    alert('Error issuing certificate: ' + e.message);
+    UI.showNotification('Error issuing certificate: ' + e.message, 'error');
   } finally {
     btn.disabled = false; btn.textContent = 'Issue & Generate PDF';
   }
@@ -710,6 +736,11 @@ async function showAssignmentForm(assignment = null, courseId = null) {
   updateACPreview();
   document.getElementById('assignmentForm').addEventListener('submit', async (e) => {
     e.preventDefault();
+    const btn = e.target.querySelector('button[type="submit"]');
+    btn.disabled = true;
+    const originalText = btn.textContent;
+    btn.textContent = 'Saving...';
+
     try {
       const user = await SessionManager.getCurrentUser();
       const questions = [];
@@ -746,15 +777,30 @@ async function showAssignmentForm(assignment = null, courseId = null) {
         attachments: isEdit ? assignment.attachments : []
       };
       const result = await SupabaseDB.saveAssignment(assignmentData);
-      if (result) { alert('Success!'); if (selCourseId && !assignment) editCourse(selCourseId); else renderAssignments(); }
+      if (result) {
+        UI.showNotification('Assignment saved successfully', 'success');
+        if (selCourseId && !assignment) editCourse(selCourseId);
+        else renderAssignments();
+      }
     } catch (err) {
-      alert('Error saving assignment: ' + err.message);
+      UI.showNotification('Error saving assignment: ' + err.message, 'error');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = originalText;
     }
   });
 }
 async function editAssignment(id) { const user = await SessionManager.getCurrentUser(); const { data: assignments } = await SupabaseDB.getAssignments(user.email, null, null, { limit: 1000 }); const assignment = assignments.find(a => a.id === id); if (assignment) showAssignmentForm(assignment); }
 async function deleteAssignmentById(id, courseId = null) {
-  if (confirm('Delete?')) { await SupabaseDB.deleteAssignment(id); if (courseId) editCourse(courseId); else renderAssignments(); }
+  if (confirm('Are you sure you want to delete this assignment?')) {
+    try {
+      await SupabaseDB.deleteAssignment(id);
+      UI.showNotification('Assignment deleted', 'success');
+      if (courseId) editCourse(courseId); else renderAssignments();
+    } catch (e) {
+      UI.showNotification('Error deleting assignment: ' + e.message, 'error');
+    }
+  }
 }
 async function gradeSubmission(assignmentId, studentEmail) {
   const content = document.getElementById('pageContent');
@@ -873,6 +919,10 @@ async function gradeSubmission(assignmentId, studentEmail) {
 
   document.getElementById('gradingForm').addEventListener('submit', async (e) => {
     e.preventDefault();
+    const btn = e.target.querySelector('button[type="submit"]');
+    btn.disabled = true;
+    btn.textContent = 'Saving...';
+
     try {
       const questionScores = {};
       document.querySelectorAll('.q-score-input').forEach(input => {
@@ -897,11 +947,14 @@ async function gradeSubmission(assignmentId, studentEmail) {
         regrade_request: null // Clear regrade request once graded
       };
       if (await SupabaseDB.saveSubmission(updatedSubmission)) {
-        alert('Graded!');
+        UI.showNotification('Submission graded successfully', 'success');
         renderGrading();
       }
     } catch (e) {
-      alert('Error saving grade: ' + e.message);
+      UI.showNotification('Error saving grade: ' + e.message, 'error');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Submit Grade';
     }
   });
   } catch (error) {
@@ -913,15 +966,20 @@ async function gradeSubmission(assignmentId, studentEmail) {
     </div>`;
   }
 }
-async function renderDiscussions() {
+async function renderDiscussions(page = 0) {
 
   const container = document.getElementById('pageContent');
   if (!container) return;
   clearActiveCountdowns();
 
+  const limit = 12;
+  const offset = page * limit;
+
   try {
     const user = await SessionManager.getCurrentUser();
-    const { data: courses } = await SupabaseDB.getCourses(user.email, null, { limit: 1000 });
+    const { data: courses, total } = await SupabaseDB.getCourses(user.email, null, { limit, offset });
+    const totalPages = Math.ceil(total / limit);
+
     container.innerHTML = `
     <div class="card">
       <h2 class="m-0">Discussions</h2>
@@ -933,8 +991,16 @@ async function renderDiscussions() {
           <h3 class="m-0">${escapeHtml(c.title)}</h3>
           <button class="button w-auto mt-10" onclick="viewCourseDiscussions('${escapeAttr(c.id)}', 0)">View Discussions</button>
         </div>
-      `).join('')}
+      `).join('') || '<div class="empty">No courses found.</div>'}
       </div>
+
+      ${totalPages > 1 ? `
+        <div class="flex-center gap-10 mt-30">
+            <button class="button secondary small w-auto" ${page === 0 ? 'disabled' : ''} onclick="renderDiscussions(${page - 1})">Previous</button>
+            <span class="small">Page ${page + 1} of ${totalPages}</span>
+            <button class="button secondary small w-auto" ${page >= totalPages - 1 ? 'disabled' : ''} onclick="renderDiscussions(${page + 1})">Next</button>
+        </div>
+      ` : ''}
     `;
   } catch (error) {
     console.error('Discussions error:', error);
@@ -992,7 +1058,7 @@ async function postTeacherDiscussion(courseId, parentId = null, content = null) 
     });
     viewCourseDiscussions(courseId, 0);
   } catch (e) {
-    alert('Error posting message: ' + e.message);
+    UI.showNotification('Error posting message: ' + e.message, 'error');
   }
 }
 
@@ -1019,7 +1085,7 @@ async function saveDiscussionEdit(id, courseId, page = 0) {
     await SupabaseDB.saveDiscussion({ ...existing, content });
     viewCourseDiscussions(courseId, page);
   } catch (e) {
-    alert('Error updating: ' + e.message);
+    UI.showNotification('Error updating: ' + e.message, 'error');
   }
 }
 
@@ -1029,7 +1095,7 @@ async function deleteDiscussion(id, courseId, page = 0) {
     await SupabaseDB.deleteDiscussion(id);
     viewCourseDiscussions(courseId, page);
   } catch (e) {
-    alert('Error deleting: ' + e.message);
+    UI.showNotification('Error deleting: ' + e.message, 'error');
   }
 }
 
@@ -1339,21 +1405,25 @@ async function renderSettings() {
 
 window.renderSettings = renderSettings;
 
-async function renderLiveClasses() {
+async function renderLiveClasses(page = 0) {
 
   const content = document.getElementById('pageContent');
   if (!content) return;
   clearActiveCountdowns();
 
+  const limit = 12;
+  const offset = page * limit;
+
   try {
     const user = await SessionManager.getCurrentUser();
-    const [liveRes, { data: courses }] = await Promise.all([
-      SupabaseDB.getLiveClasses(null, user.email, null, { limit: 1000 }),
-      SupabaseDB.getCourses(user.email, null, { limit: 1000 })
+    const [{ data: liveClasses, total }, { data: courses }, { data: allTeacherLiveClasses }] = await Promise.all([
+      SupabaseDB.getLiveClasses(null, user.email, null, { limit, offset }),
+      SupabaseDB.getCourses(user.email, null, { limit: 1000 }),
+      SupabaseDB.getLiveClasses(null, user.email, null, { limit: 1000 }) // Fetch more to find active class across pages
     ]);
-    const liveClasses = liveRes.data || [];
+    const totalPages = Math.ceil(total / limit);
 
-    const activeClass = liveClasses.find(liveClass => liveClass.status === 'live');
+    const activeClass = allTeacherLiveClasses.find(liveClass => liveClass.status === 'live');
 
     content.innerHTML = `
       <div class="card flex-between">
@@ -1411,6 +1481,14 @@ async function renderLiveClasses() {
           `;
         }).join('') || '<div class="empty">No live classes scheduled.</div>'}
       </div>
+
+      ${totalPages > 1 ? `
+        <div class="flex-center gap-10 mt-30">
+            <button class="button secondary small w-auto" ${page === 0 ? 'disabled' : ''} onclick="renderLiveClasses(${page - 1})">Previous</button>
+            <span class="small">Page ${page + 1} of ${totalPages}</span>
+            <button class="button secondary small w-auto" ${page >= totalPages - 1 ? 'disabled' : ''} onclick="renderLiveClasses(${page + 1})">Next</button>
+        </div>
+      ` : ''}
       <div id="liveFormArea" class="hidden mt-20"></div>
       <div id="jitsi-container" class="hidden mt-20" style="height:600px; border:1px solid var(--border); border-radius:8px; overflow:hidden"></div>
     `;
@@ -1867,7 +1945,7 @@ async function viewAttendance(classId) {
     `;
     document.body.insertAdjacentHTML('beforeend', content);
   } catch (e) {
-    alert('Failed to load attendance: ' + e.message);
+    UI.showNotification('Failed to load attendance: ' + e.message, 'error');
   }
 }
 
@@ -2099,6 +2177,11 @@ window.shuffleQuizQuestions = () => {
   if (isEdit && quiz.questions) { quiz.questions.forEach(q => window.addQuizQuestionField(q)); }
   document.getElementById('quizForm').addEventListener('submit', async (e) => {
     e.preventDefault();
+    const btn = e.target.querySelector('button[type="submit"]');
+    btn.disabled = true;
+    const originalText = btn.textContent;
+    btn.textContent = 'Saving...';
+
     try {
       const user = await SessionManager.getCurrentUser();
       const questions = [];
@@ -2133,9 +2216,13 @@ window.shuffleQuizQuestions = () => {
         anti_cheat_config: acConfig,
         questions
       });
+      UI.showNotification('Quiz saved successfully', 'success');
       renderQuizzes();
     } catch (err) {
-      alert('Error saving quiz: ' + err.message);
+      UI.showNotification('Error saving quiz: ' + err.message, 'error');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = originalText;
     }
   });
 }
@@ -2148,12 +2235,13 @@ async function editQuiz(id) {
 }
 
 async function deleteQuizById(id) {
-  if (confirm('Delete Quiz?')) {
+  if (confirm('Are you sure you want to delete this quiz?')) {
     try {
       await SupabaseDB.deleteQuiz(id);
+      UI.showNotification('Quiz deleted successfully', 'success');
       renderQuizzes();
     } catch (e) {
-      alert('Error deleting quiz: ' + e.message);
+      UI.showNotification('Error deleting quiz: ' + e.message, 'error');
     }
   }
 }
@@ -2323,6 +2411,10 @@ async function gradeQuizSubmission(submissionId, quizId) {
 
   document.getElementById('quizGradingForm').addEventListener('submit', async (e) => {
     e.preventDefault();
+    const btn = e.target.querySelector('button[type="submit"]');
+    btn.disabled = true;
+    btn.textContent = 'Saving...';
+
     try {
       const manualScoresMap = {};
       Array.from(document.querySelectorAll('.q-manual-points')).forEach(input => {
@@ -2361,10 +2453,13 @@ async function gradeQuizSubmission(submissionId, quizId) {
       };
 
       await SupabaseDB.saveQuizSubmission(updatedSubmission);
-      alert('Quiz graded successfully!');
+      UI.showNotification('Quiz graded successfully!', 'success');
       viewQuizResults(quizId);
     } catch (err) {
-      alert('Error saving grade: ' + err.message);
+      UI.showNotification('Error saving grade: ' + err.message, 'error');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Save Grade';
     }
   });
 }
@@ -2527,18 +2622,26 @@ function initNav() {
 }
 
 
-async function renderMaterials() {
+async function renderMaterials(page = 0) {
 
   const content = document.getElementById('pageContent');
   if (!content) return;
   clearActiveCountdowns();
 
+  const limit = 12;
+  const offset = page * limit;
+
   try {
     const user = await SessionManager.getCurrentUser();
-    const { data: courses } = await SupabaseDB.getCourses(user.email, null, { limit: 1000 });
+    const { data: courses, total } = await SupabaseDB.getCourses(user.email, null, { limit, offset });
+    const totalPages = Math.ceil(total / limit);
+
     const courseIds = (courses || []).map(c => c.id);
-    const materialsRes = await SupabaseDB.getMaterials(null, courseIds, { limit: 1000 });
-    const materials = materialsRes.data || [];
+    let materials = [];
+    if (courseIds.length > 0) {
+        const materialsRes = await SupabaseDB.getMaterials(null, courseIds, { limit: 1000 });
+        materials = materialsRes.data || [];
+    }
 
     content.innerHTML = `
       <div class="card flex-between">
@@ -2564,8 +2667,17 @@ async function renderMaterials() {
               </div>
             </div>
           `;
-        }).join('')}
+        }).join('') || '<div class="empty">No courses found.</div>'}
       </div>
+
+      ${totalPages > 1 ? `
+        <div class="flex-center gap-10 mt-30">
+            <button class="button secondary small w-auto" ${page === 0 ? 'disabled' : ''} onclick="renderMaterials(${page - 1})">Previous</button>
+            <span class="small">Page ${page + 1} of ${totalPages}</span>
+            <button class="button secondary small w-auto" ${page >= totalPages - 1 ? 'disabled' : ''} onclick="renderMaterials(${page + 1})">Next</button>
+        </div>
+      ` : ''}
+
       <div id="materialFormArea" class="hidden mt-20"></div>
     `;
   } catch (error) {
@@ -2617,7 +2729,16 @@ async function saveMaterial() {
   const courseId = document.getElementById('matCourseId').value;
   const title = document.getElementById('matTitle').value;
   const url = document.getElementById('matFileUrl').value;
-  if (!title || !url) return alert('Title and file required');
+  if (!title || !url) {
+      UI.showNotification('Title and file required', 'warn');
+      return;
+  }
+
+  const btn = document.getElementById('saveMatBtn');
+  if (btn) {
+      btn.disabled = true;
+      btn.textContent = 'Saving...';
+  }
 
   try {
     await SupabaseDB.saveMaterial({
@@ -2627,20 +2748,26 @@ async function saveMaterial() {
       title: title,
       file_url: url
     });
-    alert('Material saved!');
+    UI.showNotification('Material saved successfully', 'success');
     renderMaterials();
   } catch (e) {
-    alert('Save failed: ' + e.message);
+    UI.showNotification('Save failed: ' + e.message, 'error');
+  } finally {
+      if (btn) {
+          btn.disabled = false;
+          btn.textContent = 'Save Material';
+      }
   }
 }
 
 async function deleteMaterial(id) {
-  if (confirm('Delete material?')) {
+  if (confirm('Are you sure you want to delete this material?')) {
     try {
       await SupabaseDB.deleteMaterial(id);
+      UI.showNotification('Material deleted', 'success');
       renderMaterials();
     } catch (e) {
-      alert('Delete failed');
+      UI.showNotification('Delete failed: ' + e.message, 'error');
     }
   }
 }
