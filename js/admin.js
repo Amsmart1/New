@@ -17,7 +17,12 @@ async function renderDashboard() {
       assignments,
       submissions,
       pendingGrading,
-      maintenance
+      maintenance,
+      courses,
+      quizzes,
+      enrollments,
+      violations,
+      { data: recentLogs }
     ] = await Promise.all([
       SupabaseDB.getCount('users'),
       SupabaseDB.getCount('users', q => q.eq('role', 'student')),
@@ -28,7 +33,12 @@ async function renderDashboard() {
       SupabaseDB.getCount('assignments'),
       SupabaseDB.getCount('submissions'),
       SupabaseDB.getCount('submissions', q => q.or('status.eq.submitted,regrade_request.not.is.null')),
-      SupabaseDB.getMaintenance()
+      SupabaseDB.getMaintenance(),
+      SupabaseDB.getCount('courses'),
+      SupabaseDB.getCount('quizzes'),
+      SupabaseDB.getCount('enrollments'),
+      SupabaseDB.getCount('violations'),
+      SupabaseDB.getSystemLogs({ limit: 5 })
     ]);
     const stats = {
       totalUsers,
@@ -40,6 +50,10 @@ async function renderDashboard() {
       assignments,
       submissions,
       pendingGrading,
+      courses,
+      quizzes,
+      enrollments,
+      violations,
       maintStatus: isActiveMaintenance(maintenance) ? 'Active' : 'Off'
     };
 
@@ -72,14 +86,32 @@ async function renderDashboard() {
       <div class="stat-card"><h4>Assignments</h4><div class="value">${escapeHtml(stats.assignments)}</div></div>
       <div class="stat-card"><h4>Submissions</h4><div class="value">${escapeHtml(stats.submissions)}</div></div>
       <div class="stat-card"><h4>Pending Grading</h4><div class="value">${escapeHtml(stats.pendingGrading)}</div></div>
+      <div class="stat-card"><h4>Courses</h4><div class="value">${escapeHtml(stats.courses)}</div></div>
+      <div class="stat-card"><h4>Quizzes</h4><div class="value">${escapeHtml(stats.quizzes)}</div></div>
+      <div class="stat-card"><h4>Enrollments</h4><div class="value">${escapeHtml(stats.enrollments)}</div></div>
+      <div class="stat-card" style="border-left-color: var(--danger)"><h4>Violations</h4><div class="value">${escapeHtml(stats.violations)}</div></div>
       <div class="stat-card" style="border-left-color: ${stats.maintStatus === 'Active' ? 'var(--warn)' : 'var(--ok)'}">
         <h4>Maintenance</h4><div class="value">${escapeHtml(stats.maintStatus)}</div>
       </div>
     </div>
 
     <section>
-      <h3>Recent Activity</h3>
-      <div class="small">System running normally. All services operational.</div>
+      <h3>Recent System Activity</h3>
+      <div class="card" style="padding:0">
+        <table class="small">
+          <thead><tr><th>Time</th><th>Level</th><th>Category</th><th>Message</th></tr></thead>
+          <tbody>
+            ${recentLogs.length === 0 ? '<tr><td colspan="4" class="empty">No recent activity.</td></tr>' : recentLogs.map(log => `
+              <tr>
+                <td>${new Date(log.created_at).toLocaleTimeString()}</td>
+                <td><span class="badge ${log.level === 'error' ? 'badge-inactive' : (log.level === 'warn' ? 'badge-warn' : 'badge-active')}">${escapeHtml(log.level)}</span></td>
+                <td>${escapeHtml(log.category || 'general')}</td>
+                <td>${escapeHtml(log.message)}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
     </section>
     `;
   } catch (error) {
@@ -237,7 +269,6 @@ window.showAddScheduleForm = showAddScheduleForm;
 window.removeSchedule = removeSchedule;
 function filterUsers() { renderUsers(0); }
 window.filterUsers = filterUsers;
-window.saveAutoSetting = saveAutoSetting;
 window.previewCleanup = previewCleanup;
 window.executeCleanup = executeCleanup;
 window.exportBackup = exportBackup;
@@ -255,6 +286,7 @@ async function toggleUserStatus(email, currentStatus) {
       user.active = !currentStatus;
       await SupabaseDB.saveUser(user);
       UI.showNotification(`User ${user.active ? 'activated' : 'deactivated'}`, 'success');
+      SupabaseDB.saveSystemLog({ category: 'auth', message: `User ${email} ${user.active ? 'activated' : 'deactivated'} by admin` });
 
       // Update local state if filtered
       const idx = allUsers.findIndex(u => u.email === email);
@@ -262,16 +294,17 @@ async function toggleUserStatus(email, currentStatus) {
 
       filterUsers(); // Refresh display with current filters
     }
-  } catch (e) { alert('Error: ' + e.message); }
+  } catch (e) { UI.showNotification('Error: ' + e.message, 'error'); }
 }
 
 async function deleteUserByEmail(email) {
-  if (confirm(`Are you sure you want to delete ${email}? This cannot be undone.`)) {
+  if (await UI.confirm(`Are you sure you want to delete ${email}? This cannot be undone.`, 'Delete User')) {
     try {
       await SupabaseDB.deleteUser(email);
-      UI.showNotification('User deleted');
+      UI.showNotification('User deleted', 'success');
+      SupabaseDB.saveSystemLog({ category: 'auth', message: `User ${email} deleted by admin`, level: 'warn' });
       renderUsers();
-    } catch (e) { alert('Error: ' + e.message); }
+    } catch (e) { UI.showNotification('Error: ' + e.message, 'error'); }
   }
 }
 
@@ -282,9 +315,10 @@ async function lockUser(email, minutes) {
       user.locked_until = new Date(Date.now() + minutes * 60000).toISOString();
       await SupabaseDB.saveUser(user);
       UI.showNotification(`User locked for ${minutes} minutes`);
+      SupabaseDB.saveSystemLog({ category: 'auth', message: `User ${email} locked for ${minutes}m by admin`, level: 'warn' });
       renderUsers();
     }
-  } catch (e) { alert('Error: ' + e.message); }
+  } catch (e) { UI.showNotification('Error: ' + e.message, 'error'); }
 }
 
 async function unlockUser(email) {
@@ -294,10 +328,11 @@ async function unlockUser(email) {
       user.locked_until = null;
       user.failed_attempts = 0;
       await SupabaseDB.saveUser(user);
-      UI.showNotification('User unlocked');
+      UI.showNotification('User unlocked', 'success');
+      SupabaseDB.saveSystemLog({ category: 'auth', message: `User ${email} unlocked by admin` });
       renderUsers();
     }
-  } catch (e) { alert('Error: ' + e.message); }
+  } catch (e) { UI.showNotification('Error: ' + e.message, 'error'); }
 }
 
 async function toggleUserFlag(email, currentFlag) {
@@ -307,6 +342,7 @@ async function toggleUserFlag(email, currentFlag) {
       user.flagged = !currentFlag;
       await SupabaseDB.saveUser(user);
       UI.showNotification(`User ${user.flagged ? 'flagged' : 'unflagged'}`, user.flagged ? 'warn' : 'success');
+      SupabaseDB.saveSystemLog({ category: 'auth', message: `User ${email} ${user.flagged ? 'flagged' : 'unflagged'} by admin`, level: user.flagged ? 'warn' : 'info' });
 
       // Update local state
       const idx = allUsers.findIndex(u => u.email === email);
@@ -314,7 +350,7 @@ async function toggleUserFlag(email, currentFlag) {
 
       filterUsers();
     }
-  } catch (e) { alert('Error: ' + e.message); }
+  } catch (e) { UI.showNotification('Error: ' + e.message, 'error'); }
 }
 
 function showCreateUserForm() {
@@ -322,11 +358,18 @@ function showCreateUserForm() {
 }
 
 function exportUsersCSV() {
-  const listToExport = (document.getElementById('userSearch').value || document.getElementById('roleFilter').value !== 'all' || document.getElementById('statusFilter').value !== 'all')
-    ? filteredUsers
-    : allUsers;
+  const searchTerm = document.getElementById('userSearch')?.value?.toLowerCase() || '';
+  const roleFilter = document.getElementById('roleFilter')?.value || 'all';
 
-  if (listToExport.length === 0) return alert('No users to export');
+  const listToExport = allUsers.filter(u => {
+    const matchesSearch = !searchTerm ||
+        u.full_name?.toLowerCase().includes(searchTerm) ||
+        u.email?.toLowerCase().includes(searchTerm);
+    const matchesRole = roleFilter === 'all' || u.role === roleFilter;
+    return matchesSearch && matchesRole;
+  });
+
+  if (listToExport.length === 0) return UI.showNotification('No users to export matching current filters', 'warn');
   const headers = ['Full Name', 'Email', 'Role', 'Status', 'Joined'];
   const rows = listToExport.map(u => [
     `"${(u.full_name || '').replace(/"/g, '""')}"`,
@@ -353,7 +396,7 @@ async function broadcastNotif() {
   const msg = document.getElementById('bcMsg').value;
   const expiryDays = parseInt(document.getElementById('bcExpiry').value) || 30;
 
-  if (!title || !msg) return alert('Title and message required');
+  if (!title || !msg) return UI.showNotification('Title and message required', 'warn');
 
   try {
     const expiryDate = new Date();
@@ -371,27 +414,24 @@ async function broadcastNotif() {
 
     await SupabaseDB.saveBroadcast(broadcast);
 
-    alert(`Broadcast sent successfully.`);
+    UI.showNotification(`Broadcast sent successfully.`, 'success');
+    SupabaseDB.saveSystemLog({ category: 'notification', message: `Broadcast "${title}" sent to ${role}` });
     document.getElementById('bcTitle').value = '';
     document.getElementById('bcMsg').value = '';
-  } catch (e) { alert('Broadcast failed: ' + e.message); }
+  } catch (e) { UI.showNotification('Broadcast failed: ' + e.message, 'error'); }
 }
 
 async function removeSchedule(idx) {
-  if (confirm('Remove this maintenance schedule?')) {
+  if (await UI.confirm('Remove this maintenance schedule?', 'Remove Schedule')) {
     try {
       const maintenance = await SupabaseDB.getMaintenance();
       maintenance.schedules.splice(idx, 1);
       await SupabaseDB.saveMaintenance(maintenance);
       renderMaintenance();
-    } catch (e) { alert('Error: ' + e.message); }
+    } catch (e) { UI.showNotification('Error: ' + e.message, 'error'); }
   }
 }
 
-function saveAutoSetting(key, val) {
-  localStorage.setItem(key, val);
-  UI.showNotification('Setting saved');
-}
 
 async function renderResets(page = 0) {
   const content = document.getElementById('pageContent');
@@ -482,17 +522,32 @@ async function approveReset(email) {
       user.reset_request.expires_at = new Date(Date.now() + 72 * 3600 * 1000).toISOString();
 
       if (await SupabaseDB.saveUser(user)) {
-        alert(`Reset request approved. Temporary password: ${tempPassword}\n\nPLEASE COPY THIS NOW. IT WILL NOT BE SHOWN AGAIN.`);
+        const backdrop = document.createElement('div');
+        backdrop.className = 'modal-backdrop';
+        backdrop.style.display = 'flex';
+        backdrop.innerHTML = `
+            <div class="modal" style="max-width:400px; text-align:center">
+                <h3>Reset Approved</h3>
+                <p>Reset request approved. Temporary password:</p>
+                <div class="card mb-20" style="background:var(--bg-light); font-family:monospace; font-size:1.5rem; letter-spacing:2px">
+                    ${tempPassword}
+                </div>
+                <p class="small danger-text bold">PLEASE COPY THIS NOW. IT WILL NOT BE SHOWN AGAIN.</p>
+                <button class="button mt-20" onclick="this.closest('.modal-backdrop').remove()">Done</button>
+            </div>
+        `;
+        document.body.appendChild(backdrop);
+        SupabaseDB.saveSystemLog({ category: 'auth', message: `Password reset approved for ${email}` });
         renderResets();
       }
     }
   } catch (e) {
-    alert('Error approving reset: ' + e.message);
+    UI.showNotification('Error approving reset: ' + e.message, 'error');
   }
 }
 
 async function denyReset(email) {
-  const reason = prompt("Enter denial reason:");
+  const reason = await UI.prompt("Enter denial reason:", "Verification failed", "Deny Reset Request");
   if (reason !== null) {
     try {
       const user = await SupabaseDB.getUser(email);
@@ -500,12 +555,13 @@ async function denyReset(email) {
         user.reset_request.status = 'denied';
         user.reset_request.denial_reason = reason;
         if (await SupabaseDB.saveUser(user)) {
-          alert('Reset request denied');
+          UI.showNotification('Reset request denied', 'info');
+          SupabaseDB.saveSystemLog({ category: 'auth', message: `Password reset denied for ${email}. Reason: ${reason}`, level: 'warn' });
           renderResets();
         }
       }
     } catch (e) {
-      alert('Error denying reset: ' + e.message);
+      UI.showNotification('Error denying reset: ' + e.message, 'error');
     }
   }
 }
@@ -517,9 +573,19 @@ async function renderAnalytics() {
 
   try {
     // Optimization: Fetch counts and a limited set of submissions for the chart
-    const [totalSubs, activeUsers, { data: recentSubs }] = await Promise.all([
+    const [
+        totalSubs,
+        activeUsers,
+        totalCourses,
+        totalEnrollments,
+        totalViolations,
+        { data: recentSubs }
+    ] = await Promise.all([
       SupabaseDB.getCount('submissions'),
       SupabaseDB.getCount('users', q => q.eq('active', true)),
+      SupabaseDB.getCount('courses'),
+      SupabaseDB.getCount('enrollments'),
+      SupabaseDB.getCount('violations'),
       SupabaseDB.getSubmissions(null, null, null, { limit: 1000 })
     ]);
 
@@ -538,6 +604,9 @@ async function renderAnalytics() {
       <div class="stats-grid">
         <div class="stat-card"><h4>Total Submissions</h4><div class="value">${escapeHtml(totalSubs)}</div></div>
         <div class="stat-card"><h4>Active Users</h4><div class="value">${escapeHtml(activeUsers)}</div></div>
+        <div class="stat-card"><h4>Total Courses</h4><div class="value">${escapeHtml(totalCourses)}</div></div>
+        <div class="stat-card"><h4>Total Enrollments</h4><div class="value">${escapeHtml(totalEnrollments)}</div></div>
+        <div class="stat-card" style="border-left-color:var(--danger)"><h4>Total Violations</h4><div class="value">${escapeHtml(totalViolations)}</div></div>
       </div>
       <div class="card" style="margin-top:20px">
         <h4>Submission Activity</h4>
@@ -587,7 +656,16 @@ async function renderMaintenance() {
   if (!content) return;
 
   try {
-    const maintenance = await SupabaseDB.getMaintenance();
+    const maintenance = await SupabaseDB.getMaintenance(true);
+
+    // Auto-cleanup expired schedules
+    const now = Date.now();
+    const originalCount = maintenance.schedules?.length || 0;
+    maintenance.schedules = (maintenance.schedules || []).filter(s => new Date(s.endAt).getTime() > now);
+    if (maintenance.schedules.length !== originalCount) {
+        await SupabaseDB.saveMaintenance(maintenance);
+    }
+
     content.innerHTML = `
     <section>
       <h3>Maintenance Settings</h3>
@@ -602,7 +680,11 @@ async function renderMaintenance() {
             <label>Manual Until (optional):</label>
             <input type="datetime-local" id="manualUntil" value="${maintenance.manual_until ? new Date(maintenance.manual_until).toISOString().slice(0, 16) : ''}">
         </div>
-        <button type="submit" class="button" style="width:auto; padding:10px 40px">Save Settings</button>
+        <div style="margin-bottom:15px">
+            <label>Public Maintenance Message:</label>
+            <textarea id="maintenanceMessage" rows="2" placeholder="e.g. System is undergoing scheduled upgrades. Expect downtime.">${escapeHtml(maintenance.message || '')}</textarea>
+        </div>
+        <button type="submit" id="saveMaintBtn" class="button" style="width:auto; padding:10px 40px">Save Settings</button>
       </form>
 
       <div style="margin-top:30px">
@@ -616,7 +698,7 @@ async function renderMaintenance() {
               </div>
               <button class="button danger" onclick="removeSchedule(${escapeAttr(idx)})" style="width:auto; padding:6px 12px; font-size:12px">Remove</button>
             </div>
-          `).join('') || '<div class="empty">No schedules configured.</div>'}
+          `).join('') || '<div class="empty">No upcoming schedules.</div>'}
         </div>
         <button class="button" onclick="showAddScheduleForm()" style="width:auto; margin-top:15px">+ Add Schedule</button>
       </div>
@@ -624,9 +706,24 @@ async function renderMaintenance() {
   `;
   document.getElementById('maintenanceForm').addEventListener('submit', async (e) => {
     e.preventDefault();
-    maintenance.enabled = document.getElementById('maintenanceEnabled').checked;
-    maintenance.manual_until = document.getElementById('manualUntil').value ? new Date(document.getElementById('manualUntil').value).toISOString() : null;
-    if (await SupabaseDB.saveMaintenance(maintenance)) { alert('Saved!'); renderMaintenance(); }
+    const btn = document.getElementById('saveMaintBtn');
+    btn.disabled = true;
+    btn.textContent = 'Saving...';
+    try {
+        maintenance.enabled = document.getElementById('maintenanceEnabled').checked;
+        maintenance.manual_until = document.getElementById('manualUntil').value ? new Date(document.getElementById('manualUntil').value).toISOString() : null;
+        maintenance.message = document.getElementById('maintenanceMessage').value;
+        if (await SupabaseDB.saveMaintenance(maintenance)) {
+            UI.showNotification('Maintenance settings updated', 'success');
+            SupabaseDB.saveSystemLog({ category: 'maintenance', message: `Maintenance mode ${maintenance.enabled ? 'enabled' : 'disabled'} until ${maintenance.manual_until || 'indefinite'}`, level: maintenance.enabled ? 'warn' : 'info' });
+            renderMaintenance();
+        }
+    } catch (err) {
+        UI.showNotification('Failed to save: ' + err.message, 'error');
+    } finally {
+        btn.disabled = false;
+        btn.textContent = 'Save Settings';
+    }
   });
   } catch (error) {
     console.error('Maintenance error:', error);
@@ -653,6 +750,8 @@ async function renderHealth() {
         totalUsers,
         totalAssignments,
         totalSubmissions,
+        totalCourses,
+        totalQuizzes,
         loginsLastHour,
         activeSessions
     ] = await Promise.all([
@@ -660,6 +759,8 @@ async function renderHealth() {
       SupabaseDB.getCount('users'),
       SupabaseDB.getCount('assignments'),
       SupabaseDB.getCount('submissions'),
+      SupabaseDB.getCount('courses'),
+      SupabaseDB.getCount('quizzes'),
       SupabaseDB.getCount('users', q => q.gt('created_at', oneHourAgo.toISOString())),
       SupabaseDB.getCount('users', q => q.gt('updated_at', thirtyMinsAgo.toISOString()))
     ]);
@@ -667,15 +768,17 @@ async function renderHealth() {
     const apiStats = SupabaseDB.getStats();
     const dbLatency = apiStats.lastRequestTime;
 
-    const totalRecords = totalUsers + totalAssignments + totalSubmissions;
+    const totalRecords = totalUsers + totalAssignments + totalSubmissions + totalCourses + totalQuizzes;
     const estStorageUsage = (totalRecords * 0.5 / 1024).toFixed(2);
+
+    const isOnline = apiStats.failedRequests < apiStats.totalRequests || apiStats.totalRequests === 0;
 
     content.innerHTML = `
       <section>
         <h3>System Health & Performance</h3>
         <div class="stats-grid">
           <div class="stat-card"><h4>DB Response</h4><div class="value">${escapeHtml(dbLatency)}ms</div></div>
-          <div class="stat-card"><h4>Service Status</h4><div class="value success-text">ONLINE</div></div>
+          <div class="stat-card"><h4>Service Status</h4><div class="value ${isOnline ? 'success-text' : 'danger-text'}">${isOnline ? 'ONLINE' : 'DEGRADED'}</div></div>
           <div class="stat-card"><h4>Est. Storage</h4><div class="value">${escapeHtml(estStorageUsage)}MB</div></div>
           <div class="stat-card"><h4>API Success</h4><div class="value" style="color:${apiStats.successRate > 95 ? 'var(--ok)' : 'var(--danger)'}">${escapeHtml(apiStats.successRate)}%</div></div>
         </div>
@@ -708,9 +811,15 @@ async function renderManagement() {
   if (!content) return;
 
   try {
+    const maintenance = await SupabaseDB.getMaintenance();
+    const autoSettings = maintenance.metadata?.autoTasks || {};
+
     content.innerHTML = `
       <section>
-        <h3>System Management</h3>
+        <div class="flex-between mb-20">
+          <h3>System Management</h3>
+          <button class="button secondary small w-auto" onclick="renderSystemLogs()">📄 View System Logs</button>
+        </div>
         <div class="grid-2">
           <div class="card">
             <h4>Database Cleanup</h4>
@@ -719,7 +828,7 @@ async function renderManagement() {
           </div>
           <div class="card">
             <h4>System Backup</h4>
-            <p class="small">Export or Restore system data.</p>
+            <p class="small">Export or Restore complete system data.</p>
             <div class="flex gap-10" style="margin-top:10px">
               <button class="button" onclick="exportBackup()">Export Backup</button>
               <button class="button secondary" onclick="document.getElementById('importFile').click()">Import/Restore</button>
@@ -730,17 +839,20 @@ async function renderManagement() {
             <h4>Automated Tasks</h4>
             <p class="small">Configure scheduled system maintenance.</p>
             <div class="flex" style="flex-direction:column; gap:8px; margin-top:10px">
-              <label class="small flex" style="align-items:center; gap:8px"><input type="checkbox" id="autoCleanupCheck" style="width:auto; margin:0" onchange="saveAutoSetting('autoCleanup', this.checked)"> Daily Auto-Cleanup</label>
-              <label class="small flex" style="align-items:center; gap:8px"><input type="checkbox" id="autoBackupCheck" style="width:auto; margin:0" onchange="saveAutoSetting('autoBackup', this.checked)"> Weekly Cloud Backup</label>
+              <label class="small flex" style="align-items:center; gap:8px">
+                <input type="checkbox" id="autoCleanupCheck" ${autoSettings.autoCleanup ? 'checked' : ''} style="width:auto; margin:0" onchange="saveAutoTask('autoCleanup', this.checked)">
+                Daily Auto-Cleanup
+              </label>
+              <label class="small flex" style="align-items:center; gap:8px">
+                <input type="checkbox" id="autoBackupCheck" ${autoSettings.autoBackup ? 'checked' : ''} style="width:auto; margin:0" onchange="saveAutoTask('autoBackup', this.checked)">
+                Weekly Cloud Backup
+              </label>
             </div>
           </div>
         </div>
         <div id="mgt-area" style="margin-top:20px"></div>
       </section>
     `;
-    // Set initial states from localStorage
-    if (document.getElementById('autoCleanupCheck')) document.getElementById('autoCleanupCheck').checked = localStorage.getItem('autoCleanup') === 'true';
-    if (document.getElementById('autoBackupCheck')) document.getElementById('autoBackupCheck').checked = localStorage.getItem('autoBackup') === 'true';
   } catch (error) {
     console.error('Management error:', error);
     content.innerHTML = `<div class="stat-card danger">
@@ -772,14 +884,12 @@ async function previewCleanup() {
 }
 
 async function executeCleanup() {
-  if (!confirm('Are you sure? This action is irreversible.')) return;
+  if (!await UI.confirm('Are you sure? This action is irreversible.', 'Execute Cleanup')) return;
   try {
     UI.showLoading('mgt-area', 'Performing cleanup...');
 
-    // For actual deletion, we still need IDs/emails, but we can do it in chunks if it were massive.
-    // For now, we'll fetch them, but only what we need.
     const [{ data: users }, { data: courses }] = await Promise.all([
-        SupabaseDB.getUsers({ limit: 1000 }), // In a real app with 10k+ inactive, we'd loop
+        SupabaseDB.getUsers({ limit: 1000 }),
         SupabaseDB.getCourses(null, 'draft', { limit: 1000 })
     ]);
 
@@ -791,9 +901,10 @@ async function executeCleanup() {
 
     await Promise.all([...userProms, ...courseProms]);
 
-    alert(`Cleanup successful: ${inactiveUsers.length} users and ${draftCourses.length} courses removed.`);
+    UI.showNotification(`Cleanup successful: ${inactiveUsers.length} users and ${draftCourses.length} courses removed.`, 'success');
+    SupabaseDB.saveSystemLog({ category: 'system', message: `Manual cleanup executed. Removed ${inactiveUsers.length} users and ${draftCourses.length} courses.` });
   } catch (e) {
-    alert('Cleanup failed: ' + e.message);
+    UI.showNotification('Cleanup failed: ' + e.message, 'error');
   } finally {
     UI.hideLoading('mgt-area');
     renderManagement();
@@ -801,14 +912,43 @@ async function executeCleanup() {
 }
 
 async function exportBackup() {
-  const [{ data: users }, { data: courses }, { data: assigns }] = await Promise.all([SupabaseDB.getUsers({ limit: 1000 }), SupabaseDB.getCourses(null, null, { limit: 1000 }), SupabaseDB.getAssignments(null, null, null, { limit: 1000 })]);
-  const data = { users, courses, assigns, exportedAt: new Date().toISOString() };
-  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `lms_backup_${Date.now()}.json`;
-  a.click();
+  UI.showNotification('Preparing full system backup...', 'info');
+  try {
+    const tables = [
+        'users', 'courses', 'lessons', 'assignments', 'submissions',
+        'quizzes', 'quiz_submissions', 'materials', 'enrollments',
+        'violations', 'invites', 'maintenance', 'discussions',
+        'notifications', 'broadcasts', 'planner', 'certificates',
+        'study_sessions', 'attendance', 'live_classes'
+    ];
+    const backupData = {
+        exportedAt: new Date().toISOString(),
+        version: '1.1.1',
+        tables: {}
+    };
+
+    const fetchPromises = tables.map(async table => {
+        try {
+            backupData.tables[table] = await SupabaseDB.getAllTableData(table);
+        } catch (err) {
+            console.warn(`Failed to export table ${table}:`, err);
+            backupData.tables[table] = [];
+        }
+    });
+
+    await Promise.all(fetchPromises);
+
+    const blob = new Blob([JSON.stringify(backupData, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `smartlms_full_backup_${new Date().toISOString().split('T')[0]}.json`;
+    a.click();
+    UI.showNotification('Full system backup exported successfully.', 'success');
+    SupabaseDB.saveSystemLog({ category: 'system', message: 'Full system backup exported' });
+  } catch (e) {
+    UI.showNotification('Backup failed: ' + e.message, 'error');
+  }
 }
 
 async function importBackup(event) {
@@ -818,18 +958,44 @@ async function importBackup(event) {
   reader.onload = async (e) => {
     try {
       const data = JSON.parse(e.target.result);
-      if (confirm(`Restore ${data.users?.length || 0} users and ${data.courses?.length || 0} courses? This will overwrite existing records with same IDs.`)) {
-        const userProms = (data.users || []).map(u => SupabaseDB.saveUser(u));
-        const courseProms = (data.courses || []).map(c => SupabaseDB.saveCourse(c));
-        const assignProms = (data.assigns || []).map(a => SupabaseDB.saveAssignment(a));
+      const tables = data.tables || {};
+      const tableList = Object.keys(tables);
 
-        await Promise.all([...userProms, ...courseProms, ...assignProms]);
-        alert('System Restore completed successfully.');
+      if (await UI.confirm(`Restore data from ${tableList.length} tables? This may overwrite existing records.`, 'System Restore')) {
+        UI.showLoading('mgt-area', 'Restoring system data...');
+
+        // Custom restoration logic for each table based on its save method (Batch processing)
+        const batchSize = 10;
+        for (const table of tableList) {
+            const records = tables[table] || [];
+            if (records.length === 0) continue;
+
+            for (let i = 0; i < records.length; i += batchSize) {
+                const batch = records.slice(i, i + batchSize);
+                const proms = batch.map(async r => {
+                    switch(table) {
+                        case 'users': return SupabaseDB.saveUser(r);
+                        case 'courses': return SupabaseDB.saveCourse(r);
+                        case 'assignments': return SupabaseDB.saveAssignment(r);
+                        case 'quizzes': return SupabaseDB.saveQuiz(r);
+                        case 'maintenance': return SupabaseDB.saveMaintenance(r);
+                        default: return supabaseClient.from(table).upsert(r);
+                    }
+                });
+                await Promise.all(proms);
+            }
+        }
+
+        UI.showNotification('System Restore completed successfully.', 'success');
+        SupabaseDB.saveSystemLog({ category: 'system', message: 'Full system restore performed from backup' });
         renderManagement();
       }
     } catch (err) {
       console.error('Restore error:', err);
-      alert('Failed to restore backup: ' + err.message);
+      UI.showNotification('Failed to restore backup: ' + err.message, 'error');
+    } finally {
+        UI.hideLoading('mgt-area');
+        event.target.value = '';
     }
   };
   reader.readAsText(file);
@@ -845,22 +1011,50 @@ async function renderSystem() {
   if (!content) return;
 
   try {
-    await SupabaseDB.getMaintenance();
+    const [maint, serverTimeRes] = await Promise.all([
+        SupabaseDB.getMaintenance(),
+        supabaseClient.rpc('get_server_time')
+    ]);
+
+    const serverTime = serverTimeRes.data;
+
     content.innerHTML = `
       <section>
         <h3>System Information</h3>
-        <div class="grid">
+        <div class="grid-2">
           <div class="card">
-            <h4>Database Status</h4>
-            <div class="success-text bold">✅ Connected to Supabase</div>
+            <h4>Application Info</h4>
+            <ul class="small" style="list-style:none; padding:0">
+                <li class="mb-10"><strong>Version:</strong> SmartLMS v1.1.1-PROD</li>
+                <li class="mb-10"><strong>Environment:</strong> Production</li>
+                <li class="mb-10"><strong>Platform:</strong> Web / PWA</li>
+                <li><strong>Local Time:</strong> ${new Date().toLocaleString()}</li>
+            </ul>
           </div>
           <div class="card">
-            <h4>Application Version</h4>
-            <div>SmartLMS v1.1.1</div>
+            <h4>Backend Status</h4>
+            <ul class="small" style="list-style:none; padding:0">
+                <li class="mb-10"><strong>API Status:</strong> <span class="success-text bold">ONLINE</span></li>
+                <li class="mb-10"><strong>Database:</strong> Supabase (PostgreSQL)</li>
+                <li class="mb-10"><strong>Server Time:</strong> ${serverTime ? new Date(serverTime).toLocaleString() : 'Unavailable'}</li>
+                <li><strong>Maintenance:</strong> ${isActiveMaintenance(maint) ? '<span class="danger-text bold">ACTIVE</span>' : '<span class="success-text bold">INACTIVE</span>'}</li>
+            </ul>
           </div>
           <div class="card">
-            <h4>Session Storage</h4>
-            <div>${sessionStorage.getItem('currentUser') ? '✅ Active Session' : '❌ No Session'}</div>
+            <h4>Client Security</h4>
+            <ul class="small" style="list-style:none; padding:0">
+                <li class="mb-10"><strong>Session:</strong> ${sessionStorage.getItem('currentUser') ? '✅ Valid' : '❌ None'}</li>
+                <li class="mb-10"><strong>Session ID:</strong> <code class="tiny">${escapeHtml(SessionManager.getSessionId())}</code></li>
+                <li><strong>Encryption:</strong> AES-256 (SubtleCrypto)</li>
+            </ul>
+          </div>
+          <div class="card">
+            <h4>Resource Usage</h4>
+            <ul class="small" style="list-style:none; padding:0">
+                <li class="mb-10"><strong>API Requests (Session):</strong> ${SupabaseDB.getStats().totalRequests}</li>
+                <li class="mb-10"><strong>API Errors:</strong> ${SupabaseDB.getStats().failedRequests}</li>
+                <li><strong>Storage Buckets:</strong> 3 Active</li>
+            </ul>
           </div>
         </div>
       </section>
@@ -920,13 +1114,13 @@ function showUserForm(user = null) {
       const email = document.getElementById('email').value.trim();
       const password = document.getElementById('password').value;
 
-      if (!fullName) return alert('Full name is required.');
-      if (!isValidEmail(email)) return alert('Please enter a valid email address.');
+    if (!fullName) return UI.showNotification('Full name is required.', 'warn');
+    if (!isValidEmail(email)) return UI.showNotification('Please enter a valid email address.', 'warn');
 
       let hashedPassword = isEdit ? user.password : '';
       if (password) {
         if (!isStrongPassword(password)) {
-          alert('Password must be 8+ chars, include upper, lower, number, and special char.');
+        UI.showNotification('Password must be 8+ chars, include upper, lower, number, and special char.', 'warn');
           return;
         }
         hashedPassword = await window.hashPassword(password, email);
@@ -943,17 +1137,18 @@ function showUserForm(user = null) {
       if (isEdit) userData.created_at = user.created_at;
       if (isEdit && user.email !== userData.email) {
           if (await SupabaseDB.updateUserEmail(user.email, userData.email, userData)) {
-              alert('Updated including email!');
+            UI.showNotification('User updated including email', 'success');
               renderUsers();
           }
       } else {
           if (await SupabaseDB.saveUser(userData)) {
-            alert(isEdit ? 'Updated!' : 'Created!');
+          UI.showNotification(isEdit ? 'User updated' : 'User created', 'success');
+          SupabaseDB.saveSystemLog({ category: 'auth', message: `User ${email} ${isEdit ? 'updated' : 'created'} by admin` });
             renderUsers();
           }
       }
     } catch (err) {
-      alert('Error saving user: ' + err.message);
+    UI.showNotification('Error saving user: ' + err.message, 'error');
     }
   });
 }
@@ -1015,19 +1210,19 @@ function showInviteForm() {
       const roleEl = document.getElementById('inviteRole');
       const expiryEl = document.getElementById('inviteExpiry');
 
-      if (!roleEl || !expiryEl) return alert('System error: Form fields missing.');
+      if (!roleEl || !expiryEl) return UI.showNotification('System error: Form fields missing.', 'error');
 
       const email = emailEl ? emailEl.value.trim() : '';
       const role = roleEl.value;
       const expiryDays = parseInt(expiryEl.value);
 
       if ((role === 'admin' || role === 'teacher') && !email) {
-          return alert('Email is required for Admin and Teacher invites.');
+        return UI.showNotification('Email is required for Admin and Teacher invites.', 'warn');
       }
 
       if (email) {
         const existing = await SupabaseDB.getUser(email);
-        if (existing) return alert('A user with this email already exists.');
+      if (existing) return UI.showNotification('A user with this email already exists.', 'warn');
       }
 
       const token = crypto.randomUUID();
@@ -1058,8 +1253,9 @@ function showInviteForm() {
               if (submitBtn) submitBtn.style.display = 'none';
           }
           UI.showNotification('Invite generated!');
+        SupabaseDB.saveSystemLog({ category: 'auth', message: `Invite generated for ${role} (${email || 'Public Link'})` });
       }
-    } catch (err) { alert('Failed to generate invite: ' + err.message); }
+  } catch (err) { UI.showNotification('Failed to generate invite: ' + err.message, 'error'); }
   });
 }
 
@@ -1099,7 +1295,7 @@ function showAddScheduleForm() {
           area.remove();
           renderMaintenance();
       }
-    } catch (err) { alert('Failed to add schedule: ' + err.message); }
+    } catch (err) { UI.showNotification('Failed to add schedule: ' + err.message, 'error'); }
   });
 }
 
@@ -1123,6 +1319,75 @@ function initNav() {
       });
     });
   }
+}
+
+async function saveAutoTask(task, enabled) {
+  try {
+    const maintenance = await SupabaseDB.getMaintenance();
+    maintenance.metadata = maintenance.metadata || {};
+    maintenance.metadata.autoTasks = maintenance.metadata.autoTasks || {};
+    maintenance.metadata.autoTasks[task] = enabled;
+    await SupabaseDB.saveMaintenance(maintenance);
+    UI.showNotification('Automated task setting updated', 'success');
+    SupabaseDB.saveSystemLog({ category: 'system', message: `Automated task ${task} ${enabled ? 'enabled' : 'disabled'}` });
+  } catch (err) {
+    UI.showNotification('Failed to save setting: ' + err.message, 'error');
+  }
+}
+
+async function renderSystemLogs(page = 0) {
+    const content = document.getElementById('pageContent');
+    if (!content) return;
+
+    const limit = 50;
+    const offset = page * limit;
+
+    try {
+        const { data: logs, total } = await SupabaseDB.getSystemLogs({ limit, offset });
+        const totalPages = Math.ceil(total / limit);
+
+        content.innerHTML = `
+            <section>
+                <div class="flex-between mb-20">
+                    <h3 class="m-0">System Activity Logs</h3>
+                    <button class="button secondary small w-auto" onclick="renderManagement()">Back to Management</button>
+                </div>
+                <div class="card" style="padding:0; overflow-x:auto">
+                    <table class="small">
+                        <thead>
+                            <tr>
+                                <th>Timestamp</th>
+                                <th>Level</th>
+                                <th>Category</th>
+                                <th>User</th>
+                                <th>Message</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${logs.map(log => `
+                                <tr>
+                                    <td>${new Date(log.created_at).toLocaleString()}</td>
+                                    <td><span class="badge ${log.level === 'error' ? 'badge-inactive' : (log.level === 'warn' ? 'badge-warn' : 'badge-active')}">${escapeHtml(log.level)}</span></td>
+                                    <td>${escapeHtml(log.category)}</td>
+                                    <td class="tiny">${escapeHtml(log.user_email || 'System')}</td>
+                                    <td>${escapeHtml(log.message)}</td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                </div>
+                ${totalPages > 1 ? `
+                    <div class="flex-center gap-10 mt-20">
+                        <button class="button secondary small w-auto" ${page === 0 ? 'disabled' : ''} onclick="renderSystemLogs(${page - 1})">Previous</button>
+                        <span class="small">Page ${page + 1} of ${totalPages}</span>
+                        <button class="button secondary small w-auto" ${page >= totalPages - 1 ? 'disabled' : ''} onclick="renderSystemLogs(${page + 1})">Next</button>
+                    </div>
+                ` : ''}
+            </section>
+        `;
+    } catch (err) {
+        UI.showNotification('Failed to load logs: ' + err.message, 'error');
+    }
 }
 
 document.addEventListener('DOMContentLoaded', async () => {

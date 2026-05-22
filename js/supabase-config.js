@@ -1236,12 +1236,32 @@ class SupabaseDB {
     }
 
     // System log operations
+    static async saveSystemLog(log) {
+        return this._request(async () => {
+            const payload = {
+                level: log.level || 'info',
+                category: log.category,
+                message: log.message,
+                metadata: log.metadata || {},
+                user_email: log.user_email || (await SessionManager.getCurrentUser())?.email,
+                expires_at: log.expires_at || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
+            };
+            const { data, error } = await supabaseClient
+                .from('system_logs')
+                .insert([payload])
+                .select();
+            if (error) throw error;
+            return data?.[0];
+        });
+    }
+
     static async getSystemLogs(options = {}) {
-        const { limit = 100, offset = 0, level = null, category = null } = options;
+        const { limit = 100, offset = 0, level = null, category = null, userEmail = null } = options;
         return this._request(async () => {
             let query = supabaseClient.from('system_logs').select('*', { count: 'exact' });
             if (level) query = query.eq('level', level);
             if (category) query = query.eq('category', category);
+            if (userEmail) query = query.eq('user_email', userEmail);
 
             const { data, count, error } = await query
                 .order('created_at', { ascending: false })
@@ -1249,6 +1269,34 @@ class SupabaseDB {
             if (error) throw error;
             return { data: data || [], total: count || 0 };
         });
+    }
+
+    // Backup helper (Scalable recursive fetch)
+    static async getAllTableData(table) {
+        const limit = 1000;
+        let allData = [];
+        let offset = 0;
+        let hasMore = true;
+
+        while (hasMore) {
+            const data = await this._request(async () => {
+                const { data, error } = await supabaseClient
+                    .from(table)
+                    .select('*')
+                    .range(offset, offset + limit - 1)
+                    .order('created_at', { ascending: true, nullsFirst: true });
+                if (error) throw error;
+                return data || [];
+            });
+
+            allData = allData.concat(data);
+            if (data.length < limit) {
+                hasMore = false;
+            } else {
+                offset += limit;
+            }
+        }
+        return allData;
     }
 
     // Study session operations
