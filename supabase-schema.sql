@@ -244,6 +244,7 @@ CREATE TABLE IF NOT EXISTS maintenance (
   manual_until TIMESTAMP WITH TIME ZONE,
   message TEXT DEFAULT 'System is undergoing maintenance.',
   schedules JSONB DEFAULT '[]'::jsonb,
+  metadata JSONB DEFAULT '{}'::jsonb,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
@@ -466,6 +467,7 @@ BEGIN
 
     -- maintenance
     ALTER TABLE maintenance ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
+    ALTER TABLE maintenance ADD COLUMN IF NOT EXISTS metadata JSONB DEFAULT '{}'::jsonb;
 
     -- planner
     ALTER TABLE planner ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
@@ -794,6 +796,8 @@ CREATE INDEX IF NOT EXISTS idx_planner_user_date ON planner(user_email, due_date
 CREATE INDEX IF NOT EXISTS idx_broadcasts_expiry ON broadcasts(expires_at);
 CREATE INDEX IF NOT EXISTS idx_notifications_expiry ON notifications(expires_at);
 CREATE INDEX IF NOT EXISTS idx_system_logs_expiry ON system_logs(expires_at);
+CREATE INDEX IF NOT EXISTS idx_system_logs_level ON system_logs(level);
+CREATE INDEX IF NOT EXISTS idx_system_logs_category ON system_logs(category);
 CREATE INDEX IF NOT EXISTS idx_violations_expiry ON violations(expires_at);
 CREATE INDEX IF NOT EXISTS idx_courses_status ON courses(status);
 CREATE INDEX IF NOT EXISTS idx_live_classes_status ON live_classes(status);

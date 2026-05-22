@@ -101,6 +101,55 @@ const UI = {
         if (container) container.innerHTML = '';
     },
 
+    confirm(message, title = 'Confirm Action') {
+        return new Promise((resolve) => {
+            const backdrop = document.createElement('div');
+            backdrop.className = 'modal-backdrop';
+            backdrop.style.display = 'flex';
+            backdrop.innerHTML = `
+                <div class="modal" style="max-width:400px; text-align:center">
+                    <h3>${escapeHtml(title)}</h3>
+                    <p class="small">${escapeHtml(message)}</p>
+                    <div class="flex gap-10 mt-20">
+                        <button class="button danger" id="confirmYes">Confirm</button>
+                        <button class="button secondary" id="confirmNo">Cancel</button>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(backdrop);
+            document.getElementById('confirmYes').onclick = () => { backdrop.remove(); resolve(true); };
+            document.getElementById('confirmNo').onclick = () => { backdrop.remove(); resolve(false); };
+        });
+    },
+
+    prompt(message, placeholder = '', title = 'Input Required') {
+        return new Promise((resolve) => {
+            const backdrop = document.createElement('div');
+            backdrop.className = 'modal-backdrop';
+            backdrop.style.display = 'flex';
+            backdrop.innerHTML = `
+                <div class="modal" style="max-width:400px">
+                    <h3>${escapeHtml(title)}</h3>
+                    <p class="small">${escapeHtml(message)}</p>
+                    <input type="text" id="promptInput" class="mt-10" placeholder="${escapeAttr(placeholder)}">
+                    <div class="flex gap-10 mt-20">
+                        <button class="button" id="promptOk">OK</button>
+                        <button class="button secondary" id="promptCancel">Cancel</button>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(backdrop);
+            const input = document.getElementById('promptInput');
+            input.focus();
+            document.getElementById('promptOk').onclick = () => {
+                const val = input.value;
+                backdrop.remove();
+                resolve(val);
+            };
+            document.getElementById('promptCancel').onclick = () => { backdrop.remove(); resolve(null); };
+        });
+    },
+
     viewFile(url, title) {
         const backdrop = document.createElement('div');
         backdrop.className = 'modal-backdrop';
@@ -1284,8 +1333,13 @@ window.addEventListener('unhandledrejection', (event) => {
         UI.showNotification('A background operation failed. Please refresh if the issue persists.', 'warn');
     }
 
-    // Log to system logs if possible
-    if (window.SupabaseDB && typeof SupabaseDB.invokeFunction === 'function') {
-        // Placeholder for remote logging if a function is set up
+    // Log to system logs
+    if (window.SupabaseDB && typeof SupabaseDB.saveSystemLog === 'function') {
+        SupabaseDB.saveSystemLog({
+            level: 'error',
+            category: 'runtime',
+            message: `Unhandled Rejection: ${reason}`,
+            metadata: { stack: event.reason?.stack }
+        }).catch(() => {});
     }
 });
