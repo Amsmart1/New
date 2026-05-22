@@ -444,14 +444,16 @@ BEGIN
     -- Migrate quiz_submissions attempt numbers if needed
     -- (Used EXECUTE to ensure it works even if attempt_number was just added)
     EXECUTE '
+    UPDATE quiz_submissions SET attempt_number = NULL WHERE status = ''in-progress'';
     WITH numbered_attempts AS (
         SELECT id, ROW_NUMBER() OVER (PARTITION BY quiz_id, student_email ORDER BY started_at ASC) as row_num
         FROM quiz_submissions
+        WHERE status = ''submitted''
     )
     UPDATE quiz_submissions
     SET attempt_number = numbered_attempts.row_num
     FROM numbered_attempts
-    WHERE quiz_submissions.id = numbered_attempts.id AND quiz_submissions.attempt_number IS NULL';
+    WHERE quiz_submissions.id = numbered_attempts.id';
 
     -- Removed forced NOT NULL/DEFAULT for attempt_number to allow drafts to have NULL attempts
 
@@ -709,26 +711,22 @@ BEGIN
     END IF;
 
     -- Only allocate attempt number when status transition to 'submitted'
-    -- This prevents multiple attempts being registered for the same start if multiple updates happen
     IF (NEW.status = 'submitted' AND (TG_OP = 'INSERT' OR (TG_OP = 'UPDATE' AND (OLD.status IS DISTINCT FROM 'submitted')))) THEN
-        -- Only allocate if not already allocated (e.g. if explicitly provided and we want to allow that,
-        -- but usually we want the server to manage it)
-        IF (NEW.attempt_number IS NULL) THEN
-            SELECT attempts_allowed INTO v_attempts_allowed FROM quizzes WHERE id = NEW.quiz_id;
+        SELECT attempts_allowed INTO v_attempts_allowed FROM quizzes WHERE id = NEW.quiz_id;
 
-            -- Atomically allocate next attempt number among ALREADY SUBMITTED attempts
-            SELECT COALESCE(MAX(attempt_number), 0) + 1 INTO v_next_attempt
-            FROM quiz_submissions
-            WHERE quiz_id = NEW.quiz_id AND student_email = NEW.student_email AND status = 'submitted';
+        -- Atomically allocate next attempt number among ALREADY SUBMITTED attempts
+        -- We exclude the current row's ID to ensure fresh numbering regardless of previous state
+        SELECT COALESCE(MAX(attempt_number), 0) + 1 INTO v_next_attempt
+        FROM quiz_submissions
+        WHERE quiz_id = NEW.quiz_id AND student_email = NEW.student_email AND status = 'submitted' AND id != NEW.id;
 
-            IF v_attempts_allowed IS NOT NULL AND v_attempts_allowed > 0 THEN
-                IF v_next_attempt > v_attempts_allowed THEN
-                    RAISE EXCEPTION 'You have reached the maximum number of attempts allowed for this quiz.';
-                END IF;
+        IF v_attempts_allowed IS NOT NULL AND v_attempts_allowed > 0 THEN
+            IF v_next_attempt > v_attempts_allowed THEN
+                RAISE EXCEPTION 'You have reached the maximum number of attempts allowed for this quiz.';
             END IF;
-
-            NEW.attempt_number := v_next_attempt;
         END IF;
+
+        NEW.attempt_number := v_next_attempt;
     END IF;
 
     RETURN NEW;
@@ -1114,6 +1112,116 @@ RETURNS TIMESTAMP WITH TIME ZONE AS $$
   SELECT NOW();
 $$ LANGUAGE sql STABLE;
 
+-- 7b. Quiz Authoritative Logic RPCs
+
+CREATE OR REPLACE FUNCTION start_quiz_attempt(p_quiz_id UUID)
+RETURNS JSONB AS $$
+DECLARE
+    v_student_email VARCHAR;
+    v_quiz RECORD;
+    v_attempt RECORD;
+    v_attempts_used INTEGER;
+BEGIN
+    v_student_email := get_auth_email();
+    IF v_student_email IS NULL THEN
+        RAISE EXCEPTION 'Authentication required';
+    END IF;
+
+    SELECT * INTO v_quiz FROM quizzes WHERE id = p_quiz_id;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'Quiz not found';
+    END IF;
+
+    -- 1. Check for existing in-progress attempt
+    SELECT * INTO v_attempt FROM quiz_submissions
+    WHERE quiz_id = p_quiz_id AND student_email = v_student_email AND status = 'in-progress'
+    LIMIT 1;
+
+    IF FOUND THEN
+        RETURN to_jsonb(v_attempt);
+    END IF;
+
+    -- 2. Validate limits for new attempt
+    SELECT COUNT(*) INTO v_attempts_used
+    FROM quiz_submissions
+    WHERE quiz_id = p_quiz_id AND student_email = v_student_email AND status = 'submitted';
+
+    IF v_quiz.attempts_allowed IS NOT NULL AND v_attempts_used >= v_quiz.attempts_allowed THEN
+        RAISE EXCEPTION 'You have reached the maximum number of attempts allowed for this quiz.';
+    END IF;
+
+    -- 3. Create new attempt
+    INSERT INTO quiz_submissions (quiz_id, student_email, status, answers, started_at)
+    VALUES (p_quiz_id, v_student_email, 'in-progress', '{}'::jsonb, NOW())
+    RETURNING * INTO v_attempt;
+
+    RETURN to_jsonb(v_attempt);
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+CREATE OR REPLACE FUNCTION submit_quiz_attempt(
+    p_submission_id UUID,
+    p_answers JSONB,
+    p_time_spent INTEGER
+)
+RETURNS JSONB AS $$
+DECLARE
+    v_student_email VARCHAR;
+    v_attempt RECORD;
+    v_quiz RECORD;
+    v_score INTEGER := 0;
+    v_total_points INTEGER := 0;
+    v_q JSONB;
+    v_idx INTEGER := 0;
+    v_student_answer TEXT;
+    v_correct_answer TEXT;
+BEGIN
+    v_student_email := get_auth_email();
+
+    SELECT * INTO v_attempt FROM quiz_submissions WHERE id = p_submission_id;
+    IF NOT FOUND THEN RAISE EXCEPTION 'Submission not found'; END IF;
+
+    -- Security: Ensure ownership
+    IF v_attempt.student_email != v_student_email THEN
+        RAISE EXCEPTION 'Unauthorized';
+    END IF;
+
+    IF v_attempt.status = 'submitted' THEN
+        RETURN to_jsonb(v_attempt);
+    END IF;
+
+    SELECT * INTO v_quiz FROM quizzes WHERE id = v_attempt.quiz_id;
+
+    -- Server-side scoring
+    FOR v_q IN SELECT * FROM jsonb_array_elements(v_quiz.questions)
+    LOOP
+        v_total_points := v_total_points + (v_q->>'points')::INTEGER;
+        v_student_answer := p_answers->>(v_idx::TEXT);
+        v_correct_answer := v_q->>'correct';
+
+        IF v_student_answer IS NOT NULL AND
+           trim(lower(v_student_answer)) = trim(lower(v_correct_answer)) THEN
+            v_score := v_score + (v_q->>'points')::INTEGER;
+        END IF;
+
+        v_idx := v_idx + 1;
+    END LOOP;
+
+    -- Final update
+    UPDATE quiz_submissions SET
+        answers = p_answers,
+        score = CASE WHEN v_total_points > 0 THEN ROUND((v_score::FLOAT / v_total_points::FLOAT) * 100) ELSE 0 END,
+        total_points = v_total_points,
+        status = 'submitted',
+        time_spent = p_time_spent,
+        submitted_at = NOW()
+    WHERE id = p_submission_id
+    RETURNING * INTO v_attempt;
+
+    RETURN to_jsonb(v_attempt);
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
 -- Periodic Purge Function
 CREATE OR REPLACE FUNCTION purge_expired_records()
 RETURNS TRIGGER AS $$
@@ -1302,6 +1410,8 @@ CREATE POLICY "Quiz Submissions: Access" ON quiz_submissions FOR SELECT USING (
 );
 DROP POLICY IF EXISTS "Quiz Submissions: Insert" ON quiz_submissions;
 CREATE POLICY "Quiz Submissions: Insert" ON quiz_submissions FOR INSERT WITH CHECK (student_email = get_auth_email());
+DROP POLICY IF EXISTS "Quiz Submissions: Update" ON quiz_submissions;
+CREATE POLICY "Quiz Submissions: Update" ON quiz_submissions FOR UPDATE USING (student_email = get_auth_email());
 
 -- 11. Materials Table
 DROP POLICY IF EXISTS "Materials: Select" ON materials;

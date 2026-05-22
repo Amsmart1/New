@@ -1,18 +1,65 @@
-Traceback (most recent call last):
-  File "<frozen runpy>", line 198, in _run_module_as_main
-  File "<frozen runpy>", line 88, in _run_code
-  File "/home/jules/.pyenv/versions/3.12.13/lib/python3.12/http/server.py", line 1329, in <module>
-    test(
-  File "/home/jules/.pyenv/versions/3.12.13/lib/python3.12/http/server.py", line 1276, in test
-    with ServerClass(addr, HandlerClass) as httpd:
-         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/jules/.pyenv/versions/3.12.13/lib/python3.12/socketserver.py", line 457, in __init__
-    self.server_bind()
-  File "/home/jules/.pyenv/versions/3.12.13/lib/python3.12/http/server.py", line 1323, in server_bind
-    return super().server_bind()
-           ^^^^^^^^^^^^^^^^^^^^^
-  File "/home/jules/.pyenv/versions/3.12.13/lib/python3.12/http/server.py", line 140, in server_bind
-    socketserver.TCPServer.server_bind(self)
-  File "/home/jules/.pyenv/versions/3.12.13/lib/python3.12/socketserver.py", line 478, in server_bind
-    self.socket.bind(self.server_address)
-OSError: [Errno 98] Address already in use
+127.0.0.1 - - [22/May/2026 15:28:00] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [22/May/2026 15:28:01] "GET /css/landing.css HTTP/1.1" 200 -
+127.0.0.1 - - [22/May/2026 15:28:01] "GET /css/components.css HTTP/1.1" 200 -
+127.0.0.1 - - [22/May/2026 15:28:01] "GET /css/base.css HTTP/1.1" 200 -
+127.0.0.1 - - [22/May/2026 15:28:01] "GET /js/countdown.js HTTP/1.1" 200 -
+127.0.0.1 - - [22/May/2026 15:28:01] "GET /js/core.js HTTP/1.1" 200 -
+127.0.0.1 - - [22/May/2026 15:28:01] "GET /js/supabase-config.js HTTP/1.1" 200 -
+127.0.0.1 - - [22/May/2026 15:28:01] "GET /js/auth.js HTTP/1.1" 200 -
+127.0.0.1 - - [22/May/2026 15:28:02] "GET /sw.js HTTP/1.1" 200 -
+127.0.0.1 - - [22/May/2026 15:28:02] "GET /index.html HTTP/1.1" 200 -
+127.0.0.1 - - [22/May/2026 15:28:02] "GET /admin.html HTTP/1.1" 200 -
+127.0.0.1 - - [22/May/2026 15:28:02] "GET /teacher.html HTTP/1.1" 200 -
+127.0.0.1 - - [22/May/2026 15:28:02] "GET /student.html HTTP/1.1" 200 -
+127.0.0.1 - - [22/May/2026 15:28:02] "GET /js/admin.js HTTP/1.1" 200 -
+127.0.0.1 - - [22/May/2026 15:28:02] "GET /js/teacher.js HTTP/1.1" 200 -
+127.0.0.1 - - [22/May/2026 15:28:02] "GET /js/student.js HTTP/1.1" 200 -
+127.0.0.1 - - [22/May/2026 15:28:02] "GET /calendar_logic.js HTTP/1.1" 200 -
+127.0.0.1 - - [22/May/2026 15:28:02] "GET /css/layout.css HTTP/1.1" 200 -
+127.0.0.1 - - [22/May/2026 15:28:02] "GET /css/themes.css HTTP/1.1" 200 -
+127.0.0.1 - - [22/May/2026 15:28:02] "GET /manifest.json HTTP/1.1" 200 -
+127.0.0.1 - - [22/May/2026 15:29:00] "GET /student.html HTTP/1.1" 200 -
+127.0.0.1 - - [22/May/2026 15:29:00] "GET /css/base.css HTTP/1.1" 200 -
+127.0.0.1 - - [22/May/2026 15:29:00] "GET /css/layout.css HTTP/1.1" 200 -
+127.0.0.1 - - [22/May/2026 15:29:00] "GET /css/calendar.css HTTP/1.1" 200 -
+127.0.0.1 - - [22/May/2026 15:29:00] "GET /css/themes.css HTTP/1.1" 200 -
+127.0.0.1 - - [22/May/2026 15:29:00] "GET /css/components.css HTTP/1.1" 200 -
+127.0.0.1 - - [22/May/2026 15:29:00] "GET /js/countdown.js HTTP/1.1" 200 -
+127.0.0.1 - - [22/May/2026 15:29:00] "GET /js/anti-cheat.js HTTP/1.1" 200 -
+127.0.0.1 - - [22/May/2026 15:29:00] "GET /calendar_logic.js HTTP/1.1" 200 -
+127.0.0.1 - - [22/May/2026 15:29:00] "GET /js/core.js HTTP/1.1" 200 -
+127.0.0.1 - - [22/May/2026 15:29:00] "GET /js/student.js HTTP/1.1" 200 -
+127.0.0.1 - - [22/May/2026 15:29:00] "GET /js/supabase-config.js HTTP/1.1" 200 -
+127.0.0.1 - - [22/May/2026 15:29:00] "GET /index.html HTTP/1.1" 200 -
+127.0.0.1 - - [22/May/2026 15:29:00] "GET /css/landing.css HTTP/1.1" 200 -
+127.0.0.1 - - [22/May/2026 15:29:00] "GET /js/auth.js HTTP/1.1" 200 -
+127.0.0.1 - - [22/May/2026 15:29:00] "GET /sw.js HTTP/1.1" 200 -
+127.0.0.1 - - [22/May/2026 15:29:00] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [22/May/2026 15:29:00] "GET /admin.html HTTP/1.1" 200 -
+127.0.0.1 - - [22/May/2026 15:29:00] "GET /teacher.html HTTP/1.1" 200 -
+127.0.0.1 - - [22/May/2026 15:29:00] "GET /js/admin.js HTTP/1.1" 200 -
+127.0.0.1 - - [22/May/2026 15:29:00] "GET /js/teacher.js HTTP/1.1" 200 -
+127.0.0.1 - - [22/May/2026 15:29:00] "GET /manifest.json HTTP/1.1" 200 -
+127.0.0.1 - - [22/May/2026 15:29:51] "GET /student.html HTTP/1.1" 200 -
+127.0.0.1 - - [22/May/2026 15:29:51] "GET /css/base.css HTTP/1.1" 200 -
+127.0.0.1 - - [22/May/2026 15:29:51] "GET /css/layout.css HTTP/1.1" 200 -
+127.0.0.1 - - [22/May/2026 15:29:51] "GET /css/components.css HTTP/1.1" 200 -
+127.0.0.1 - - [22/May/2026 15:29:51] "GET /css/calendar.css HTTP/1.1" 200 -
+127.0.0.1 - - [22/May/2026 15:29:51] "GET /css/themes.css HTTP/1.1" 200 -
+127.0.0.1 - - [22/May/2026 15:29:51] "GET /js/supabase-config.js HTTP/1.1" 200 -
+127.0.0.1 - - [22/May/2026 15:29:51] "GET /js/countdown.js HTTP/1.1" 200 -
+127.0.0.1 - - [22/May/2026 15:29:51] "GET /js/core.js HTTP/1.1" 200 -
+127.0.0.1 - - [22/May/2026 15:29:51] "GET /js/anti-cheat.js HTTP/1.1" 200 -
+127.0.0.1 - - [22/May/2026 15:29:51] "GET /calendar_logic.js HTTP/1.1" 200 -
+127.0.0.1 - - [22/May/2026 15:29:51] "GET /js/student.js HTTP/1.1" 200 -
+127.0.0.1 - - [22/May/2026 15:29:52] "GET /index.html HTTP/1.1" 200 -
+127.0.0.1 - - [22/May/2026 15:29:52] "GET /css/landing.css HTTP/1.1" 200 -
+127.0.0.1 - - [22/May/2026 15:29:52] "GET /js/auth.js HTTP/1.1" 200 -
+127.0.0.1 - - [22/May/2026 15:29:52] "GET /sw.js HTTP/1.1" 200 -
+127.0.0.1 - - [22/May/2026 15:29:52] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [22/May/2026 15:29:52] "GET /admin.html HTTP/1.1" 200 -
+127.0.0.1 - - [22/May/2026 15:29:52] "GET /teacher.html HTTP/1.1" 200 -
+127.0.0.1 - - [22/May/2026 15:29:52] "GET /js/admin.js HTTP/1.1" 200 -
+127.0.0.1 - - [22/May/2026 15:29:52] "GET /js/teacher.js HTTP/1.1" 200 -
+127.0.0.1 - - [22/May/2026 15:29:52] "GET /manifest.json HTTP/1.1" 200 -
+127.0.0.1 - - [22/May/2026 15:29:52] "GET /index.html HTTP/1.1" 304 -
