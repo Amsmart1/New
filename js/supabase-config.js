@@ -12,10 +12,10 @@ const { createClient } = window.supabase || {
     createClient: () => ({
         from: () => ({
             select: () => ({
-                eq: () => ({ single: () => ({}), maybeSingle: () => ({}), order: () => ({ range: () => ({}) }) }),
-                or: () => ({ order: () => ({ range: () => ({}) }) }),
-                in: () => ({ order: () => ({ range: () => ({}) }) }),
-                order: () => ({ range: () => ({}) })
+                eq: () => ({ single: () => ({}), maybeSingle: () => ({}), order: () => ({}) }),
+                or: () => ({ order: () => ({}) }),
+                in: () => ({ order: () => ({}) }),
+                order: () => ({})
             }),
             insert: () => ({ select: () => ({}) }),
             update: () => ({ eq: () => ({ select: () => ({}) }) }),
@@ -1271,32 +1271,16 @@ class SupabaseDB {
         });
     }
 
-    // Backup helper (Scalable recursive fetch)
+    // Backup helper
     static async getAllTableData(table) {
-        const limit = 1000;
-        let allData = [];
-        let offset = 0;
-        let hasMore = true;
-
-        while (hasMore) {
-            const data = await this._request(async () => {
-                const { data, error } = await supabaseClient
-                    .from(table)
-                    .select('*')
-                    .range(offset, offset + limit - 1)
-                    .order('created_at', { ascending: true, nullsFirst: true });
-                if (error) throw error;
-                return data || [];
-            });
-
-            allData = allData.concat(data);
-            if (data.length < limit) {
-                hasMore = false;
-            } else {
-                offset += limit;
-            }
-        }
-        return allData;
+        return this._request(async () => {
+            const { data, error } = await supabaseClient
+                .from(table)
+                .select('*')
+                .order('created_at', { ascending: true, nullsFirst: true });
+            if (error) throw error;
+            return data || [];
+        });
     }
 
     // Study session operations
@@ -1439,7 +1423,6 @@ class SupabaseDB {
                 const { data, error } = await supabaseClient
                     .from('maintenance')
                     .select('*')
-                    .limit(1)
                     .maybeSingle();
                 if (error && error.code !== 'PGRST116') throw error;
                 return data || { enabled: false, schedules: [] };

@@ -545,7 +545,6 @@ async function renderAnalytics() {
   if (!content) return;
 
   try {
-    // Optimization: Fetch counts and a limited set of submissions for the chart
     const [
         totalSubs,
         activeUsers,
