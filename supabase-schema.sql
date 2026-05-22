@@ -112,8 +112,8 @@ CREATE TABLE IF NOT EXISTS submissions (
   question_feedback JSONB DEFAULT '{}'::jsonb,
   late_penalty_applied INTEGER DEFAULT 0,
   attachments JSONB DEFAULT '[]'::jsonb,
-  grade INTEGER,
-  final_grade INTEGER,
+  grade INTEGER CHECK (grade >= 0),
+  final_grade INTEGER CHECK (final_grade >= 0),
   feedback TEXT,
   regrade_request TEXT,
   graded_at TIMESTAMP WITH TIME ZONE,
@@ -177,8 +177,8 @@ CREATE TABLE IF NOT EXISTS quiz_submissions (
   quiz_id UUID REFERENCES quizzes(id) ON DELETE CASCADE,
   student_email VARCHAR(255) REFERENCES users(email) ON UPDATE CASCADE ON DELETE CASCADE,
   attempt_number INTEGER,
-  score INTEGER,
-  total_points INTEGER,
+  score INTEGER CHECK (score >= 0),
+  total_points INTEGER CHECK (total_points >= 0),
   answers JSONB DEFAULT '{}'::jsonb,
   analytics JSONB DEFAULT '{}'::jsonb,
   status VARCHAR(50) DEFAULT 'in-progress' CHECK (status IN ('in-progress', 'submitted')),
@@ -218,7 +218,7 @@ CREATE TABLE IF NOT EXISTS notifications (
   title VARCHAR(255) NOT NULL,
   message TEXT NOT NULL,
   link TEXT,
-  type VARCHAR(50) DEFAULT 'system',
+  type VARCHAR(50) DEFAULT 'system' CHECK (type IN ('system', 'broadcast', 'assignment_published', 'quiz_published', 'submission_received', 'grade_posted', 'live_class', 'teacher_left', 'class_ended')),
   is_read BOOLEAN DEFAULT FALSE,
   expires_at TIMESTAMP WITH TIME ZONE DEFAULT (NOW() + INTERVAL '90 days'),
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
@@ -228,7 +228,7 @@ CREATE TABLE IF NOT EXISTS notifications (
 CREATE TABLE IF NOT EXISTS broadcasts (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   course_id UUID REFERENCES courses(id) ON DELETE CASCADE,
-  target_role VARCHAR(50), -- 'student', 'teacher', or NULL for all
+  target_role VARCHAR(50) CHECK (target_role IS NULL OR target_role IN ('student', 'teacher')),
   title VARCHAR(255) NOT NULL,
   message TEXT NOT NULL,
   link TEXT,
@@ -239,7 +239,7 @@ CREATE TABLE IF NOT EXISTS broadcasts (
 );
 
 CREATE TABLE IF NOT EXISTS maintenance (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id UUID PRIMARY KEY DEFAULT '00000000-0000-0000-0000-000000000000' CHECK (id = '00000000-0000-0000-0000-000000000000'),
   enabled BOOLEAN DEFAULT FALSE,
   manual_until TIMESTAMP WITH TIME ZONE,
   message TEXT DEFAULT 'System is undergoing maintenance.',
@@ -295,7 +295,7 @@ CREATE TABLE IF NOT EXISTS invites (
 
 CREATE TABLE IF NOT EXISTS system_logs (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  level VARCHAR(20) DEFAULT 'info',
+  level VARCHAR(20) DEFAULT 'info' CHECK (level IN ('info', 'warn', 'error', 'debug')),
   category VARCHAR(50),
   message TEXT,
   metadata JSONB DEFAULT '{}'::jsonb,
@@ -779,6 +779,7 @@ CREATE TRIGGER tr_validate_quizzes_questions BEFORE INSERT OR UPDATE ON quizzes 
 
 CREATE INDEX IF NOT EXISTS idx_users_role ON users(role);
 CREATE INDEX IF NOT EXISTS idx_users_active ON users(active);
+CREATE INDEX IF NOT EXISTS idx_users_auth_lookup ON users(active, flagged, locked_until);
 CREATE INDEX IF NOT EXISTS idx_courses_teacher ON courses(teacher_email);
 CREATE INDEX IF NOT EXISTS idx_lessons_course ON lessons(course_id);
 CREATE INDEX IF NOT EXISTS idx_enrollments_student ON enrollments(student_email);
@@ -790,7 +791,9 @@ CREATE INDEX IF NOT EXISTS idx_attendance_class ON attendance(live_class_id);
 CREATE INDEX IF NOT EXISTS idx_discussions_parent ON discussions(parent_id);
 CREATE INDEX IF NOT EXISTS idx_quiz_submissions_quiz ON quiz_submissions(quiz_id);
 CREATE INDEX IF NOT EXISTS idx_quiz_submissions_student ON quiz_submissions(student_email);
+CREATE INDEX IF NOT EXISTS idx_quiz_submissions_status ON quiz_submissions(status);
 CREATE INDEX IF NOT EXISTS idx_submissions_assignment ON submissions(assignment_id);
+CREATE INDEX IF NOT EXISTS idx_submissions_status ON submissions(status);
 CREATE INDEX IF NOT EXISTS idx_materials_course ON materials(course_id);
 CREATE INDEX IF NOT EXISTS idx_planner_user_date ON planner(user_email, due_date);
 CREATE INDEX IF NOT EXISTS idx_broadcasts_expiry ON broadcasts(expires_at);
@@ -1176,8 +1179,8 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 
 -- 8. Seed Data
 
-INSERT INTO maintenance (enabled, schedules)
-SELECT false, '[]'::jsonb
+INSERT INTO maintenance (id, enabled, schedules)
+SELECT '00000000-0000-0000-0000-000000000000', false, '[]'::jsonb
 WHERE NOT EXISTS (SELECT 1 FROM maintenance);
 
 -- 9. Permissions & RLS
