@@ -789,6 +789,8 @@ BEGIN
 
        -- Server-side taxonomy mapping
        CASE v_reason
+           WHEN 'I''m having trouble logging in' THEN
+               v_category := 'User Self-Service'; v_level := 'Low'; v_tip := '-Check caps lock.\n-Check the special character used.\n-Try another device.';
            WHEN 'Forgotten Password' THEN
                v_category := 'User Self-Service'; v_level := 'Low'; v_tip := 'Use a password manager to keep your credentials safe.';
            WHEN 'Regular Update' THEN
