@@ -773,6 +773,58 @@ CREATE TRIGGER tr_validate_assignments_questions BEFORE INSERT OR UPDATE ON assi
 DROP TRIGGER IF EXISTS tr_validate_quizzes_questions ON quizzes;
 CREATE TRIGGER tr_validate_quizzes_questions BEFORE INSERT OR UPDATE ON quizzes FOR EACH ROW EXECUTE PROCEDURE validate_jsonb_questions();
 
+CREATE OR REPLACE FUNCTION tr_populate_reset_request_metadata() RETURNS TRIGGER AS $$
+DECLARE
+    v_reason TEXT;
+    v_category TEXT;
+    v_level TEXT;
+    v_tip TEXT;
+BEGIN
+    -- Only run when reset_request is present and transitioning to 'pending'
+    IF NEW.reset_request IS NOT NULL AND
+       (OLD.reset_request IS NULL OR OLD.reset_request->>'status' IS DISTINCT FROM 'pending') AND
+       NEW.reset_request->>'status' = 'pending' THEN
+
+       v_reason := NEW.reset_request->>'reason';
+
+       -- Server-side taxonomy mapping
+       CASE v_reason
+           WHEN 'Forgotten Password' THEN
+               v_category := 'User Self-Service'; v_level := 'Low'; v_tip := 'Use a password manager to keep your credentials safe.';
+           WHEN 'Regular Update' THEN
+               v_category := 'User Self-Service'; v_level := 'Low'; v_tip := 'Regularly changing passwords helps maintain account health.';
+           WHEN 'Compromised Account' THEN
+               v_category := 'Security Incident'; v_level := 'Critical'; v_tip := 'Check your active sessions and enable 2FA after resetting.';
+           WHEN 'Suspicious Activity' THEN
+               v_category := 'Security Incident'; v_level := 'High'; v_tip := 'Review your login history for unrecognized devices.';
+           WHEN 'Policy Enforcement' THEN
+               v_category := 'Administrative'; v_level := 'Medium'; v_tip := 'Your organization requires a password update for compliance.';
+           WHEN 'Account Recovery' THEN
+               v_category := 'Administrative'; v_level := 'Medium'; v_tip := 'Ensure your recovery email and phone are up to date.';
+           WHEN 'Lost/Stolen Device' THEN
+               v_category := 'Device Management'; v_level := 'High'; v_tip := 'Revoke access for the old device in your security settings.';
+           WHEN 'New Primary Device' THEN
+               v_category := 'Device Management'; v_level := 'Medium'; v_tip := 'Always set up new devices on a trusted, secure network.';
+           ELSE
+               v_category := 'Other'; v_level := 'Medium'; v_tip := 'Please contact an administrator for further assistance.';
+       END CASE;
+
+       -- Update the JSONB object with derived metadata
+       NEW.reset_request := NEW.reset_request || jsonb_build_object(
+           'category', v_category,
+           'security_level', v_level,
+           'tips', v_tip
+       );
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS tr_users_reset_populate ON users;
+CREATE TRIGGER tr_users_reset_populate
+BEFORE UPDATE ON users
+FOR EACH ROW EXECUTE PROCEDURE tr_populate_reset_request_metadata();
+
 -- 6. Indexes
 
 CREATE INDEX IF NOT EXISTS idx_users_role ON users(role);

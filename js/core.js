@@ -868,11 +868,11 @@ window.isValidEmail = function(email) {
 };
 
 window.isStrongPassword = function(pass) {
-    if (!pass || pass.length < 8) return false;
+    if (!pass || pass.length < 10) return false;
     const hasUpper = /[A-Z]/.test(pass);
     const hasLower = /[a-z]/.test(pass);
     const hasNumber = /\d/.test(pass);
-    const hasSpecial = /[!@#$%^&*(),.?":{}|<>]/.test(pass);
+    const hasSpecial = /[!@#$%^&*(),.?":{}|<>[\]\\/`~;:'"-=+]/.test(pass);
     return hasUpper && hasLower && hasNumber && hasSpecial;
 };
 

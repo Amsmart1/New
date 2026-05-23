@@ -476,9 +476,22 @@ async function approveReset(email) {
   try {
     const user = await SupabaseDB.getUser(email);
     if (user && user.reset_request) {
-      const array = new Uint32Array(1);
-      crypto.getRandomValues(array);
-      const tempPassword = array[0].toString(36).slice(-8);
+      const generateStrongPassword = () => {
+          const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*()_+";
+          const array = new Uint8Array(12);
+          crypto.getRandomValues(array);
+          let pass = "";
+          for (let i = 0; i < array.length; i++) {
+              pass += chars[array[i] % chars.length];
+          }
+          // Basic heuristic to ensure all required types are present, if not, retry
+          if (!/[A-Z]/.test(pass) || !/[a-z]/.test(pass) || !/[0-9]/.test(pass) || !/[!@#$%^&*()_+]/.test(pass)) {
+              return generateStrongPassword();
+          }
+          return pass;
+      };
+
+      const tempPassword = generateStrongPassword();
 
       // Hash the temporary password
       const hashedTemp = await window.hashPassword(tempPassword, email);
