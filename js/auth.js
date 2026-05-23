@@ -2,6 +2,10 @@
 const RESET_TAXONOMY = {
     'User Self-Service': {
         reasons: {
+            "I'm having trouble logging in": {
+                level: 'Low',
+                tip: "-Check caps lock.\n-Check the special character used.\n-Try another device."
+            },
             'Forgotten Password': {
                 level: 'Low',
                 tip: 'Use a password manager to keep your credentials safe.'
@@ -207,10 +211,13 @@ const Auth = {
 
     initResetFormUI() {
         const reasonSelect = document.getElementById('resetReason');
+        const tipsContainer = document.getElementById('resetTipsContainer');
+        const tipsEl = document.getElementById('resetTips');
         if (!reasonSelect) return;
 
         // Reset state
         reasonSelect.innerHTML = '<option value="">Select Reason...</option>';
+        if (tipsContainer) tipsContainer.style.display = 'none';
 
         // Populate flat list of reasons from taxonomy
         Object.keys(RESET_TAXONOMY).forEach(cat => {
@@ -221,6 +228,28 @@ const Auth = {
                 reasonSelect.appendChild(opt);
             });
         });
+
+        // Add change listener for dynamic tips
+        reasonSelect.onchange = () => {
+            const selected = reasonSelect.value;
+            if (!selected || !tipsContainer || !tipsEl) {
+                if (tipsContainer) tipsContainer.style.display = 'none';
+                return;
+            }
+
+            // Find tip in taxonomy
+            let foundTip = null;
+            Object.values(RESET_TAXONOMY).forEach(cat => {
+                if (cat.reasons[selected]) foundTip = cat.reasons[selected].tip;
+            });
+
+            if (foundTip) {
+                tipsEl.textContent = foundTip;
+                tipsContainer.style.display = 'block';
+            } else {
+                tipsContainer.style.display = 'none';
+            }
+        };
     },
     showNewPassword() { this.showSection('newPassword'); },
 
@@ -283,8 +312,8 @@ const Auth = {
 
         container.style.display = 'block';
         let strength = 0;
-        if (password.length >= 10) strength += 20;
-        if (password.length >= 14) strength += 10;
+        if (password.length >= 8) strength += 20;
+        if (password.length >= 12) strength += 10;
         if (/[A-Z]/.test(password)) strength += 20;
         if (/[a-z]/.test(password)) strength += 10;
         if (/[0-9]/.test(password)) strength += 20;
@@ -399,7 +428,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
             if (!isStrongPassword(password)) {
-                errorEl.innerText = 'Password must be 10+ chars, include upper, lower, number, and special char.';
+                errorEl.innerText = 'Password must be 8+ chars, include upper, lower, number, and special char.';
                 return;
             }
 
@@ -691,7 +720,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
             if (!isStrongPassword(newPass)) {
-                if (err) err.innerText = 'Password must be at least 10 chars, include upper, lower, number, and special char.';
+                if (err) err.innerText = 'Password must be at least 8 chars, include upper, lower, number, and special char.';
                 return;
             }
 

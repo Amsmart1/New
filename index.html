@@ -171,6 +171,11 @@
         <label class="tiny">Additional Details (Optional)</label>
         <textarea id="resetCustomReason" rows="2" placeholder="Provide any additional context..." class="mb-10"></textarea>
 
+        <div id="resetTipsContainer" style="display:none; background: #f8fafc; border-radius: 8px; padding: 12px; margin-bottom: 15px; border: 1px solid #e2e8f0;">
+          <p class="tiny bold mb-5" style="color: var(--purple)">Troubleshooting Tips:</p>
+          <div id="resetTips" class="tiny text-muted" style="white-space: pre-line; line-height: 1.5;"></div>
+        </div>
+
         <button type="submit" class="button">Request Reset</button>
       </form>
       <p class="note"><a href="#" onclick="showLogin()">Back to login</a></p>
