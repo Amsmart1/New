@@ -1,4 +1,55 @@
 // Authentication Logic
+const RESET_TAXONOMY = {
+    'User Self-Service': {
+        reasons: {
+            'Forgotten Password': {
+                level: 'Low',
+                tip: 'Use a password manager to keep your credentials safe.'
+            },
+            'Regular Update': {
+                level: 'Low',
+                tip: 'Regularly changing passwords helps maintain account health.'
+            }
+        }
+    },
+    'Security Incident': {
+        reasons: {
+            'Compromised Account': {
+                level: 'Critical',
+                tip: 'Check your active sessions and enable 2FA after resetting.'
+            },
+            'Suspicious Activity': {
+                level: 'High',
+                tip: 'Review your login history for unrecognized devices.'
+            }
+        }
+    },
+    'Administrative': {
+        reasons: {
+            'Policy Enforcement': {
+                level: 'Medium',
+                tip: 'Your organization requires a password update for compliance.'
+            },
+            'Account Recovery': {
+                level: 'Medium',
+                tip: 'Ensure your recovery email and phone are up to date.'
+            }
+        }
+    },
+    'Device Management': {
+        reasons: {
+            'Lost/Stolen Device': {
+                level: 'High',
+                tip: 'Revoke access for the old device in your security settings.'
+            },
+            'New Primary Device': {
+                level: 'Medium',
+                tip: 'Always set up new devices on a trusted, secure network.'
+            }
+        }
+    }
+};
+
 const Auth = {
     async hashPassword(password, email = '') {
         return window.hashPassword(password, email);
@@ -149,7 +200,72 @@ const Auth = {
         }
         this.showSection('login');
     },
-    showReset() { this.showSection('reset'); },
+    showReset() {
+        this.showSection('reset');
+        this.initResetFormUI();
+    },
+
+    initResetFormUI() {
+        const catSelect = document.getElementById('resetCategory');
+        const reasonSelect = document.getElementById('resetReason');
+        const tipsContainer = document.getElementById('resetTipsContainer');
+        const tipsText = document.getElementById('resetTips');
+        const securityBadge = document.getElementById('resetSecurityLevel');
+
+        if (!catSelect || !reasonSelect) return;
+
+        // Reset state
+        catSelect.innerHTML = '<option value="">Select Category...</option>';
+        Object.keys(RESET_TAXONOMY).forEach(cat => {
+            const opt = document.createElement('option');
+            opt.value = cat;
+            opt.textContent = cat;
+            catSelect.appendChild(opt);
+        });
+
+        reasonSelect.innerHTML = '<option value="">Select Reason...</option>';
+        reasonSelect.disabled = true;
+        tipsContainer.style.display = 'none';
+
+        catSelect.onchange = () => {
+            const cat = catSelect.value;
+            reasonSelect.innerHTML = '<option value="">Select Reason...</option>';
+            tipsContainer.style.display = 'none';
+
+            if (cat && RESET_TAXONOMY[cat]) {
+                reasonSelect.disabled = false;
+                Object.keys(RESET_TAXONOMY[cat].reasons).forEach(reason => {
+                    const opt = document.createElement('option');
+                    opt.value = reason;
+                    opt.textContent = reason;
+                    reasonSelect.appendChild(opt);
+                });
+            } else {
+                reasonSelect.disabled = true;
+            }
+        };
+
+        reasonSelect.onchange = () => {
+            const cat = catSelect.value;
+            const reason = reasonSelect.value;
+
+            if (cat && reason && RESET_TAXONOMY[cat]?.reasons[reason]) {
+                const data = RESET_TAXONOMY[cat].reasons[reason];
+                tipsContainer.style.display = 'block';
+                tipsText.textContent = data.tip;
+                securityBadge.textContent = data.level;
+
+                // Color badge based on level
+                securityBadge.className = 'badge';
+                if (data.level === 'Critical') securityBadge.classList.add('badge-inactive');
+                else if (data.level === 'High') securityBadge.classList.add('badge-warn');
+                else if (data.level === 'Medium') securityBadge.classList.add('badge-lock');
+                else securityBadge.classList.add('badge-active');
+            } else {
+                tipsContainer.style.display = 'none';
+            }
+        };
+    },
     showNewPassword() { this.showSection('newPassword'); },
 
     closeAuth() {
@@ -313,7 +429,8 @@ document.addEventListener('DOMContentLoaded', () => {
                         return;
                     }
                     if (existing.reset_request.status === 'approved') {
-                        errorEl.innerText = 'This account has an approved password reset. Please use the temporary password provided to you to login.';
+                        const temp = existing.reset_request.temp_password_plain || '[Contact Admin]';
+                        errorEl.innerHTML = `This account has an approved password reset. Please use the temporary password to login: <strong style="letter-spacing:1px; color:var(--purple)">${escapeHtml(temp)}</strong>`;
                         return;
                     }
                 }
@@ -436,8 +553,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         if (passErr) passErr.innerText = 'Temporary password expired. Please request a new reset.';
                         return;
                     }
-                    // For approved resets, we still use the RPC but pass the temp password hash
-                    // The server will verify it against user_secrets.password_hash
+
                 }
             }
 
@@ -450,7 +566,15 @@ document.addEventListener('DOMContentLoaded', () => {
                 const authResult = await SupabaseDB.authenticateUser(email, hashedInput, sid);
 
                 if (!authResult.success) {
-                    if (passErr) passErr.innerText = authResult.message || 'Login failed';
+                    if (passErr) {
+                        passErr.innerText = authResult.message || 'Login failed';
+                        // Re-check for approved reset after a failed attempt to show temp password
+                        const freshUser = await SupabaseDB.getUser(email);
+                        if (freshUser?.reset_request?.status === 'approved') {
+                            const temp = freshUser.reset_request.temp_password_plain || '[Contact Admin]';
+                            passErr.innerHTML = `${authResult.message}. <br>Approved reset found! Use temporary password: <strong style="letter-spacing:1px; color:var(--purple)">${escapeHtml(temp)}</strong>`;
+                        }
+                    }
                     return;
                 }
 
@@ -482,9 +606,23 @@ document.addEventListener('DOMContentLoaded', () => {
         resetForm.addEventListener('submit', async (e) => {
             e.preventDefault();
             const email = normalizeEmail(document.getElementById('resetEmail').value);
+            const category = document.getElementById('resetCategory').value;
+            const reason = document.getElementById('resetReason').value;
+            const customReason = document.getElementById('resetCustomReason')?.value || '';
+
             const m = await Auth.getMaintenance();
             const err = document.getElementById('resetError');
             if (err) err.innerText = '';
+
+            if (!isValidEmail(email)) {
+                if (err) err.innerText = 'Please enter a valid email address.';
+                return;
+            }
+
+            if (!category || !reason) {
+                if (err) err.innerText = 'Please select a category and reason.';
+                return;
+            }
 
             if (isActiveMaintenance(m)) {
                 try {
@@ -534,13 +672,21 @@ document.addEventListener('DOMContentLoaded', () => {
                     return;
                 }
                 if (user.reset_request.status === 'approved') {
-                    if (err) err.innerText = 'Reset already approved. Please use your temporary password to login.';
+                    const temp = user.reset_request.temp_password_plain || '[Contact Admin]';
+                    if (err) err.innerHTML = `Reset already approved. Use temporary password to login: <strong style="letter-spacing:1px; color:var(--purple)">${escapeHtml(temp)}</strong>`;
                     return;
                 }
             }
 
+            const taxonomyData = RESET_TAXONOMY[category].reasons[reason];
+
             user.reset_request = {
                 status: 'pending',
+                category: category,
+                reason: reason,
+                custom_reason: customReason,
+                security_level: taxonomyData.level,
+                tips: taxonomyData.tip,
                 temp_password: null,
                 created_at: new Date().toISOString(),
                 expires_at: null,

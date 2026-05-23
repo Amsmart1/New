@@ -419,19 +419,33 @@ async function renderResets() {
       ${pendingResets.length === 0 ? '<p class="empty">No pending reset requests.</p>' : `
         <div class="card" style="padding:0; overflow-x:auto">
           <table>
-            <thead><tr><th>Name</th><th>Email</th><th>Requested At</th><th>Actions</th></tr></thead>
+            <thead><tr><th>Name</th><th>Email</th><th>Category</th><th>Level</th><th>Requested At</th><th>Actions</th></tr></thead>
             <tbody>
-              ${pendingResets.map(user => `
+              ${pendingResets.map(user => {
+                const req = user.reset_request || {};
+                const level = req.security_level || 'N/A';
+                let levelClass = 'badge-lock';
+                if (level === 'Critical') levelClass = 'badge-inactive';
+                else if (level === 'High') levelClass = 'badge-warn';
+                else if (level === 'Low') levelClass = 'badge-active';
+
+                return `
                 <tr>
                   <td>${escapeHtml(user.full_name)}</td>
                   <td>${escapeHtml(user.email)}</td>
-                  <td>${escapeHtml(new Date(user.reset_request.created_at).toLocaleString())}</td>
+                  <td>
+                    <div class="small bold">${escapeHtml(req.category || 'N/A')}</div>
+                    <div class="tiny text-muted">${escapeHtml(req.reason || '')}</div>
+                    ${req.custom_reason ? `<div class="tiny mt-5 p-5" style="background:var(--bg); border-radius:4px; max-width:200px"><strong>Note:</strong> ${escapeHtml(req.custom_reason)}</div>` : ''}
+                  </td>
+                  <td><span class="badge ${levelClass}">${escapeHtml(level)}</span></td>
+                  <td>${escapeHtml(new Date(req.created_at).toLocaleString())}</td>
                   <td>
                     <button class="button" style="width:auto; padding:4px 8px; font-size:12px" onclick="approveReset('${escapeAttr(user.email)}')">Approve</button>
                     <button class="button danger" style="width:auto; padding:4px 8px; font-size:12px" onclick="denyReset('${escapeAttr(user.email)}')">Deny</button>
                   </td>
                 </tr>
-              `).join('')}
+              `}).join('')}
             </tbody>
           </table>
         </div>
@@ -471,7 +485,11 @@ async function approveReset(email) {
 
       user.reset_request.status = 'approved';
       user.reset_request.temp_password = hashedTemp;
+      user.reset_request.temp_password_plain = tempPassword; // Store for showing to user via auth errors
       user.reset_request.expires_at = new Date(Date.now() + 72 * 3600 * 1000).toISOString();
+
+      // Ensure user.password is also updated to the hashed temp password so login RPC works
+      user.password = hashedTemp;
 
       if (await SupabaseDB.saveUser(user)) {
         const backdrop = document.createElement('div');
