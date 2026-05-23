@@ -265,7 +265,15 @@ async function initDashboard(role) {
     // Force password change if reset is approved but not yet completed
     try {
         const freshUser = await SupabaseDB.getUser(user.email);
-        if (freshUser && freshUser.reset_request && freshUser.reset_request.status === 'approved') {
+
+        // Strengthened RBAC: Verify role against database
+        if (!freshUser || freshUser.role !== role) {
+            alert(`Unauthorized access. Please login as a ${role}`);
+            window.location.href = 'index.html';
+            return null;
+        }
+
+        if (freshUser.reset_request && freshUser.reset_request.status === 'approved') {
             alert('You must change your password before continuing.');
             window.location.href = 'index.html';
             return null;
@@ -368,8 +376,8 @@ const NotificationManager = {
                 if (new Date(b.created_at) < recentDate) return false;
                 // If course-specific, must be enrolled
                 if (b.course_id && !enrolledCourseIds.includes(b.course_id)) return false;
-                // If role-specific, must match role
-                if (b.target_role && b.target_role !== user.role) return false;
+                // If role-specific, must match role. 'all' or null target_role matches everyone.
+                if (b.target_role && b.target_role !== 'all' && b.target_role !== user.role) return false;
                 return true;
             });
 
@@ -655,7 +663,7 @@ const NotificationManager = {
         if (this._polling) return;
         this._polling = true;
         this.updateUI();
-        setInterval(() => this.updateUI(), 10000); // Poll every 10s
+        setInterval(() => this.updateUI(), 60000); // Poll every 60s
         
         // Request browser permission if not set
         if (Notification.permission === 'default') {
@@ -746,14 +754,16 @@ const SessionGuard = {
 
             const isMaint = isActiveMaintenance(m);
             const isRestricted = !fresh.active || fresh.flagged || isAccountLocked(fresh);
+            const roleMismatch = fresh.role !== user.role;
             const currentSid = SessionManager.getSessionId();
             // Invalidation detection: mismatch occurs if fresh.session_id is missing (unauthorized)
             // or if it doesn't match the local session ID.
             const sessionMismatch = !fresh.session_id || fresh.session_id !== currentSid;
 
-            if ((isMaint && user.role !== 'admin') || isRestricted || sessionMismatch) {
+            if ((isMaint && user.role !== 'admin') || isRestricted || sessionMismatch || roleMismatch) {
                 let msg = isMaint ? 'System entered maintenance mode.' : 'Your account status has changed.';
                 if (sessionMismatch) msg = 'You have been logged in from another device or tab.';
+                if (roleMismatch) msg = 'Your permissions have been updated. Please login again.';
 
                 await this.logout(msg);
             }

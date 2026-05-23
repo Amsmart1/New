@@ -6,27 +6,8 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBh
 // Initialize Supabase client
 if (!window.supabase) {
     console.error('Supabase library not loaded. Please check your internet connection or CDN availability.');
-    // Standard failover to prevent immediate crashes during script initialization
 }
-const { createClient } = window.supabase || {
-    createClient: () => ({
-        from: () => ({
-            select: () => ({
-                eq: () => ({ single: () => ({}), maybeSingle: () => ({}), order: () => ({}) }),
-                or: () => ({ order: () => ({}) }),
-                in: () => ({ order: () => ({}) }),
-                order: () => ({})
-            }),
-            insert: () => ({ select: () => ({}) }),
-            update: () => ({ eq: () => ({ select: () => ({}) }) }),
-            upsert: () => ({ select: () => ({}) }),
-            delete: () => ({ eq: () => ({}) }),
-            rpc: () => ({})
-        }),
-        storage: { from: () => ({ upload: () => ({}), getPublicUrl: () => ({}), remove: () => ({}) }) },
-        auth: { getSession: () => ({ data: { session: null } }), onAuthStateChange: () => ({ data: { subscription: { unsubscribe: () => {} } } }) }
-    })
-};
+const createClient = window.supabase?.createClient;
 
 // Standard client options with dynamic header injection via custom fetch
 const clientOptions = {
@@ -50,7 +31,7 @@ const clientOptions = {
     }
 };
 
-const supabaseClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, clientOptions);
+const supabaseClient = createClient ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY, clientOptions) : null;
 window.supabaseClient = supabaseClient;
 
 // Track last initialized session
@@ -100,6 +81,9 @@ const _cache = {
 // Supabase Database Operations
 class SupabaseDB {
     static async _request(fn) {
+        if (!supabaseClient) {
+            throw new Error('Supabase client not initialized. Check your connection or CDN availability.');
+        }
         _stats.totalRequests++;
         try {
             const start = performance.now();
