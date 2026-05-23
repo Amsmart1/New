@@ -163,13 +163,8 @@
       <form id="resetForm" novalidate>
         <input type="email" id="resetEmail" placeholder="Enter your email" required>
 
-        <label class="tiny">Request Category</label>
-        <select id="resetCategory" class="mb-10" required>
-          <option value="">Select Category...</option>
-        </select>
-
         <label class="tiny">Reason for Reset</label>
-        <select id="resetReason" class="mb-10" required disabled>
+        <select id="resetReason" class="mb-10" required>
           <option value="">Select Reason...</option>
         </select>
 
@@ -177,10 +172,6 @@
         <textarea id="resetCustomReason" rows="2" placeholder="Provide any additional context..." class="mb-10"></textarea>
 
         <div id="resetTipsContainer" class="card" style="display:none; background:var(--bg-light); border-left:4px solid var(--purple); margin-bottom:15px; padding:12px">
-            <div class="flex-between mb-5">
-                <span class="tiny bold">Security Level:</span>
-                <span id="resetSecurityLevel" class="badge">N/A</span>
-            </div>
             <p id="resetTips" class="small m-0" style="font-style:italic; color:var(--text-muted)"></p>
         </div>
 

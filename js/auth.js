@@ -2,6 +2,10 @@
 const RESET_TAXONOMY = {
     'User Self-Service': {
         reasons: {
+            "I'm having trouble logging in": {
+                level: 'Low',
+                tip: '-Check caps lock. -Check the special character used. -Try another device.'
+            },
             'Forgotten Password': {
                 level: 'Low',
                 tip: 'Use a password manager to keep your credentials safe.'
@@ -206,62 +210,44 @@ const Auth = {
     },
 
     initResetFormUI() {
-        const catSelect = document.getElementById('resetCategory');
         const reasonSelect = document.getElementById('resetReason');
         const tipsContainer = document.getElementById('resetTipsContainer');
         const tipsText = document.getElementById('resetTips');
-        const securityBadge = document.getElementById('resetSecurityLevel');
-
-        if (!catSelect || !reasonSelect) return;
+        if (!reasonSelect) return;
 
         // Reset state
-        catSelect.innerHTML = '<option value="">Select Category...</option>';
+        reasonSelect.innerHTML = '<option value="">Select Reason...</option>';
+        if (tipsContainer) tipsContainer.style.display = 'none';
+
+        // Populate flat list of reasons from taxonomy
         Object.keys(RESET_TAXONOMY).forEach(cat => {
-            const opt = document.createElement('option');
-            opt.value = cat;
-            opt.textContent = cat;
-            catSelect.appendChild(opt);
+            Object.keys(RESET_TAXONOMY[cat].reasons).forEach(reason => {
+                const opt = document.createElement('option');
+                opt.value = reason;
+                opt.textContent = reason;
+                reasonSelect.appendChild(opt);
+            });
         });
 
-        reasonSelect.innerHTML = '<option value="">Select Reason...</option>';
-        reasonSelect.disabled = true;
-        tipsContainer.style.display = 'none';
-
-        catSelect.onchange = () => {
-            const cat = catSelect.value;
-            reasonSelect.innerHTML = '<option value="">Select Reason...</option>';
-            tipsContainer.style.display = 'none';
-
-            if (cat && RESET_TAXONOMY[cat]) {
-                reasonSelect.disabled = false;
-                Object.keys(RESET_TAXONOMY[cat].reasons).forEach(reason => {
-                    const opt = document.createElement('option');
-                    opt.value = reason;
-                    opt.textContent = reason;
-                    reasonSelect.appendChild(opt);
-                });
-            } else {
-                reasonSelect.disabled = true;
-            }
-        };
-
         reasonSelect.onchange = () => {
-            const cat = catSelect.value;
             const reason = reasonSelect.value;
+            if (!reason) {
+                if (tipsContainer) tipsContainer.style.display = 'none';
+                return;
+            }
 
-            if (cat && reason && RESET_TAXONOMY[cat]?.reasons[reason]) {
-                const data = RESET_TAXONOMY[cat].reasons[reason];
+            // Find tip in taxonomy
+            let foundTip = null;
+            Object.values(RESET_TAXONOMY).forEach(cat => {
+                if (cat.reasons[reason]) {
+                    foundTip = cat.reasons[reason].tip;
+                }
+            });
+
+            if (foundTip && tipsContainer && tipsText) {
                 tipsContainer.style.display = 'block';
-                tipsText.textContent = data.tip;
-                securityBadge.textContent = data.level;
-
-                // Color badge based on level
-                securityBadge.className = 'badge';
-                if (data.level === 'Critical') securityBadge.classList.add('badge-inactive');
-                else if (data.level === 'High') securityBadge.classList.add('badge-warn');
-                else if (data.level === 'Medium') securityBadge.classList.add('badge-lock');
-                else securityBadge.classList.add('badge-active');
-            } else {
+                tipsText.textContent = foundTip;
+            } else if (tipsContainer) {
                 tipsContainer.style.display = 'none';
             }
         };
@@ -327,16 +313,18 @@ const Auth = {
 
         container.style.display = 'block';
         let strength = 0;
-        if (password.length >= 8) strength += 25;
-        if (/[A-Z]/.test(password)) strength += 25;
-        if (/[0-9]/.test(password)) strength += 25;
-        if (/[^A-Za-z0-9]/.test(password)) strength += 25;
+        if (password.length >= 8) strength += 20;
+        if (password.length >= 12) strength += 10;
+        if (/[A-Z]/.test(password)) strength += 20;
+        if (/[a-z]/.test(password)) strength += 10;
+        if (/[0-9]/.test(password)) strength += 20;
+        if (/[!@#$%^&*(),.?":{}|<>[\]\\/`~;:'"-=+]/.test(password)) strength += 20;
 
-        meter.style.width = strength + '%';
+        meter.style.width = Math.min(100, strength) + '%';
 
-        if (strength <= 25) meter.style.backgroundColor = 'var(--danger)';
-        else if (strength <= 50) meter.style.backgroundColor = 'var(--warn)';
-        else if (strength <= 75) meter.style.backgroundColor = '#4299e1'; // Blue
+        if (strength <= 40) meter.style.backgroundColor = 'var(--danger)';
+        else if (strength <= 60) meter.style.backgroundColor = 'var(--warn)';
+        else if (strength <= 80) meter.style.backgroundColor = '#4299e1'; // Blue
         else meter.style.backgroundColor = 'var(--ok)';
     }
 };
@@ -429,8 +417,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         return;
                     }
                     if (existing.reset_request.status === 'approved') {
-                        const temp = existing.reset_request.temp_password_plain || '[Contact Admin]';
-                        errorEl.innerHTML = `This account has an approved password reset. Please use the temporary password to login: <strong style="letter-spacing:1px; color:var(--purple)">${escapeHtml(temp)}</strong>`;
+                        errorEl.innerHTML = 'This account has an approved password reset. Please use the temporary password provided by your administrator to login.';
                         return;
                     }
                 }
@@ -568,12 +555,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (!authResult.success) {
                     if (passErr) {
                         passErr.innerText = authResult.message || 'Login failed';
-                        // Re-check for approved reset after a failed attempt to show temp password
-                        const freshUser = await SupabaseDB.getUser(email);
-                        if (freshUser?.reset_request?.status === 'approved') {
-                            const temp = freshUser.reset_request.temp_password_plain || '[Contact Admin]';
-                            passErr.innerHTML = `${authResult.message}. <br>Approved reset found! Use temporary password: <strong style="letter-spacing:1px; color:var(--purple)">${escapeHtml(temp)}</strong>`;
-                        }
                     }
                     return;
                 }
@@ -606,7 +587,6 @@ document.addEventListener('DOMContentLoaded', () => {
         resetForm.addEventListener('submit', async (e) => {
             e.preventDefault();
             const email = normalizeEmail(document.getElementById('resetEmail').value);
-            const category = document.getElementById('resetCategory').value;
             const reason = document.getElementById('resetReason').value;
             const customReason = document.getElementById('resetCustomReason')?.value || '';
 
@@ -619,8 +599,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
 
-            if (!category || !reason) {
-                if (err) err.innerText = 'Please select a category and reason.';
+            if (!reason) {
+                if (err) err.innerText = 'Please select a reason.';
                 return;
             }
 
@@ -672,21 +652,15 @@ document.addEventListener('DOMContentLoaded', () => {
                     return;
                 }
                 if (user.reset_request.status === 'approved') {
-                    const temp = user.reset_request.temp_password_plain || '[Contact Admin]';
-                    if (err) err.innerHTML = `Reset already approved. Use temporary password to login: <strong style="letter-spacing:1px; color:var(--purple)">${escapeHtml(temp)}</strong>`;
+                    if (err) err.innerHTML = 'Reset already approved. Use temporary password provided by administrator to login.';
                     return;
                 }
             }
 
-            const taxonomyData = RESET_TAXONOMY[category].reasons[reason];
-
             user.reset_request = {
                 status: 'pending',
-                category: category,
                 reason: reason,
                 custom_reason: customReason,
-                security_level: taxonomyData.level,
-                tips: taxonomyData.tip,
                 temp_password: null,
                 created_at: new Date().toISOString(),
                 expires_at: null,
@@ -747,7 +721,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
             if (!isStrongPassword(newPass)) {
-                if (err) err.innerText = 'Password must be at least 8 chars with letters and numbers.';
+                if (err) err.innerText = 'Password must be at least 8 chars, include upper, lower, number, and special char.';
                 return;
             }
 

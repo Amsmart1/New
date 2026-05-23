@@ -872,7 +872,7 @@ window.isStrongPassword = function(pass) {
     const hasUpper = /[A-Z]/.test(pass);
     const hasLower = /[a-z]/.test(pass);
     const hasNumber = /\d/.test(pass);
-    const hasSpecial = /[!@#$%^&*(),.?":{}|<>]/.test(pass);
+    const hasSpecial = /[!@#$%^&*(),.?":{}|<>[\]\\/`~;:'"-=+]/.test(pass);
     return hasUpper && hasLower && hasNumber && hasSpecial;
 };
 
