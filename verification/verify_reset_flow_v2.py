@@ -16,8 +16,7 @@ def verify_reset_flow_final():
         page.evaluate("showReset()")
         time.sleep(1)
 
-        # 3. Fill Category and Reason
-        page.select_option("#resetCategory", "Security Incident")
+        # 3. Fill Reason
         page.select_option("#resetReason", "Compromised Account")
 
         # 4. Fill Custom Reason
@@ -25,12 +24,6 @@ def verify_reset_flow_final():
 
         page.screenshot(path="verification/reset_flow_with_custom_reason.png")
         print("Custom reason screenshot saved.")
-
-        # 5. Check Tips and Security Level
-        tips_content = page.inner_text("#resetTips")
-        level_content = page.inner_text("#resetSecurityLevel")
-        print(f"Tips Content: {tips_content}")
-        print(f"Level Content: {level_content}")
 
         # 6. Verify Login Error UI
         page.evaluate("showLogin()")
