@@ -355,31 +355,20 @@ const NotificationManager = {
             if (!user) return [];
 
             // 1. Fetch personal notifications and active broadcasts
-            const [personalRes, broadcastsRes, enrollmentsRes] = await Promise.all([
+            // RLS now handles role and course-specific filtering for broadcasts
+            const [personalRes, broadcastsRes] = await Promise.all([
                 SupabaseDB.getNotifications(user.email),
-                SupabaseDB.getBroadcasts(),
-                user.role === 'student' ? SupabaseDB.getEnrollments(user.email) : Promise.resolve({ data: [] })
+                SupabaseDB.getBroadcasts()
             ]);
 
             const personal = personalRes.data || [];
             const broadcasts = broadcastsRes.data || [];
-            const enrollments = enrollmentsRes.data || [];
 
-            const enrolledCourseIds = enrollments.map(e => e.course_id);
-
-            // 2. Filter broadcasts based on relevance and recency (e.g. last 14 days)
+            // 2. Filter broadcasts based on recency (e.g. last 14 days)
             const recentDate = new Date();
             recentDate.setDate(recentDate.getDate() - 14);
 
-            const relevantBroadcasts = broadcasts.filter(b => {
-                // Check recency
-                if (new Date(b.created_at) < recentDate) return false;
-                // If course-specific, must be enrolled
-                if (b.course_id && !enrolledCourseIds.includes(b.course_id)) return false;
-                // If role-specific, must match role. 'all' or null target_role matches everyone.
-                if (b.target_role && b.target_role !== 'all' && b.target_role !== user.role) return false;
-                return true;
-            });
+            const relevantBroadcasts = broadcasts.filter(b => new Date(b.created_at) >= recentDate);
 
             // 3. Filter out cleared broadcasts
             const clearedBroadcasts = JSON.parse(localStorage.getItem(`cleared_broadcasts_${user.email}`) || '[]');

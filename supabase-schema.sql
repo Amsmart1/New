@@ -228,7 +228,7 @@ CREATE TABLE IF NOT EXISTS notifications (
 CREATE TABLE IF NOT EXISTS broadcasts (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   course_id UUID REFERENCES courses(id) ON DELETE CASCADE,
-  target_role VARCHAR(50) CHECK (target_role IS NULL OR target_role IN ('student', 'teacher')),
+  target_role VARCHAR(50) CHECK (target_role IS NULL OR target_role IN ('student', 'teacher', 'admin')),
   title VARCHAR(255) NOT NULL,
   message TEXT NOT NULL,
   link TEXT,
@@ -1315,7 +1315,7 @@ BEGIN
   END IF;
 
   INSERT INTO broadcasts (course_id, target_role, title, message, link, type, expires_at)
-  VALUES (n_course_id, n_role, n_title, n_msg, n_link, n_type, NOW() + n_expires_in);
+  VALUES (n_course_id, NULLIF(n_role, 'all'), n_title, n_msg, n_link, n_type, NOW() + n_expires_in);
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
@@ -1470,9 +1470,12 @@ CREATE POLICY "Notifications: User Access" ON notifications FOR ALL USING (user_
 -- 14. Broadcasts Table
 DROP POLICY IF EXISTS "Broadcasts: Access" ON broadcasts;
 CREATE POLICY "Broadcasts: Access" ON broadcasts FOR SELECT USING (
-  (course_id IS NULL AND (target_role IS NULL OR target_role = get_auth_role())) OR
-  EXISTS (SELECT 1 FROM enrollments WHERE course_id = broadcasts.course_id AND student_email = get_auth_email()) OR
-  EXISTS (SELECT 1 FROM courses WHERE id = broadcasts.course_id AND (teacher_email = get_auth_email() OR is_admin()))
+  is_admin() OR
+  ((target_role IS NULL OR target_role = get_auth_role()) AND (
+    course_id IS NULL OR
+    EXISTS (SELECT 1 FROM enrollments WHERE course_id = broadcasts.course_id AND student_email = get_auth_email()) OR
+    (is_teacher() AND EXISTS (SELECT 1 FROM courses WHERE id = broadcasts.course_id AND teacher_email = get_auth_email()))
+  ))
 );
 DROP POLICY IF EXISTS "Broadcasts: Manage" ON broadcasts;
 CREATE POLICY "Broadcasts: Manage" ON broadcasts FOR ALL USING (is_teacher() OR is_admin());
