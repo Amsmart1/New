@@ -1554,6 +1554,45 @@ class SupabaseDB {
         });
     }
 
+    static async getStudentViolationSummary(studentEmail) {
+        const { data: violations, error } = await supabaseClient
+            .from('violations')
+            .select('assessment_id, assessment_type, type, severity, score')
+            .eq('user_email', studentEmail);
+
+        if (error) throw error;
+
+        const assessmentIds = [...new Set((violations || []).map(v => v.assessment_id))];
+        if (assessmentIds.length === 0) return { data: [], total: 0 };
+
+        const [{ data: assigns }, { data: quizzes }] = await Promise.all([
+            supabaseClient.from('assignments').select('id, title').in('id', assessmentIds),
+            supabaseClient.from('quizzes').select('id, title').in('id', assessmentIds)
+        ]);
+
+        const summaryMap = {};
+        (violations || []).forEach(v => {
+            const key = v.assessment_id;
+            if (!summaryMap[key]) {
+                const assessment = [...(assigns || []), ...(quizzes || [])].find(a => a.id === key);
+                summaryMap[key] = {
+                    id: key,
+                    title: assessment?.title || 'Unknown Assessment',
+                    type: v.assessment_type,
+                    violationCount: 0,
+                    totalScore: 0,
+                    criticalCount: 0
+                };
+            }
+            summaryMap[key].violationCount++;
+            summaryMap[key].totalScore += (v.score || 0);
+            if (v.severity === 'CRITICAL') summaryMap[key].criticalCount++;
+        });
+
+        const result = Object.values(summaryMap);
+        return { data: result, total: result.length };
+    }
+
     static async getViolationSummary(teacherEmail) {
         const { data: courses } = await this.getCourses(teacherEmail, null);
         const courseIds = (courses || []).map(c => c.id);

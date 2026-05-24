@@ -1661,6 +1661,34 @@ async function renderSettings() {
     NotificationManager.renderSettings('Settings', 'Enable real-time desktop notifications even when the app is closed.');
 }
 
+async function viewStudentAssessmentReport(assessmentId, title) {
+  const area = document.getElementById('violationDetailArea');
+  if (!area) return;
+  area.innerHTML = `<div class="loading-spinner"></div>`;
+  area.scrollIntoView({ behavior: 'smooth' });
+
+  try {
+    const user = await SessionManager.getCurrentUser();
+    const { data: violations } = await SupabaseDB.getViolations(assessmentId, user.email);
+
+    area.innerHTML = `
+      <div class="card">
+        <div class="flex-between mb-20">
+          <h3 class="m-0">Detailed Report: ${escapeHtml(title)}</h3>
+          <button class="button secondary tiny w-auto" onclick="document.getElementById('violationDetailArea').innerHTML=''">Close Report</button>
+        </div>
+        <div id="integrityReportContent"></div>
+      </div>
+    `;
+
+    UI.renderIntegrityReport('integrityReportContent', violations, user.email);
+
+  } catch (e) {
+    area.innerHTML = `<div class="card danger-border">Error loading report: ${e.message}</div>`;
+  }
+}
+window.viewStudentAssessmentReport = viewStudentAssessmentReport;
+
 async function renderAntiCheat() {
 
   const content = document.getElementById('pageContent');
@@ -1669,18 +1697,46 @@ async function renderAntiCheat() {
 
   try {
     const user = await SessionManager.getCurrentUser();
-    const { data: violations } = await SupabaseDB.getViolations(null, user.email);
+    const { data: summary } = await SupabaseDB.getStudentViolationSummary(user.email);
 
     content.innerHTML = `
-      <div class="flex-between mb-20">
-        <h2 class="m-0">Security & Integrity Dashboard</h2>
-        <button class="button w-auto secondary" onclick="renderAntiCheat()">Refresh Data</button>
+      <div class="card flex-between">
+        <div>
+            <h2 class="m-0">Security & Integrity Dashboard</h2>
+            <p class="small text-muted mt-5">Overview of assessments where security events were recorded.</p>
+        </div>
+        <button class="button w-auto secondary" onclick="renderAntiCheat()">Refresh Summary</button>
       </div>
-      <div id="integrityReportArea"></div>
+
+      <div class="grid mt-20">
+        ${summary.map(s => {
+            const risk = s.criticalCount > 0 ? 'High' : (s.violationCount > 5 ? 'Medium' : 'Low');
+            return `
+            <div class="card">
+                <div class="flex-between">
+                    <span class="badge ${s.type === 'quiz' ? 'badge-purple' : 'badge-warn'} tiny">${s.type.toUpperCase()}</span>
+                    <span class="badge ${risk === 'High' ? 'badge-inactive' : (risk === 'Medium' ? 'badge-warn' : 'badge-active')} tiny">${risk} RISK</span>
+                </div>
+                <h3 class="m-0 mt-10" title="${escapeAttr(s.title)}">${escapeHtml(s.title.substring(0, 30))}${s.title.length > 30 ? '...' : ''}</h3>
+
+                <div class="stats-grid mt-15 mb-0" style="grid-template-columns: 1fr 1fr; gap: 10px">
+                    <div class="stat-card p-10" style="padding: 10px; border-radius: 6px">
+                        <h4>Violations</h4>
+                        <div class="value" style="font-size: 1.2rem">${s.violationCount}</div>
+                    </div>
+                    <div class="stat-card p-10" style="padding: 10px; border-radius: 6px">
+                        <h4>Integrity Score</h4>
+                        <div class="value" style="font-size: 1.2rem">${s.totalScore}</div>
+                    </div>
+                </div>
+
+                <button class="button secondary small mt-15" onclick="viewStudentAssessmentReport('${s.id}', '${escapeAttr(s.title)}')">View Detailed Report</button>
+            </div>
+            `;
+        }).join('') || '<div class="empty" style="grid-column: 1/-1">No security violations recorded for your account.</div>'}
+      </div>
+      <div id="violationDetailArea" class="mt-20"></div>
     `;
-
-    UI.renderIntegrityReport('integrityReportArea', violations, user.email);
-
   } catch (error) {
     console.error('AntiCheat error:', error);
     content.innerHTML = `<div class="card danger-border"><h3>Error Loading Record</h3></div>`;
