@@ -1220,51 +1220,6 @@ class SupabaseDB {
         if (error) throw error;
     }
 
-    // System log operations
-    static async saveSystemLog(log) {
-        return this._request(async () => {
-            const payload = {
-                level: log.level || 'info',
-                category: log.category,
-                message: log.message,
-                metadata: log.metadata || {},
-                user_email: log.user_email || (await SessionManager.getCurrentUser())?.email,
-                expires_at: log.expires_at || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
-            };
-            const { data, error } = await supabaseClient
-                .from('system_logs')
-                .insert([payload])
-                .select();
-            if (error) throw error;
-            return data?.[0];
-        });
-    }
-
-    static async getSystemLogs(options = {}) {
-        const { level = null, category = null, userEmail = null } = options;
-        return this._request(async () => {
-            let query = supabaseClient.from('system_logs').select('*', { count: 'exact' });
-            if (level) query = query.eq('level', level);
-            if (category) query = query.eq('category', category);
-            if (userEmail) query = query.eq('user_email', userEmail);
-
-            const { data, count, error } = await query
-                .order('created_at', { ascending: false });
-            if (error) throw error;
-            return { data: data || [], total: count || 0 };
-        });
-    }
-
-    static async deleteSystemLogs() {
-        return this._request(async () => {
-            const { error } = await supabaseClient
-                .from('system_logs')
-                .delete()
-                .neq('id', '00000000-0000-0000-0000-000000000000'); // Delete all
-            if (error) throw error;
-        });
-    }
-
     // Backup helper
     static async getAllTableData(table) {
         return this._request(async () => {

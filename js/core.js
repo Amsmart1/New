@@ -1345,13 +1345,4 @@ window.addEventListener('unhandledrejection', (event) => {
         UI.showNotification('A background operation failed. Please refresh if the issue persists.', 'warn');
     }
 
-    // Log to system logs
-    if (window.SupabaseDB && typeof SupabaseDB.saveSystemLog === 'function') {
-        SupabaseDB.saveSystemLog({
-            level: 'error',
-            category: 'runtime',
-            message: `Unhandled Rejection: ${reason}`,
-            metadata: { stack: event.reason?.stack }
-        }).catch(() => {});
-    }
 });

@@ -253,7 +253,6 @@ async function toggleUserStatus(email, currentStatus) {
       user.active = !currentStatus;
       await SupabaseDB.saveUser(user);
       UI.showNotification(`User ${user.active ? 'activated' : 'deactivated'}`, 'success');
-      SupabaseDB.saveSystemLog({ category: 'auth', message: `User ${email} ${user.active ? 'activated' : 'deactivated'} by admin` });
 
       // Update local state if filtered
       const idx = allUsers.findIndex(u => u.email === email);
@@ -269,7 +268,6 @@ async function deleteUserByEmail(email) {
     try {
       await SupabaseDB.deleteUser(email);
       UI.showNotification('User deleted', 'success');
-      SupabaseDB.saveSystemLog({ category: 'auth', message: `User ${email} deleted by admin`, level: 'warn' });
       renderUsers();
     } catch (e) { UI.showNotification('Error: ' + e.message, 'error'); }
   }
@@ -282,7 +280,6 @@ async function lockUser(email, minutes) {
       user.locked_until = new Date(Date.now() + minutes * 60000).toISOString();
       await SupabaseDB.saveUser(user);
       UI.showNotification(`User locked for ${minutes} minutes`);
-      SupabaseDB.saveSystemLog({ category: 'auth', message: `User ${email} locked for ${minutes}m by admin`, level: 'warn' });
       renderUsers();
     }
   } catch (e) { UI.showNotification('Error: ' + e.message, 'error'); }
@@ -296,7 +293,6 @@ async function unlockUser(email) {
       user.failed_attempts = 0;
       await SupabaseDB.saveUser(user);
       UI.showNotification('User unlocked', 'success');
-      SupabaseDB.saveSystemLog({ category: 'auth', message: `User ${email} unlocked by admin` });
       renderUsers();
     }
   } catch (e) { UI.showNotification('Error: ' + e.message, 'error'); }
@@ -309,7 +305,6 @@ async function toggleUserFlag(email, currentFlag) {
       user.flagged = !currentFlag;
       await SupabaseDB.saveUser(user);
       UI.showNotification(`User ${user.flagged ? 'flagged' : 'unflagged'}`, user.flagged ? 'warn' : 'success');
-      SupabaseDB.saveSystemLog({ category: 'auth', message: `User ${email} ${user.flagged ? 'flagged' : 'unflagged'} by admin`, level: user.flagged ? 'warn' : 'info' });
 
       // Update local state
       const idx = allUsers.findIndex(u => u.email === email);
@@ -382,7 +377,6 @@ async function broadcastNotif() {
     await SupabaseDB.saveBroadcast(broadcast);
 
     UI.showNotification(`Broadcast sent successfully.`, 'success');
-    SupabaseDB.saveSystemLog({ category: 'notification', message: `Broadcast "${title}" sent to ${role}` });
     document.getElementById('bcTitle').value = '';
     document.getElementById('bcMsg').value = '';
   } catch (e) { UI.showNotification('Broadcast failed: ' + e.message, 'error'); }
@@ -520,7 +514,6 @@ async function approveReset(email) {
             </div>
         `;
         document.body.appendChild(backdrop);
-        SupabaseDB.saveSystemLog({ category: 'auth', message: `Password reset approved for ${email}` });
         renderResets();
       }
     }
@@ -539,7 +532,6 @@ async function denyReset(email) {
         user.reset_request.denial_reason = reason;
         if (await SupabaseDB.saveUser(user)) {
           UI.showNotification('Reset request denied', 'info');
-          SupabaseDB.saveSystemLog({ category: 'auth', message: `Password reset denied for ${email}. Reason: ${reason}`, level: 'warn' });
           renderResets();
         }
       }
@@ -697,7 +689,6 @@ async function renderMaintenance() {
         maintenance.message = document.getElementById('maintenanceMessage').value;
         if (await SupabaseDB.saveMaintenance(maintenance)) {
             UI.showNotification('Maintenance settings updated', 'success');
-            SupabaseDB.saveSystemLog({ category: 'maintenance', message: `Maintenance mode ${maintenance.enabled ? 'enabled' : 'disabled'} until ${maintenance.manual_until || 'indefinite'}`, level: maintenance.enabled ? 'warn' : 'info' });
             renderMaintenance();
         }
     } catch (err) {
@@ -800,7 +791,6 @@ async function renderManagement() {
       <section>
         <div class="flex-between mb-20">
           <h3>System Management</h3>
-          <button class="button secondary small w-auto" onclick="renderSystemLogs()">📄 View System Logs</button>
         </div>
         <div class="grid-2">
           <div class="card">
@@ -884,7 +874,6 @@ async function executeCleanup() {
     await Promise.all([...userProms, ...courseProms]);
 
     UI.showNotification(`Cleanup successful: ${inactiveUsers.length} users and ${draftCourses.length} courses removed.`, 'success');
-    SupabaseDB.saveSystemLog({ category: 'system', message: `Manual cleanup executed. Removed ${inactiveUsers.length} users and ${draftCourses.length} courses.` });
   } catch (e) {
     UI.showNotification('Cleanup failed: ' + e.message, 'error');
   } finally {
@@ -927,7 +916,6 @@ async function exportBackup() {
     a.download = `smartlms_full_backup_${new Date().toISOString().split('T')[0]}.json`;
     a.click();
     UI.showNotification('Full system backup exported successfully.', 'success');
-    SupabaseDB.saveSystemLog({ category: 'system', message: 'Full system backup exported' });
   } catch (e) {
     UI.showNotification('Backup failed: ' + e.message, 'error');
   }
@@ -969,7 +957,6 @@ async function importBackup(event) {
         }
 
         UI.showNotification('System Restore completed successfully.', 'success');
-        SupabaseDB.saveSystemLog({ category: 'system', message: 'Full system restore performed from backup' });
         renderManagement();
       }
     } catch (err) {
@@ -1125,7 +1112,6 @@ function showUserForm(user = null) {
       } else {
           if (await SupabaseDB.saveUser(userData)) {
           UI.showNotification(isEdit ? 'User updated' : 'User created', 'success');
-          SupabaseDB.saveSystemLog({ category: 'auth', message: `User ${email} ${isEdit ? 'updated' : 'created'} by admin` });
             renderUsers();
           }
       }
@@ -1235,7 +1221,6 @@ function showInviteForm() {
               if (submitBtn) submitBtn.style.display = 'none';
           }
           UI.showNotification('Invite generated!');
-        SupabaseDB.saveSystemLog({ category: 'auth', message: `Invite generated for ${role} (${email || 'Public Link'})` });
       }
   } catch (err) { UI.showNotification('Failed to generate invite: ' + err.message, 'error'); }
   });
@@ -1303,20 +1288,6 @@ function initNav() {
   }
 }
 
-async function clearAllLogs() {
-    if (await UI.confirm('Are you sure you want to permanently delete all system logs? This action cannot be undone.', 'Clear System Logs')) {
-        try {
-            await SupabaseDB.deleteSystemLogs();
-            UI.showNotification('System logs cleared.', 'success');
-            renderSystemLogs();
-        } catch (e) {
-            UI.showNotification('Failed to clear logs: ' + e.message, 'error');
-        }
-    }
-}
-
-window.clearAllLogs = clearAllLogs;
-
 async function saveAutoTask(task, enabled) {
   try {
     const maintenance = await SupabaseDB.getMaintenance();
@@ -1325,57 +1296,9 @@ async function saveAutoTask(task, enabled) {
     maintenance.metadata.autoTasks[task] = enabled;
     await SupabaseDB.saveMaintenance(maintenance);
     UI.showNotification('Automated task setting updated', 'success');
-    SupabaseDB.saveSystemLog({ category: 'system', message: `Automated task ${task} ${enabled ? 'enabled' : 'disabled'}` });
   } catch (err) {
     UI.showNotification('Failed to save setting: ' + err.message, 'error');
   }
-}
-
-async function renderSystemLogs() {
-    const content = document.getElementById('pageContent');
-    if (!content) return;
-
-    try {
-        const { data: logs } = await SupabaseDB.getSystemLogs();
-
-        content.innerHTML = `
-            <section>
-                <div class="flex-between mb-20">
-                    <h3 class="m-0">System Activity Logs</h3>
-                    <div class="flex gap-10">
-                        <button class="button danger small w-auto" onclick="clearAllLogs()">Clear All Logs</button>
-                        <button class="button secondary small w-auto" onclick="renderManagement()">Back to Management</button>
-                    </div>
-                </div>
-                <div class="card" style="padding:0; overflow-x:auto">
-                    <table class="small">
-                        <thead>
-                            <tr>
-                                <th>Timestamp</th>
-                                <th>Level</th>
-                                <th>Category</th>
-                                <th>User</th>
-                                <th>Message</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            ${logs.map(log => `
-                                <tr>
-                                    <td>${new Date(log.created_at).toLocaleString()}</td>
-                                    <td><span class="badge ${log.level === 'error' ? 'badge-inactive' : (log.level === 'warn' ? 'badge-warn' : 'badge-active')}">${escapeHtml(log.level)}</span></td>
-                                    <td>${escapeHtml(log.category)}</td>
-                                    <td class="tiny">${escapeHtml(log.user_email || 'System')}</td>
-                                    <td>${escapeHtml(log.message)}</td>
-                                </tr>
-                            `).join('')}
-                        </tbody>
-                    </table>
-                </div>
-            </section>
-        `;
-    } catch (err) {
-        UI.showNotification('Failed to load logs: ' + err.message, 'error');
-    }
 }
 
 document.addEventListener('DOMContentLoaded', async () => {

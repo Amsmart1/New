@@ -293,17 +293,6 @@ CREATE TABLE IF NOT EXISTS invites (
   created_by VARCHAR(255) REFERENCES users(email) ON UPDATE CASCADE ON DELETE SET NULL
 );
 
-CREATE TABLE IF NOT EXISTS system_logs (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  level VARCHAR(20) DEFAULT 'info' CHECK (level IN ('info', 'warn', 'error', 'debug')),
-  category VARCHAR(50),
-  message TEXT,
-  metadata JSONB DEFAULT '{}'::jsonb,
-  user_email VARCHAR(255),
-  expires_at TIMESTAMP WITH TIME ZONE DEFAULT (NOW() + INTERVAL '30 days'),
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
-
 CREATE TABLE IF NOT EXISTS violations (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   user_email VARCHAR(255) REFERENCES users(email) ON UPDATE CASCADE ON DELETE CASCADE,
@@ -328,8 +317,6 @@ CREATE TABLE IF NOT EXISTS violations (
 -- Separate top-level ALTER statements to ensure columns exist for subsequent script parsing
 ALTER TABLE broadcasts ADD COLUMN IF NOT EXISTS expires_at TIMESTAMP WITH TIME ZONE DEFAULT (NOW() + INTERVAL '30 days');
 ALTER TABLE notifications ADD COLUMN IF NOT EXISTS expires_at TIMESTAMP WITH TIME ZONE DEFAULT (NOW() + INTERVAL '90 days');
-ALTER TABLE system_logs ADD COLUMN IF NOT EXISTS user_email VARCHAR(255);
-ALTER TABLE system_logs ADD COLUMN IF NOT EXISTS expires_at TIMESTAMP WITH TIME ZONE DEFAULT (NOW() + INTERVAL '30 days');
 ALTER TABLE quiz_submissions ADD COLUMN IF NOT EXISTS attempt_number INTEGER;
 ALTER TABLE quiz_submissions ALTER COLUMN attempt_number DROP NOT NULL;
 ALTER TABLE quiz_submissions ALTER COLUMN status SET DEFAULT 'in-progress';
@@ -850,9 +837,6 @@ CREATE INDEX IF NOT EXISTS idx_materials_course ON materials(course_id);
 CREATE INDEX IF NOT EXISTS idx_planner_user_date ON planner(user_email, due_date);
 CREATE INDEX IF NOT EXISTS idx_broadcasts_expiry ON broadcasts(expires_at);
 CREATE INDEX IF NOT EXISTS idx_notifications_expiry ON notifications(expires_at);
-CREATE INDEX IF NOT EXISTS idx_system_logs_expiry ON system_logs(expires_at);
-CREATE INDEX IF NOT EXISTS idx_system_logs_level ON system_logs(level);
-CREATE INDEX IF NOT EXISTS idx_system_logs_category ON system_logs(category);
 CREATE INDEX IF NOT EXISTS idx_violations_expiry ON violations(expires_at);
 CREATE INDEX IF NOT EXISTS idx_courses_status ON courses(status);
 CREATE INDEX IF NOT EXISTS idx_live_classes_status ON live_classes(status);
@@ -1282,7 +1266,6 @@ BEGIN
     DELETE FROM broadcasts WHERE expires_at < NOW();
     DELETE FROM notifications WHERE created_at < (NOW() - INTERVAL '60 days') AND is_read = TRUE;
     DELETE FROM violations WHERE expires_at < NOW();
-    DELETE FROM system_logs WHERE created_at < (NOW() - INTERVAL '30 days');
     RETURN NULL;
 END;
 $$ LANGUAGE plpgsql;
@@ -1297,8 +1280,6 @@ CREATE TRIGGER tr_purge_notifications AFTER INSERT ON notifications FOR EACH STA
 DROP TRIGGER IF EXISTS tr_purge_violations ON violations;
 CREATE TRIGGER tr_purge_violations AFTER INSERT ON violations FOR EACH STATEMENT EXECUTE PROCEDURE purge_expired_records();
 
-DROP TRIGGER IF EXISTS tr_purge_logs ON system_logs;
-CREATE TRIGGER tr_purge_logs AFTER INSERT ON system_logs FOR EACH STATEMENT EXECUTE PROCEDURE purge_expired_records();
 
 CREATE OR REPLACE FUNCTION enroll_in_course(p_course_id UUID, p_student_email VARCHAR, p_enrollment_id VARCHAR DEFAULT NULL)
 RETURNS VOID AS $$
@@ -1355,7 +1336,7 @@ BEGIN
         SELECT table_name
         FROM information_schema.tables
         WHERE table_schema = 'public'
-        AND table_name IN ('users', 'user_secrets', 'courses', 'lessons', 'enrollments', 'assignments', 'submissions', 'live_classes', 'attendance', 'quizzes', 'quiz_submissions', 'materials', 'discussions', 'notifications', 'broadcasts', 'maintenance', 'planner', 'certificates', 'study_sessions', 'invites', 'system_logs', 'violations')
+        AND table_name IN ('users', 'user_secrets', 'courses', 'lessons', 'enrollments', 'assignments', 'submissions', 'live_classes', 'attendance', 'quizzes', 'quiz_submissions', 'materials', 'discussions', 'notifications', 'broadcasts', 'maintenance', 'planner', 'certificates', 'study_sessions', 'invites', 'violations')
     LOOP
         EXECUTE format('ALTER TABLE %I ENABLE ROW LEVEL SECURITY', t);
     END LOOP;
@@ -1503,10 +1484,6 @@ DROP POLICY IF EXISTS "Maintenance: Manage for Admins" ON maintenance;
 CREATE POLICY "Maintenance: Manage for Admins" ON maintenance FOR ALL USING (is_admin());
 
 -- 16. System Logs Table
-DROP POLICY IF EXISTS "System Logs: Manage for Admins" ON system_logs;
-CREATE POLICY "System Logs: Manage for Admins" ON system_logs FOR ALL USING (is_admin());
-DROP POLICY IF EXISTS "System Logs: Insert" ON system_logs;
-CREATE POLICY "System Logs: Insert" ON system_logs FOR INSERT WITH CHECK (true);
 
 -- 17. Violations Table
 DROP POLICY IF EXISTS "Violations: User Access" ON violations;
@@ -1514,8 +1491,8 @@ CREATE POLICY "Violations: User Access" ON violations FOR SELECT USING (
   user_email = get_auth_email() OR
   is_admin() OR
   (is_teacher() AND (
-    EXISTS (SELECT 1 FROM assignments WHERE id = violations.assessment_id AND assessment_type = 'assignment' AND teacher_email = get_auth_email()) OR
-    EXISTS (SELECT 1 FROM quizzes WHERE id = violations.assessment_id AND assessment_type = 'quiz' AND teacher_email = get_auth_email())
+    EXISTS (SELECT 1 FROM assignments WHERE id = violations.assessment_id AND violations.assessment_type = 'assignment' AND teacher_email = get_auth_email()) OR
+    EXISTS (SELECT 1 FROM quizzes WHERE id = violations.assessment_id AND violations.assessment_type = 'quiz' AND teacher_email = get_auth_email())
   ))
 );
 DROP POLICY IF EXISTS "Violations: Insert" ON violations;
@@ -1524,8 +1501,8 @@ DROP POLICY IF EXISTS "Violations: Delete" ON violations;
 CREATE POLICY "Violations: Delete" ON violations FOR DELETE USING (
   is_admin() OR
   (is_teacher() AND (
-    EXISTS (SELECT 1 FROM assignments WHERE id = violations.assessment_id AND assessment_type = 'assignment' AND teacher_email = get_auth_email()) OR
-    EXISTS (SELECT 1 FROM quizzes WHERE id = violations.assessment_id AND assessment_type = 'quiz' AND teacher_email = get_auth_email())
+    EXISTS (SELECT 1 FROM assignments WHERE id = violations.assessment_id AND violations.assessment_type = 'assignment' AND teacher_email = get_auth_email()) OR
+    EXISTS (SELECT 1 FROM quizzes WHERE id = violations.assessment_id AND violations.assessment_type = 'quiz' AND teacher_email = get_auth_email())
   ))
 );
 
