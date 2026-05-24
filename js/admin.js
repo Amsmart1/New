@@ -369,7 +369,7 @@ async function broadcastNotif() {
         title,
         message: msg,
         target_role: role === 'all' ? null : role,
-        type: 'broadcast',
+        type: 'system',
         expires_at: expiryDate.toISOString(),
         created_at: new Date().toISOString()
     };
