@@ -1,4 +1,78 @@
-const LandingUI = {
+const LANDING_DATA = {
+    roles: {
+        student: { title: 'Student', icon: '🧑‍🎓', description: 'Access learning resources & support' },
+        teacher: { title: 'Teacher', icon: '🧑‍🏫', description: 'Manage courses & students' },
+        admin: { title: 'Admin', icon: '⚙️', description: 'System configuration & control' }
+    },
+    contact: {
+        email: 'eduquizlms@gmail.com',
+        phone: '+233 50 596 5310',
+        hours: 'Monday to Friday, 9 AM - 5 PM GMT'
+    },
+    infoModals: {
+        about: {
+            title: 'About SmartLMS',
+            content: `
+                <p>SmartLMS is a secure, next-generation learning platform designed for modern education. We focus on academic integrity, student engagement, and providing educators with the tools they need to succeed in a digital-first world.</p>
+                <p>Our mission is to make education accessible and interactive for everyone, everywhere. We believe in the power of technology to transform learning and empower both students and teachers.</p>
+                <div class="about-image-placeholder">
+                    <div class="text-center">
+                        <div class="about-placeholder-icon">🌐</div>
+                        <div>Global Learning Platform</div>
+                    </div>
+                </div>
+                <div class="about-stats">
+                    <div class="about-stat-item">
+                        <div class="value">100%</div>
+                        <div class="label">Secure</div>
+                    </div>
+                    <div class="about-stat-item">
+                        <div class="value">24/7</div>
+                        <div class="label">Accessible</div>
+                    </div>
+                    <div class="about-stat-item">
+                        <div class="value">Real-time</div>
+                        <div class="label">Analytics</div>
+                    </div>
+                </div>
+            `
+        },
+        privacy: {
+            title: 'Privacy Policy',
+            content: `
+                <p>At SmartLMS, your privacy is our priority. We only collect data necessary to provide you with the best learning experience.</p>
+                <ul>
+                    <li><strong>Personal Information:</strong> We store your name, email, and phone number for account management.</li>
+                    <li><strong>Learning Data:</strong> We track your progress, grades, and attendance to help you and your teachers.</li>
+                    <li><strong>Security Data:</strong> In proctored assessments, we monitor browser activity to ensure academic integrity.</li>
+                </ul>
+                <p>We do not sell your data to third parties.</p>
+            `
+        },
+        terms: {
+            title: 'Terms of Service',
+            content: `
+                <p>By using SmartLMS, you agree to follow our code of conduct:</p>
+                <ul>
+                    <li><strong>Academic Integrity:</strong> Users must not engage in cheating or plagiarism during assessments.</li>
+                    <li><strong>Respect:</strong> Users must be respectful in discussions and live classes.</li>
+                    <li><strong>Account Security:</strong> You are responsible for maintaining the confidentiality of your password.</li>
+                </ul>
+            `
+        },
+        standards: {
+            title: 'Teaching Standards',
+            content: `
+                <p>Our platform encourages high teaching standards through:</p>
+                <ul>
+                    <li><strong>Clear Objectives:</strong> Every course and lesson should have clearly defined learning outcomes.</li>
+                    <li><strong>Active Engagement:</strong> Teachers are encouraged to use live classes and discussions to engage students.</li>
+                    <li><strong>Timely Feedback:</strong> Providing feedback on assignments in a timely manner.</li>
+                    <li><strong>Integrity Monitoring:</strong> Utilizing our anti-cheat tools to ensure fair assessments for all students.</li>
+                </ul>
+            `
+        }
+    },
     faqs: {
         student: [
             {
@@ -66,72 +140,19 @@ const LandingUI = {
                 ]
             }
         ]
-    },
+    }
+};
 
+const LandingUI = {
     showInfoModal(type) {
         const content = document.getElementById('infoModalContent');
         const overlay = document.getElementById('infoOverlay');
         if (!content || !overlay) return;
 
-        let html = '';
-        switch (type) {
-            case 'about':
-                html = `<h2>About SmartLMS</h2>
-                        <p>SmartLMS is a secure, next-generation learning platform designed for modern education. We focus on academic integrity, student engagement, and providing educators with the tools they need to succeed in a digital-first world.</p>
-                        <p>Our mission is to make education accessible and interactive for everyone, everywhere. We believe in the power of technology to transform learning and empower both students and teachers.</p>
-                        <div class="about-image" style="margin: 2rem 0; height: 200px; display: flex; align-items: center; justify-content: center; background: #f8fafc; border-radius: 1.5rem; color: #9ca3af; font-weight: 700; border: 2px dashed #e2e8f0;">
-                            <div style="text-align: center;">
-                                <div style="font-size: 3rem; margin-bottom: 0.5rem;">🌐</div>
-                                <div>Global Learning Platform</div>
-                            </div>
-                        </div>
-                        <div class="about-stats" style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 2rem; margin-top: 3rem;">
-                            <div class="about-stat-item" style="text-align: center;">
-                                <div class="value" style="font-size: 2rem; font-weight: 800; color: var(--p);">100%</div>
-                                <div class="label" style="font-size: 0.9rem; color: #6b7280; font-weight: 600; text-transform: uppercase;">Secure</div>
-                            </div>
-                            <div class="about-stat-item" style="text-align: center;">
-                                <div class="value" style="font-size: 2rem; font-weight: 800; color: var(--p);">24/7</div>
-                                <div class="label" style="font-size: 0.9rem; color: #6b7280; font-weight: 600; text-transform: uppercase;">Accessible</div>
-                            </div>
-                            <div class="about-stat-item" style="text-align: center;">
-                                <div class="value" style="font-size: 2rem; font-weight: 800; color: var(--p);">Real-time</div>
-                                <div class="label" style="font-size: 0.9rem; color: #6b7280; font-weight: 600; text-transform: uppercase;">Analytics</div>
-                            </div>
-                        </div>`;
-                break;
-            case 'privacy':
-                html = `<h2>Privacy Policy</h2>
-                        <p>At SmartLMS, your privacy is our priority. We only collect data necessary to provide you with the best learning experience.</p>
-                        <ul>
-                            <li><strong>Personal Information:</strong> We store your name, email, and phone number for account management.</li>
-                            <li><strong>Learning Data:</strong> We track your progress, grades, and attendance to help you and your teachers.</li>
-                            <li><strong>Security Data:</strong> In proctored assessments, we monitor browser activity to ensure academic integrity.</li>
-                        </ul>
-                        <p>We do not sell your data to third parties.</p>`;
-                break;
-            case 'terms':
-                html = `<h2>Terms of Service</h2>
-                        <p>By using SmartLMS, you agree to follow our code of conduct:</p>
-                        <ul>
-                            <li><strong>Academic Integrity:</strong> Users must not engage in cheating or plagiarism during assessments.</li>
-                            <li><strong>Respect:</strong> Users must be respectful in discussions and live classes.</li>
-                            <li><strong>Account Security:</strong> You are responsible for maintaining the confidentiality of your password.</li>
-                        </ul>`;
-                break;
-            case 'standards':
-                html = `<h2>Teaching Standards</h2>
-                        <p>Our platform encourages high teaching standards through:</p>
-                        <ul>
-                            <li><strong>Clear Objectives:</strong> Every course and lesson should have clearly defined learning outcomes.</li>
-                            <li><strong>Active Engagement:</strong> Teachers are encouraged to use live classes and discussions to engage students.</li>
-                            <li><strong>Timely Feedback:</strong> Providing constructive feedback on assignments in a timely manner.</li>
-                            <li><strong>Integrity Monitoring:</strong> Utilizing our anti-cheat tools to ensure fair assessments for all students.</li>
-                        </ul>`;
-                break;
-        }
+        const info = LANDING_DATA.infoModals[type];
+        if (!info) return;
 
-        content.innerHTML = html;
+        content.innerHTML = `<h2>${info.title}</h2>${info.content}`;
         overlay.classList.add('active');
     },
 
@@ -146,28 +167,28 @@ const LandingUI = {
 
         content.innerHTML = `
             <div class="text-center">
-                <div style="font-size: 3rem; margin-bottom: 1.5rem;">📞</div>
+                <div class="contact-header-icon">📞</div>
                 <h2>Contact Us</h2>
                 <p class="text-muted mb-30">Get in touch with our team for any business inquiries or urgent matters.</p>
 
-                <div class="card" style="text-align: left; background: #f8fafc; padding: 25px; border-radius: 15px; border: 1px solid #e2e8f0;">
-                    <div class="mb-20" style="display: flex; align-items: center; gap: 15px;">
-                        <div style="background: var(--p); color: #fff; width: 40px; height: 40px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 1.2rem;">📧</div>
-                        <div>
-                            <div class="tiny bold" style="color: var(--p); text-transform: uppercase;">Email Address</div>
-                            <div style="font-weight: 600;">eduquizlms@gmail.com</div>
+                <div class="contact-card">
+                    <div class="contact-item">
+                        <div class="contact-icon email-bg">📧</div>
+                        <div class="contact-info">
+                            <div class="contact-label email-color">Email Address</div>
+                            <div class="contact-value">${LANDING_DATA.contact.email}</div>
                         </div>
                     </div>
-                    <div style="display: flex; align-items: center; gap: 15px;">
-                        <div style="background: var(--ok); color: #fff; width: 40px; height: 40px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 1.2rem;">📞</div>
-                        <div>
-                            <div class="tiny bold" style="color: var(--ok); text-transform: uppercase;">Phone Number</div>
-                            <div style="font-weight: 600;">+233 50 596 5310</div>
+                    <div class="contact-item">
+                        <div class="contact-icon phone-bg">📞</div>
+                        <div class="contact-info">
+                            <div class="contact-label phone-color">Phone Number</div>
+                            <div class="contact-value">${LANDING_DATA.contact.phone}</div>
                         </div>
                     </div>
                 </div>
 
-                <p class="tiny text-muted mt-20">Our team is available Monday to Friday, 9 AM - 5 PM GMT.</p>
+                <p class="tiny text-muted mt-20">Our team is available ${LANDING_DATA.contact.hours}.</p>
                 <button class="button primary mt-20 w-auto" onclick="LandingUI.closeInfoModal()">Close</button>
             </div>
         `;
@@ -179,48 +200,28 @@ const LandingUI = {
         const overlay = document.getElementById('helpCenterOverlay');
         if (!content || !overlay) return;
 
+        const roleCards = Object.entries(LANDING_DATA.roles).map(([id, role]) => `
+            <div class="flippable-card" id="card-${id}" onclick="LandingUI.selectRole('${id}')">
+                <div class="flippable-card-inner">
+                    <div class="flippable-card-front">
+                        <div class="icon" style="font-size: 3.5rem; margin-bottom: 1rem;">${role.icon}</div>
+                        <span style="font-size: 1.25rem; font-weight: 700;">${role.title}</span>
+                    </div>
+                    <div class="flippable-card-back">
+                        <p style="font-weight: 600; color: var(--p);">${role.description}</p>
+                        <button class="button primary tiny mt-10">Select</button>
+                    </div>
+                </div>
+            </div>
+        `).join('');
+
         content.innerHTML = `
             <div id="helpCenterHero" class="help-center-hero" style="background: var(--bg); padding: 60px 20px; text-align: center; transition: all 0.4s ease;">
                 <h1 style="font-size: 2.5rem; margin-bottom: 10px;">Help Center</h1>
                 <p class="text-muted">How can we help you today? Please select your role to continue.</p>
 
                 <div class="role-grid help-center-roles" style="max-width: 900px; margin: 40px auto 0;">
-                    <div class="flippable-card" id="card-student" onclick="LandingUI.selectRole('student')">
-                        <div class="flippable-card-inner">
-                            <div class="flippable-card-front">
-                                <div class="icon" style="font-size: 3.5rem; margin-bottom: 1rem;">🧑‍🎓</div>
-                                <span style="font-size: 1.25rem; font-weight: 700;">Student</span>
-                            </div>
-                            <div class="flippable-card-back">
-                                <p style="font-weight: 600; color: var(--p);">Access learning resources & support</p>
-                                <button class="button primary tiny mt-10">Select</button>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="flippable-card" id="card-teacher" onclick="LandingUI.selectRole('teacher')">
-                        <div class="flippable-card-inner">
-                            <div class="flippable-card-front">
-                                <div class="icon" style="font-size: 3.5rem; margin-bottom: 1rem;">🧑‍🏫</div>
-                                <span style="font-size: 1.25rem; font-weight: 700;">Teacher</span>
-                            </div>
-                            <div class="flippable-card-back">
-                                <p style="font-weight: 600; color: var(--p);">Manage courses & students</p>
-                                <button class="button primary tiny mt-10">Select</button>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="flippable-card" id="card-admin" onclick="LandingUI.selectRole('admin')">
-                        <div class="flippable-card-inner">
-                            <div class="flippable-card-front">
-                                <div class="icon" style="font-size: 3.5rem; margin-bottom: 1rem;">⚙️</div>
-                                <span style="font-size: 1.25rem; font-weight: 700;">Admin</span>
-                            </div>
-                            <div class="flippable-card-back">
-                                <p style="font-weight: 600; color: var(--p);">System configuration & control</p>
-                                <button class="button primary tiny mt-10">Select</button>
-                            </div>
-                        </div>
-                    </div>
+                    ${roleCards}
                 </div>
             </div>
             <div id="helpCenterBodyContainer" style="flex: 1; overflow: hidden; display: none;"></div>
@@ -278,7 +279,7 @@ const LandingUI = {
         }
 
         const roleTitle = role.charAt(0).toUpperCase() + role.slice(1);
-        const faqs = this.faqs[role] || [];
+        const faqs = LANDING_DATA.faqs[role] || [];
 
         bodyContainer.style.display = 'block';
 
@@ -392,6 +393,11 @@ const LandingUI = {
         }
     },
 
+    mockSubmitSupport() {
+        UI.showNotification('Support ticket submitted successfully! We will get back to you shortly.', 'success');
+        // Clear inputs in a real scenario
+    },
+
     async submitSupport(role) {
         const email = document.getElementById('supportEmail').value;
         const subject = document.getElementById('supportSubject').value;
@@ -443,10 +449,6 @@ const LandingUI = {
         }
     },
 
-    mockSubmitSupport() {
-        UI.showNotification('Support ticket submitted successfully! We will get back to you shortly.', 'success');
-        // Clear inputs in a real scenario
-    },
 
     closeHelpCenter() {
         document.getElementById('helpCenterOverlay').classList.remove('active');
