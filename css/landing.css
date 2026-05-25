@@ -535,7 +535,7 @@ footer.landing-footer {
         padding: 1rem;
         flex-wrap: wrap;
         justify-content: center;
-        gap: 1rem;
+        gap: 0.75rem;
     }
 
     .landing-header .logo {
@@ -545,13 +545,20 @@ footer.landing-footer {
     }
 
     .landing-header .nav-links {
-        gap: 1.5rem;
-        font-size: 0.95rem;
+        gap: 1rem;
+        font-size: 0.85rem;
+        flex-wrap: wrap;
+        justify-content: center;
+    }
+
+    .landing-header .nav-links button {
+        margin-left: 0 !important;
+        width: 100%;
     }
 
     .hero { padding: 4rem 1.5rem; }
-    .hero h1 { font-size: 2.8rem; }
-    .hero p { font-size: 1.15rem; margin-bottom: 2.5rem; }
+    .hero h1 { font-size: 2.5rem; }
+    .hero p { font-size: 1.1rem; margin-bottom: 2.5rem; }
 
     .role-grid {
         grid-template-columns: 1fr;
@@ -563,15 +570,24 @@ footer.landing-footer {
     .role-btn { padding: 2rem; }
     .role-btn .icon { font-size: 3rem; }
 
-    .features {
-        grid-template-columns: 1fr;
+    .features, .steps-grid, .footer-grid {
+        grid-template-columns: 1fr !important;
         gap: 2rem;
     }
 
-    .overlay .container { padding: 2rem; }
+    .overlay .container {
+        padding: 2rem 1.5rem;
+        width: 95%;
+        border-radius: 1.5rem;
+    }
 
     .help-center-header, .help-center-body {
         padding: 20px !important;
+    }
+
+    .about-stats {
+        grid-template-columns: 1fr !important;
+        gap: 1.5rem !important;
     }
 }
 
@@ -587,6 +603,42 @@ footer.landing-footer {
 /* Help Center Specifics */
 .help-center-modal {
     animation: slideUp 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.help-center-roles {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 30px;
+}
+
+.help-center-layout {
+    display: grid;
+    grid-template-columns: 1fr 350px;
+    gap: 40px;
+    padding: 40px 60px;
+}
+
+@media (max-width: 1024px) {
+    .help-center-layout {
+        grid-template-columns: 1fr;
+        padding: 40px;
+    }
+}
+
+@media (max-width: 768px) {
+    .help-center-roles {
+        grid-template-columns: 1fr;
+        gap: 20px;
+        max-width: 300px !important;
+    }
+
+    .flippable-card {
+        height: 200px;
+    }
+
+    .help-center-layout {
+        padding: 20px;
+    }
 }
 
 @keyframes slideUp {
