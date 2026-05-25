@@ -1692,21 +1692,28 @@ class SessionManager {
     }
 
     static async clearCurrentUser(reason = null) {
-        if (reason) {
+        const user = await this.getCurrentUser();
+        if (reason && user) {
             try {
-                const user = await this.getCurrentUser();
-                if (user) {
-                    const fresh = await SupabaseDB.getUser(user.email, true);
-                    if (fresh) {
-                        fresh.metadata = { ...fresh.metadata, last_invalidation_reason: reason };
-                        fresh.session_id = 'invalidated_' + Date.now() + '_' + reason;
-                        await SupabaseDB.saveUser(fresh);
-                    }
-                }
+                // Optimization: Use locally available user data and avoid redundant getUser/saveUser overhead
+                const newMetadata = { ...(user.metadata || {}), last_invalidation_reason: reason };
+                const newSid = 'invalidated_' + Date.now() + '_' + reason;
+
+                // Update server-side session state in parallel to minimize network delay
+                await SupabaseDB._request(async () => {
+                    await Promise.all([
+                        supabaseClient.from('users').update({ metadata: newMetadata }).eq('email', user.email),
+                        supabaseClient.rpc('update_user_secret_secure', {
+                            p_email: user.email,
+                            p_session_id: newSid
+                        })
+                    ]);
+                });
             } catch (e) {
-                console.warn('Failed to set invalidation reason:', e);
+                console.warn('Failed to set invalidation reason on server:', e);
             }
         }
+
         sessionStorage.removeItem('currentUser');
         sessionStorage.removeItem('sessionId');
         // Reset the internal guard to allow re-initialization on next login
