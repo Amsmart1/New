@@ -176,7 +176,7 @@
 
         parseTargetDate() {
             const ts = this._parse(this.targetDate);
-            if (!ts) {
+            if (!ts && this.targetDate !== null) {
                 console.warn(`Countdown: Invalid targetDate provided: ${this.targetDate}`);
                 return null;
             }
@@ -244,7 +244,7 @@
             // Parse target date
             this.targetTimestamp = this.parseTargetDate();
             if (!this.targetTimestamp) {
-                this.container.innerHTML = '';
+                if (this.container) this.container.innerHTML = '';
                 return this;
             }
 
