@@ -515,13 +515,22 @@ const NotificationManager = {
         }
         
         // Browser notification for new unread ones
-        const lastCount = parseInt(sessionStorage.getItem('lastNotifCount') || '0');
-        if (unreadCount > lastCount) {
+        const user = await SessionManager.getCurrentUser();
+        if (user) {
+            const storageKey = `last_notified_id_${user.email}`;
+            const lastNotifiedId = localStorage.getItem(storageKey);
+
             // Newest notifications are first in the list
             const latest = notifications.find(n => !n.is_read);
-            if (latest) this.sendBrowserNotification(latest.title, latest.message);
+
+            if (latest && latest.id !== lastNotifiedId) {
+                this.sendBrowserNotification(latest.title, latest.message);
+                localStorage.setItem(storageKey, latest.id);
+            } else if (!latest) {
+                // If all are read, clear the tracker so the next new one triggers correctly
+                localStorage.removeItem(storageKey);
+            }
         }
-        sessionStorage.setItem('lastNotifCount', unreadCount);
     },
 
     async handleNotificationClick(id, isBroadcast, link) {

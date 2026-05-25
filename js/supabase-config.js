@@ -65,11 +65,20 @@ const _cache = {
     ttl: 30000, // 30 seconds
     async fetch(key, fn) {
         const now = Date.now();
-        if (this.data[key] && (now - this.data[key].ts < this.ttl)) {
-            return this.data[key].val;
+        // Append current user email to key if available to prevent cross-account cache leakage
+        let userEmail = '';
+        try {
+            const raw = sessionStorage.getItem('currentUser');
+            if (raw) userEmail = JSON.parse(raw).email;
+        } catch(e) {}
+
+        const contextualKey = userEmail ? `${key}_${userEmail}` : key;
+
+        if (this.data[contextualKey] && (now - this.data[contextualKey].ts < this.ttl)) {
+            return this.data[contextualKey].val;
         }
         const val = await fn();
-        this.data[key] = { val, ts: now };
+        this.data[contextualKey] = { val, ts: now };
         return val;
     },
     invalidate(key) {
@@ -1691,6 +1700,10 @@ class SessionManager {
         }
         if (typeof window.setSupabaseSession === 'function') {
             window.setSupabaseSession(null);
+        }
+        // Purge memory cache to ensure no data leaks to the next session
+        if (typeof SupabaseDB !== 'undefined' && SupabaseDB.invalidateCache) {
+            SupabaseDB.invalidateCache();
         }
     }
 
