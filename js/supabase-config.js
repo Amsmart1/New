@@ -1447,9 +1447,10 @@ class SupabaseDB {
         };
         if (ticket.id) payload.id = ticket.id;
 
+        // Use insert instead of upsert to avoid unauthorized 401 error on SELECT/ON CONFLICT check
         const { data, error } = await supabaseClient
             .from('support_tickets')
-            .upsert(payload, { onConflict: 'id' })
+            .insert([payload])
             .select();
         if (error) throw error;
         return data?.[0];

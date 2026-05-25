@@ -1052,6 +1052,21 @@ window.showCertForm = showCertForm;
 window.issueCert = issueCert;
 window.renderCalendar = renderCalendar;
 
+async function renderHelp() {
+  clearActiveCountdowns();
+  const content = document.getElementById('pageContent');
+  if (!content) return;
+
+  content.innerHTML = `
+    <div class="flex-between mb-20">
+        <h2 class="m-0">Help & Support</h2>
+    </div>
+    <div id="helpContainer"></div>
+  `;
+  HelpSystem.renderHelpCenter('helpContainer', 'teacher');
+}
+window.renderHelp = renderHelp;
+
 async function renderAntiCheat() {
 
   const content = document.getElementById('pageContent');
@@ -2528,6 +2543,7 @@ function initNav() {
         else if(page === 'calendar') renderCalendar();
         else if(page === 'anticheat') renderAntiCheat();
         else if(page === 'settings') renderSettings();
+        else if(page === 'help') renderHelp();
       });
     });
   }
