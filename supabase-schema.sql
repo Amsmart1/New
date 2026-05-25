@@ -1579,7 +1579,7 @@ DROP POLICY IF EXISTS "Invites: Select for Signup" ON invites;
 CREATE POLICY "Invites: Select for Signup" ON invites FOR SELECT USING (true);
 
 -- 22. Support Tickets Table
-DROP POLICY IF EXISTS "Support Tickets: Public Insert" ON support_tickets;
+DROP POLICY IF EXISTS "Support Tickets: Authenticated Insert" ON support_tickets;
 CREATE POLICY "Support Tickets: Authenticated Insert" ON support_tickets FOR INSERT WITH CHECK (get_auth_email() IS NOT NULL);
 DROP POLICY IF EXISTS "Support Tickets: User/Admin Select" ON support_tickets;
 CREATE POLICY "Support Tickets: User/Admin Select" ON support_tickets FOR SELECT USING (user_email = get_auth_email() OR is_admin());
