@@ -1277,6 +1277,342 @@ UI.renderIntegrityReport = function(containerId, violations, userEmail) {
 
 window.UI = UI;
 
+const HELP_DATA = {
+    roles: {
+        student: { title: 'Student', icon: '🧑‍🎓', description: 'Access learning resources & support' },
+        teacher: { title: 'Teacher', icon: '🧑‍🏫', description: 'Manage courses & students' },
+        admin: { title: 'Admin', icon: '⚙️', description: 'System configuration & control' }
+    },
+    contact: {
+        email: 'eduquizlms@gmail.com',
+        phone: '+233 50 596 5310',
+        hours: 'Monday to Friday, 9 AM - 5 PM GMT'
+    },
+    infoModals: {
+        about: {
+            title: 'About SmartLMS',
+            content: `
+                <p>SmartLMS is a secure, next-generation learning platform designed for modern education. We focus on academic integrity, student engagement, and providing educators with the tools they need to succeed in a digital-first world.</p>
+                <p>Our mission is to make education accessible and interactive for everyone, everywhere. We believe in the power of technology to transform learning and empower both students and teachers.</p>
+                <div class="about-image-placeholder">
+                    <div class="text-center">
+                        <div class="about-placeholder-icon">🌐</div>
+                        <div>Global Learning Platform</div>
+                    </div>
+                </div>
+                <div class="about-stats">
+                    <div class="about-stat-item">
+                        <div class="value">100%</div>
+                        <div class="label">Secure</div>
+                    </div>
+                    <div class="about-stat-item">
+                        <div class="value">24/7</div>
+                        <div class="label">Accessible</div>
+                    </div>
+                    <div class="about-stat-item">
+                        <div class="value">Real-time</div>
+                        <div class="label">Analytics</div>
+                    </div>
+                </div>
+            `
+        },
+        privacy: {
+            title: 'Privacy Policy',
+            content: `
+                <p>At SmartLMS, your privacy is our priority. We only collect data necessary to provide you with the best learning experience.</p>
+                <ul>
+                    <li><strong>Personal Information:</strong> We store your name, email, and phone number for account management.</li>
+                    <li><strong>Learning Data:</strong> We track your progress, grades, and attendance to help you and your teachers.</li>
+                    <li><strong>Security Data:</strong> In proctored assessments, we monitor browser activity to ensure academic integrity.</li>
+                </ul>
+                <p>We do not sell your data to third parties.</p>
+            `
+        },
+        terms: {
+            title: 'Terms of Service',
+            content: `
+                <p>By using SmartLMS, you agree to follow our code of conduct:</p>
+                <ul>
+                    <li><strong>Academic Integrity:</strong> Users must not engage in cheating or plagiarism during assessments.</li>
+                    <li><strong>Respect:</strong> Users must be respectful in discussions and live classes.</li>
+                    <li><strong>Account Security:</strong> You are responsible for maintaining the confidentiality of your password.</li>
+                </ul>
+            `
+        },
+        standards: {
+            title: 'Teaching Standards',
+            content: `
+                <p>Our platform encourages high teaching standards through:</p>
+                <ul>
+                    <li><strong>Clear Objectives:</strong> Every course and lesson should have clearly defined learning outcomes.</li>
+                    <li><strong>Active Engagement:</strong> Teachers are encouraged to use live classes and discussions to engage students.</li>
+                    <li><strong>Timely Feedback:</strong> Providing feedback on assignments in a timely manner.</li>
+                    <li><strong>Integrity Monitoring:</strong> Utilizing our anti-cheat tools to ensure fair assessments for all students.</li>
+                </ul>
+            `
+        }
+    },
+    faqs: {
+        student: [
+            {
+                category: "ACCOUNT",
+                items: [
+                    { q: "How do I reset my password?", a: "Click on 'Forgot Password' on the login screen and follow the instructions to request a reset." },
+                    { q: "Can I change my email address?", a: "Email addresses are currently locked to your account. Contact an administrator if you need a change." },
+                    { q: "How do I earn XP?", a: "You earn XP by completing lessons, assignments, and quizzes across your enrolled courses." }
+                ]
+            },
+            {
+                category: "COURSES",
+                items: [
+                    { q: "How do I enroll in a course?", a: "Browse the catalog and click 'Enroll'. Some courses may require an Enrollment ID from your teacher." },
+                    { q: "Where can I find my course materials?", a: "Navigate to your course dashboard and look under the 'Materials' tab." },
+                    { q: "How is my progress calculated?", a: "Your progress is based on the percentage of lessons and assignments completed in the course." }
+                ]
+            },
+            {
+                category: "TECHNICAL",
+                items: [
+                    { q: "Does SmartLMS work offline?", a: "You can access some materials offline if you have installed the PWA app on your device." },
+                    { q: "What file types are supported for assignments?", a: "We support PDF, DOCX, ZIP, and common image formats (JPG, PNG)." },
+                    { q: "Why can't I access a live class?", a: "Ensure the teacher has started the session and you have a stable internet connection." }
+                ]
+            }
+        ],
+        teacher: [
+            {
+                category: "COURSE MANAGEMENT",
+                items: [
+                    { q: "How do I create a new course?", a: "Click 'Create Course' in your teacher dashboard and fill in the required details." },
+                    { q: "Can I hide a course while building it?", a: "Yes, set the course status to 'Draft' until you are ready to publish it." },
+                    { q: "How do I manage enrollments?", a: "You can view and manage students in the 'Students' section of your course dashboard." }
+                ]
+            },
+            {
+                category: "GRADING & ASSESSMENTS",
+                items: [
+                    { q: "How do I grade assignments?", a: "Go to the 'Grading' tab to view pending submissions and provide feedback and scores." },
+                    { q: "What are regrade requests?", a: "Students can request a review of their grade if they believe there was an error in assessment." },
+                    { q: "How do quizzes work?", a: "Quizzes are automatically graded based on the correct answers you provide during creation." }
+                ]
+            },
+            {
+                category: "LIVE INTERACTION",
+                items: [
+                    { q: "How do I start a live class?", a: "Create a session and click 'Start Meeting' at the scheduled time." }
+                ]
+            }
+        ],
+        admin: [
+            {
+                category: "SYSTEM",
+                items: [
+                    { q: "How do I manage system maintenance?", a: "Use the 'Maintenance' tab in the admin dashboard to schedule or toggle maintenance mode." },
+                    { q: "How do I view system health?", a: "The 'Overview' tab provides real-time health metrics and server status." }
+                ]
+            },
+            {
+                category: "USER MANAGEMENT",
+                items: [
+                    { q: "How do I create teacher accounts?", a: "Go to 'User Management' and use the 'Invite User' or 'Create User' function." },
+                    { q: "Can I reactivate a deactivated user?", a: "Yes, find the user in the management list and toggle their 'Active' status." }
+                ]
+            }
+        ]
+    }
+};
+
+const HelpSystem = {
+    async renderHelpCenter(containerId, role, options = {}) {
+        const container = document.getElementById(containerId);
+        if (!container) return;
+
+        const { isModal = false, showAuthOnly = false } = options;
+        const faqs = HELP_DATA.faqs[role] || [];
+
+        let user = null;
+        try {
+            user = await SessionManager.getCurrentUser();
+        } catch (e) {
+            console.warn('[HelpSystem] Failed to get current user:', e);
+        }
+        const userEmail = user?.email || null;
+
+        const layoutClass = isModal ? 'help-center-body help-center-layout' : 'help-page-layout';
+        const containerStyle = isModal ? 'height: 100%; overflow-y: auto; background: #f9fafb;' : 'padding: 20px;';
+
+        container.innerHTML = `
+            <div class="${layoutClass}" style="${containerStyle}">
+                <div class="help-main-col">
+                    ${userEmail ? `
+                    <div class="section-title mb-20" style="display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 1.1rem;">
+                        <span style="color: var(--warn); font-size: 1.2rem;">🕒</span> Your Recent Requests
+                        <span style="margin-left: auto; color: var(--purple); font-size: 0.8rem; cursor: pointer;" onclick="HelpSystem.refreshRequests('${userEmail}')">REFRESH</span>
+                    </div>
+                    <div id="recentRequestsList" class="card mb-40" style="background: #fff; border: 1px dashed #ddd; padding: 40px; text-align: center; color: #999; border-radius: 15px;">
+                        Loading your requests...
+                    </div>
+                    ` : ''}
+
+                    <div class="section-title mb-20" style="display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 1.1rem;">
+                        <span style="color: var(--purple); font-size: 1.2rem;">❓</span> Frequently Asked Questions (${role.toUpperCase()})
+                    </div>
+
+                    <div class="faq-accordion" style="max-height: 600px; overflow-y: auto; padding-right: 10px;">
+                        ${faqs.map(cat => `
+                            <div class="faq-cat-group mb-30">
+                                <h4 style="font-size: 0.8rem; color: #999; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 15px;">${cat.category}</h4>
+                                ${cat.items.map(item => `
+                                    <div class="faq-accordion-item" style="background: #fff; border: 1px solid #eee; border-radius: 12px; margin-bottom: 10px; overflow: hidden;">
+                                        <div class="faq-accordion-header" onclick="HelpSystem.toggleAccordion(this)" style="padding: 18px 20px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; transition: background 0.2s;">
+                                            <span style="font-weight: 600; color: #333;">${item.q}</span>
+                                            <span class="icon" style="color: #ccc; transition: transform 0.3s;">⌄</span>
+                                        </div>
+                                        <div class="faq-accordion-content" style="padding: 0 20px; max-height: 0; overflow: hidden; transition: all 0.3s ease-out; color: #666; line-height: 1.6;">
+                                            <div style="padding-bottom: 20px;">${item.a}</div>
+                                        </div>
+                                    </div>
+                                `).join('')}
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+
+                <div class="help-sidebar-col" style="max-height: 800px; overflow-y: auto; padding-right: 5px;">
+                    ${userEmail ? `
+                    <div class="card" style="background: #111827; color: #fff; padding: 30px; border-radius: 20px; border: none; margin-bottom: 30px;">
+                        <h3 style="margin-top: 0; margin-bottom: 5px;">Contact Support</h3>
+                        <p style="font-size: 0.85rem; color: #9ca3af; margin-bottom: 20px;">Expected response time: Under 24 hours</p>
+
+                        <label style="color: #9ca3af; font-size: 0.75rem; margin-bottom: 5px; text-transform: uppercase;">Your Email</label>
+                        <input type="email" id="supportEmail" value="${userEmail}" style="background: #1f2937; border: 1px solid #374151; color: #fff; border-radius: 8px; margin-bottom: 15px;" readonly>
+
+                        <label style="color: #9ca3af; font-size: 0.75rem; margin-bottom: 5px; text-transform: uppercase;">Subject</label>
+                        <input type="text" id="supportSubject" placeholder="e.g. Access Issue" style="background: #1f2937; border: 1px solid #374151; color: #fff; border-radius: 8px; margin-bottom: 15px;">
+
+                        <label style="color: #9ca3af; font-size: 0.75rem; margin-bottom: 5px; text-transform: uppercase;">Message</label>
+                        <textarea id="supportMessage" rows="4" placeholder="Describe your problem in detail..." style="background: #1f2937; border: 1px solid #374151; color: #fff; border-radius: 8px; margin-bottom: 20px;"></textarea>
+
+                        <button class="button" style="width: 100%; gap: 10px;" onclick="HelpSystem.submitSupport('${role}')">
+                            <span>✈️</span> Send Message
+                        </button>
+                    </div>
+                    ` : `
+                    <div class="card" style="background: var(--bg-light); padding: 30px; border-radius: 20px; text-align: center; margin-bottom: 30px; border: 1px dashed var(--border);">
+                        <div style="font-size: 2rem; margin-bottom: 15px;">🔒</div>
+                        <h3 style="margin-top: 0;">Support Restricted</h3>
+                        <p class="small text-muted mb-20">Please sign in to your account to send a support ticket to our technical team.</p>
+                        <button class="button primary small" onclick="if(window.showLogin) showLogin(); else window.location.href='index.html'">Sign In Now</button>
+                    </div>
+                    `}
+
+                    <div class="card" style="padding: 25px; border-radius: 20px;">
+                         <h4 style="margin-top: 0;">Quick Resources</h4>
+                         <p class="tiny text-muted">Direct links to important documents.</p>
+                         <ul style="list-style: none; padding: 0; margin-top: 15px;">
+                            <li class="mb-10"><a href="#" onclick="if(window.LandingUI) LandingUI.showInfoModal('standards'); else UI.showNotification('Refer to Landing Page for full standards.')" style="color: var(--p); font-weight: 600; text-decoration: none;">📘 Teaching Standards</a></li>
+                            <li class="mb-10"><a href="#" onclick="if(window.LandingUI) LandingUI.showInfoModal('privacy'); else UI.showNotification('Refer to Landing Page for full policy.')" style="color: var(--p); font-weight: 600; text-decoration: none;">🛡️ Privacy Policy</a></li>
+                            <li><a href="#" onclick="if(window.LandingUI) LandingUI.showInfoModal('terms'); else UI.showNotification('Refer to Landing Page for full terms.')" style="color: var(--p); font-weight: 600; text-decoration: none;">📜 Terms of Service</a></li>
+                         </ul>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        if (userEmail) {
+            this.refreshRequests(userEmail);
+        }
+    },
+
+    async refreshRequests(email) {
+        const list = document.getElementById('recentRequestsList');
+        if (!list || !email) return;
+
+        try {
+            const { data: tickets } = await SupabaseDB.getSupportTickets(email);
+            if (!tickets || tickets.length === 0) {
+                list.innerHTML = 'No recent support requests.';
+                list.style.borderStyle = 'dashed';
+                return;
+            }
+
+            list.style.borderStyle = 'solid';
+            list.style.textAlign = 'left';
+            list.style.padding = '15px';
+            list.innerHTML = tickets.map(t => `
+                <div style="border-bottom: 1px solid #eee; padding: 10px 0; display: flex; justify-content: space-between; align-items: center;">
+                    <div>
+                        <div class="bold" style="font-size: 0.9rem;">${escapeHtml(t.subject)}</div>
+                        <div class="tiny text-muted">${new Date(t.created_at).toLocaleDateString()}</div>
+                    </div>
+                    <span class="badge-${t.status === 'open' ? 'warn' : 'active'}" style="font-size: 0.7rem; padding: 2px 8px;">${t.status.toUpperCase()}</span>
+                </div>
+            `).join('');
+        } catch (e) {
+            console.error('Failed to fetch tickets:', e);
+            list.innerHTML = 'Error loading requests.';
+        }
+    },
+
+    async submitSupport(role) {
+        const emailInput = document.getElementById('supportEmail');
+        const subjectInput = document.getElementById('supportSubject');
+        const messageInput = document.getElementById('supportMessage');
+
+        if (!emailInput || !subjectInput || !messageInput) return;
+
+        const email = emailInput.value;
+        const subject = subjectInput.value;
+        const message = messageInput.value;
+
+        if (!email || !subject || !message) {
+            UI.showNotification('Please fill in all fields.', 'error');
+            return;
+        }
+
+        try {
+            await SupabaseDB.saveSupportTicket({
+                user_email: email,
+                role: role,
+                subject: subject,
+                message: message
+            });
+            UI.showNotification('Support ticket submitted successfully! We will get back to you shortly.', 'success');
+
+            // Clear inputs
+            subjectInput.value = '';
+            messageInput.value = '';
+
+            // Refresh list
+            this.refreshRequests(email);
+        } catch (e) {
+            console.error('Failed to submit ticket:', e);
+            UI.showNotification('Failed to submit ticket. Please ensure you are logged in.', 'error');
+        }
+    },
+
+    toggleAccordion(header) {
+        const item = header.parentElement;
+        const content = item.querySelector('.faq-accordion-content');
+        const icon = header.querySelector('.icon');
+        const isOpen = item.classList.contains('active');
+
+        if (isOpen) {
+            item.classList.remove('active');
+            content.style.maxHeight = '0';
+            icon.style.transform = 'rotate(0deg)';
+            header.style.background = '#fff';
+        } else {
+            item.classList.add('active');
+            content.style.maxHeight = content.scrollHeight + 'px';
+            icon.style.transform = 'rotate(180deg)';
+            header.style.background = '#f8fafc';
+        }
+    }
+};
+
+window.HelpSystem = HelpSystem;
+
 const IdleManager = {
     idleLimit: 15 * 60 * 1000, // 15 minutes
     warningTime: 60 * 1000, // 1 minute

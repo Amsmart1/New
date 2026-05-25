@@ -553,3 +553,14 @@ input:checked + .ac-slider:before {
     flex-direction: column;
     align-items: center;
 }
+.help-page-layout {
+    display: grid;
+    grid-template-columns: 1fr 350px;
+    gap: 30px;
+    padding: 20px;
+}
+@media (max-width: 1024px) {
+    .help-page-layout {
+        grid-template-columns: 1fr;
+    }
+}

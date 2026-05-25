@@ -974,6 +974,20 @@ async function renderSettings() {
     NotificationManager.renderSettings('Admin Settings', 'Enable real-time desktop notifications for system health and reset requests.');
 }
 
+async function renderHelp() {
+  const content = document.getElementById('pageContent');
+  if (!content) return;
+
+  content.innerHTML = `
+    <div class="flex-between mb-20">
+        <h2 class="m-0">System Help & Admin Support</h2>
+    </div>
+    <div id="helpContainer"></div>
+  `;
+  HelpSystem.renderHelpCenter('helpContainer', 'admin');
+}
+window.renderHelp = renderHelp;
+
 async function renderSystem() {
 
   const content = document.getElementById('pageContent');
@@ -1283,6 +1297,7 @@ function initNav() {
         else if(page === 'management') renderManagement();
         else if(page === 'settings') renderSettings();
         else if(page === 'system') renderSystem();
+        else if(page === 'help') renderHelp();
       });
     });
   }

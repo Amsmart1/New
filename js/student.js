@@ -1578,82 +1578,12 @@ async function renderHelp() {
   if (!content) return;
 
   content.innerHTML = `
-    <h2 class="m-0">Help & Support Center</h2>
-
-    <div class="grid-2 mt-20">
-      <div class="card">
-        <h3 class="m-0">Contact Support</h3>
-        <p class="small mt-10">Our technical team is available 24/7 to assist you with any issues.</p>
-        <div class="flex-column gap-10 mt-20">
-          <div class="flex-center-y gap-10">
-            <span style="font-size: 20px">📧</span>
-            <div>
-              <div class="bold small">Email Support</div>
-              <div class="tiny text-muted">support@smartlms.com</div>
-            </div>
-          </div>
-          <div class="flex-center-y gap-10">
-            <span style="font-size: 20px">📞</span>
-            <div>
-              <div class="bold small">Phone Support</div>
-              <div class="tiny text-muted">+1 (800) 123-4567</div>
-            </div>
-          </div>
-          <div class="flex-center-y gap-10">
-            <span style="font-size: 20px">💬</span>
-            <div>
-              <div class="bold small">Live Chat</div>
-              <div class="tiny text-muted">Available in Dashboard (9 AM - 5 PM)</div>
-            </div>
-          </div>
-        </div>
-        <button class="button mt-20" onclick="UI.showNotification('Chat feature coming soon!')">Open Live Chat</button>
-      </div>
-
-      <div class="card">
-        <h3 class="m-0">Quick Resources</h3>
-        <div class="mt-15">
-          <div class="list-item flex-between" style="cursor: pointer" onclick="UI.showNotification('Downloading Student Guide...')">
-            <span class="small">📕 Student Handbook.pdf</span>
-            <span class="tiny text-muted">2.4 MB</span>
-          </div>
-          <div class="list-item flex-between" style="cursor: pointer" onclick="UI.showNotification('Opening Tutorial...')">
-            <span class="small">🎥 How to use SmartLMS</span>
-            <span class="tiny text-muted">Video</span>
-          </div>
-          <div class="list-item flex-between" style="cursor: pointer" onclick="UI.showNotification('Opening Troubleshooting...')">
-            <span class="small">🔧 Troubleshooting Guide</span>
-            <span class="tiny text-muted">Web</span>
-          </div>
-        </div>
-      </div>
+    <div class="flex-between mb-20">
+        <h2 class="m-0">Help & Support</h2>
     </div>
-
-    <div class="card mt-20">
-      <h3 class="mb-20">Frequently Asked Questions</h3>
-      <div class="flex-column gap-15">
-        <details class="question p-0 m-0" style="background: transparent; border: none; border-bottom: 1px solid var(--border); border-radius: 0">
-          <summary class="bold small py-10" style="cursor: pointer; outline: none">How do I submit an assignment?</summary>
-          <div class="small p-10 text-muted">Navigate to the "Assignments" tab, find your assignment, and click "Submit". You can upload files, paste links, or write essays directly.</div>
-        </details>
-
-        <details class="question p-0 m-0" style="background: transparent; border: none; border-bottom: 1px solid var(--border); border-radius: 0">
-          <summary class="bold small py-10" style="cursor: pointer; outline: none">What happens if I switch tabs during a quiz?</summary>
-          <div class="small p-10 text-muted">If Anti-Cheat is enabled, tab switching is logged as a violation and your teacher will be notified. Some quizzes may even lock you out.</div>
-        </details>
-
-        <details class="question p-0 m-0" style="background: transparent; border: none; border-bottom: 1px solid var(--border); border-radius: 0">
-          <summary class="bold small py-10" style="cursor: pointer; outline: none">How can I see my final grades?</summary>
-          <div class="small p-10 text-muted">Go to the "Grades" section to see your scores for all completed assignments and quizzes, along with teacher feedback.</div>
-        </details>
-
-        <details class="question p-0 m-0" style="background: transparent; border: none; border-bottom: 1px solid var(--border); border-radius: 0">
-          <summary class="bold small py-10" style="cursor: pointer; outline: none">Where do I find course materials?</summary>
-          <div class="small p-10 text-muted">Materials shared by your teacher can be found in the "Materials" tab, organized by course.</div>
-        </details>
-      </div>
-    </div>
+    <div id="helpContainer"></div>
   `;
+  HelpSystem.renderHelpCenter('helpContainer', 'student');
 }
 
 async function renderSettings() {
