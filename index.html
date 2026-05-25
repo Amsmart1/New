@@ -15,6 +15,7 @@
   <script src="js/countdown.js"></script>
   <script src="js/core.js"></script>
   <script src="js/auth.js"></script>
+  <script src="js/landing.js"></script>
   <link rel="manifest" href="manifest.json">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
 </head>
@@ -22,10 +23,29 @@
   <header class="landing-header">
     <a href="#" class="logo"><span>🎓</span> SmartLMS</a>
     <div class="nav-links">
-      <a href="#features">Features</a>
-      <a href="#about">About</a>
-      <a href="#faq">FAQ</a>
-      <a href="#contact">Contact</a>
+      <div class="dropdown">
+        <a href="#" class="dropbtn">Platform ▾</a>
+        <div class="dropdown-content">
+          <a href="#features">Features</a>
+          <a href="#" onclick="LandingUI.showHelpCenter()">FAQ</a>
+          <a href="#" onclick="LandingUI.showHelpCenter()">Contact</a>
+        </div>
+      </div>
+      <div class="dropdown">
+        <a href="#" class="dropbtn">Company ▾</a>
+        <div class="dropdown-content">
+          <a href="#" onclick="LandingUI.showInfoModal('about')">About Us</a>
+          <a href="#" onclick="LandingUI.showInfoModal('privacy')">Privacy Policy</a>
+          <a href="#" onclick="LandingUI.showInfoModal('terms')">Terms of Service</a>
+          <a href="#" onclick="LandingUI.showHelpCenter()">Support</a>
+        </div>
+      </div>
+      <div class="dropdown">
+        <a href="#" class="dropbtn">Documents ▾</a>
+        <div class="dropdown-content">
+          <a href="#" onclick="LandingUI.showInfoModal('standards')">Teaching Standards</a>
+        </div>
+      </div>
       <a href="#" id="navSignIn" onclick="showLogin()">Sign In</a>
     </div>
     <button id="navGetStarted" class="button" style="width: auto; margin: 0; padding: 0.6rem 1.5rem" onclick="showLogin()">Get Started</button>
@@ -80,72 +100,6 @@
         </div>
       </div>
     </section>
-
-    <section id="about" class="about-section">
-      <div class="about-content">
-        <h2>About SmartLMS</h2>
-        <p>SmartLMS is a secure, next-generation learning platform designed for modern education. We focus on academic integrity, student engagement, and providing educators with the tools they need to succeed in a digital-first world.</p>
-      </div>
-    </section>
-
-    <section id="faq" class="faq-section">
-      <div class="container-inner">
-        <h2 class="text-center mb-40">Frequently Asked Questions</h2>
-        <div class="faq-grid">
-          <div class="faq-category">
-            <h4>For Students</h4>
-            <div class="faq-item">
-              <div class="faq-question">How do I take my quizzes?</div>
-              <div class="faq-answer">Navigate to your enrolled course in the student dashboard and select the available quiz to start. Ensure you have a stable connection.</div>
-            </div>
-            <div class="faq-item">
-              <div class="faq-question">Where can I find my certificates?</div>
-              <div class="faq-answer">Once you successfully complete a course, you can view and download your verified certificates from the 'My Certificates' section.</div>
-            </div>
-          </div>
-          <div class="faq-category">
-            <h4>For Teachers</h4>
-            <div class="faq-item">
-              <div class="faq-question">How do I monitor student integrity?</div>
-              <div class="faq-answer">You can view real-time security alerts and detailed violation reports in your dashboard for any assessment you've created.</div>
-            </div>
-            <div class="faq-item">
-              <div class="faq-question">Can I schedule recurring live classes?</div>
-              <div class="faq-answer">Yes, sessions can be configured with recurring schedules when creating or editing a live class in your course.</div>
-            </div>
-          </div>
-          <div class="faq-category">
-            <h4>For Admins</h4>
-            <div class="faq-item">
-              <div class="faq-question">How do I manage system maintenance?</div>
-              <div class="faq-answer">Admins can schedule maintenance windows or enable manual maintenance mode directly from the System Settings dashboard.</div>
-            </div>
-            <div class="faq-item">
-              <div class="faq-question">How do I create teacher accounts?</div>
-              <div class="faq-answer">Teachers can be invited via email through the 'User Management' section, ensuring they receive the proper permissions.</div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <section id="contact" class="contact-section">
-      <div class="container-inner">
-        <h2 class="text-center mb-40">Get in Touch</h2>
-        <div class="contact-grid">
-          <div class="contact-card">
-            <div class="icon">📧</div>
-            <h3>Email Us</h3>
-            <p><a href="mailto:eduquizlms@gmail.com">eduquizlms@gmail.com</a></p>
-          </div>
-          <div class="contact-card">
-            <div class="icon">📞</div>
-            <h3>Call Us</h3>
-            <p><a href="tel:+233505965310">+233 50 596 5310</a></p>
-          </div>
-        </div>
-      </div>
-    </section>
   </main>
 
   <footer class="landing-footer">
@@ -166,8 +120,8 @@
         <h5>Platform</h5>
         <ul>
           <li><a href="#features">Features</a></li>
-          <li><a href="#faq">FAQ</a></li>
-          <li><a href="#contact">Contact</a></li>
+          <li><a href="#" onclick="LandingUI.showHelpCenter()">FAQ</a></li>
+          <li><a href="#" onclick="LandingUI.showHelpCenter()">Contact</a></li>
         </ul>
       </div>
       <div class="footer-links">
@@ -181,10 +135,10 @@
       <div class="footer-links">
         <h5>Company</h5>
         <ul>
-          <li><a href="#about">About Us</a></li>
-          <li><a href="#">Privacy Policy</a></li>
-          <li><a href="#">Terms of Service</a></li>
-          <li><a href="#contact">Support</a></li>
+          <li><a href="#" onclick="LandingUI.showInfoModal('about')">About Us</a></li>
+          <li><a href="#" onclick="LandingUI.showInfoModal('privacy')">Privacy Policy</a></li>
+          <li><a href="#" onclick="LandingUI.showInfoModal('terms')">Terms of Service</a></li>
+          <li><a href="#" onclick="LandingUI.showHelpCenter()">Support</a></li>
         </ul>
       </div>
     </div>
@@ -286,5 +240,24 @@
       <p class="error" id="newPasswordError"></p>
     </div>
   </div>
+
+  <!-- Info Modals -->
+  <div id="infoOverlay" class="overlay" onclick="if(event.target===this)LandingUI.closeInfoModal()">
+      <div class="modal" style="max-width: 800px; padding: 40px; border-radius: 20px; position: relative;">
+          <button class="close-btn" onclick="LandingUI.closeInfoModal()">×</button>
+          <div id="infoModalContent"></div>
+      </div>
+  </div>
+
+  <!-- Help Center Modal -->
+  <div id="helpCenterOverlay" class="overlay" onclick="if(event.target===this)LandingUI.closeHelpCenter()">
+      <div class="modal help-center-modal" style="width: 95%; max-width: 1200px; height: 90vh; padding: 0; overflow: hidden; border-radius: 20px;">
+          <button class="close-btn" style="top: 20px; right: 20px; z-index: 10;" onclick="LandingUI.closeHelpCenter()">×</button>
+          <div id="helpCenterContent" style="height: 100%; display: flex; flex-direction: column;">
+              <!-- Dynamic Content -->
+          </div>
+      </div>
+  </div>
+
 </body>
 </html>

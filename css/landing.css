@@ -30,6 +30,7 @@ header.landing-header {
 .landing-header .nav-links {
     display: flex;
     gap: 2.5rem;
+    align-items: center;
 }
 
 .landing-header .nav-links a {
@@ -41,6 +42,55 @@ header.landing-header {
 
 .landing-header .nav-links a:hover {
     color: var(--p);
+}
+
+/* Header Dropdowns */
+.dropdown {
+    position: relative;
+    display: inline-block;
+}
+
+.dropbtn {
+    font-size: 1rem;
+    border: none;
+    outline: none;
+    color: #4b5563;
+    background-color: inherit;
+    font-family: inherit;
+    margin: 0;
+    cursor: pointer;
+    font-weight: 500;
+}
+
+.dropdown-content {
+    display: none;
+    position: absolute;
+    background-color: #fff;
+    min-width: 200px;
+    box-shadow: 0px 8px 16px 0px rgba(0,0,0,0.1);
+    z-index: 1;
+    border-radius: 12px;
+    overflow: hidden;
+    margin-top: 10px;
+    border: 1px solid #eee;
+}
+
+.dropdown-content a {
+    color: #4b5563;
+    padding: 12px 16px;
+    text-decoration: none;
+    display: block;
+    font-size: 0.9rem;
+    transition: background 0.2s;
+}
+
+.dropdown-content a:hover {
+    background-color: #f5f3ff;
+    color: var(--p);
+}
+
+.dropdown:hover .dropdown-content {
+    display: block;
 }
 
 .hero {
@@ -155,29 +205,6 @@ header.landing-header {
     color: #6b7280;
     margin: 0;
     line-height: 1.7;
-}
-
-.about-section {
-    padding: 6rem 2rem;
-    background: #f9fafb;
-    text-align: center;
-}
-
-.about-content {
-    max-width: 900px;
-    margin: 0 auto;
-}
-
-.about-content h2 {
-    font-size: 2.8rem;
-    margin-bottom: 2rem;
-    font-weight: 800;
-}
-
-.about-content p {
-    font-size: 1.2rem;
-    color: #4b5563;
-    line-height: 1.9;
 }
 
 footer.landing-footer {
@@ -333,6 +360,12 @@ footer.landing-footer {
 }
 
 /* Mobile Adjustments */
+@media (max-width: 1024px) {
+    .help-center-body {
+        grid-template-columns: 1fr !important;
+    }
+}
+
 @media (max-width: 768px) {
     header.landing-header {
         padding: 1rem;
@@ -372,89 +405,10 @@ footer.landing-footer {
     }
 
     .overlay .container { padding: 2rem; }
-}
 
-/* FAQ Section */
-.faq-section {
-    padding: 6rem 2rem;
-    background: #fff;
-}
-
-.faq-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-    gap: 3rem;
-    max-width: 1200px;
-    margin: 0 auto;
-}
-
-.faq-category h4 {
-    font-size: 1.25rem;
-    color: var(--p);
-    margin-bottom: 1.5rem;
-    padding-bottom: 0.75rem;
-    border-bottom: 2px solid #f0f0f0;
-}
-
-.faq-item {
-    margin-bottom: 1.5rem;
-}
-
-.faq-question {
-    font-weight: 700;
-    color: var(--text-dark);
-    margin-bottom: 0.5rem;
-    font-size: 1.05rem;
-}
-
-.faq-answer {
-    color: #6b7280;
-    line-height: 1.6;
-    font-size: 0.95rem;
-}
-
-/* Contact Section */
-.contact-section {
-    padding: 6rem 2rem;
-    background: #f9fafb;
-}
-
-.contact-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-    gap: 2rem;
-    max-width: 800px;
-    margin: 0 auto;
-}
-
-.contact-card {
-    background: #fff;
-    padding: 2.5rem;
-    border-radius: 1.5rem;
-    text-align: center;
-    border: 1px solid #e5e7eb;
-    transition: transform 0.3s ease;
-}
-
-.contact-card:hover {
-    transform: translateY(-5px);
-}
-
-.contact-card .icon {
-    font-size: 2.5rem;
-    margin-bottom: 1rem;
-}
-
-.contact-card h3 {
-    margin-bottom: 0.5rem;
-    color: var(--text-dark);
-}
-
-.contact-card p a {
-    color: var(--p);
-    text-decoration: none;
-    font-weight: 600;
-    font-size: 1.1rem;
+    .help-center-header, .help-center-body {
+        padding: 20px !important;
+    }
 }
 
 .container-inner {
@@ -465,3 +419,26 @@ footer.landing-footer {
 .text-center { text-align: center; }
 .mb-40 { margin-bottom: 2.5rem; }
 .mt-10 { margin-top: 0.625rem; }
+
+/* Help Center Specifics */
+.help-center-modal {
+    animation: slideUp 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@keyframes slideUp {
+    from { opacity: 0; transform: translateY(50px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+.faq-accordion-item:hover .faq-accordion-header {
+    background: #f8fafc;
+}
+
+.quick-link:hover span {
+    color: var(--purple) !important;
+}
+
+.quick-link:hover div {
+    transform: scale(1.1);
+    transition: transform 0.2s;
+}
