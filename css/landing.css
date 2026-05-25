@@ -366,29 +366,23 @@ footer.landing-footer {
     font-size: 1.25rem;
 }
 
-/* About Section */
-.about-section {
-    padding: 8rem 2rem;
-    background: #fff;
-}
-
-.about-content {
-    display: grid;
-    grid-template-columns: 1.2fr 0.8fr;
-    gap: 4rem;
+/* About Modal Content */
+.about-image-placeholder {
+    margin: 2rem 0;
+    height: 400px;
+    display: flex;
     align-items: center;
+    justify-content: center;
+    background: #f8fafc;
+    border-radius: 1.5rem;
+    color: #9ca3af;
+    font-weight: 700;
+    border: 2px dashed #e2e8f0;
 }
 
-.about-text h2 {
-    font-size: 2.5rem;
-    margin-bottom: 1.5rem;
-}
-
-.about-text p {
-    font-size: 1.1rem;
-    color: #4b5563;
-    line-height: 1.7;
-    margin-bottom: 1.5rem;
+.about-placeholder-icon {
+    font-size: 3rem;
+    margin-bottom: 0.5rem;
 }
 
 .about-stats {
@@ -396,6 +390,10 @@ footer.landing-footer {
     grid-template-columns: repeat(3, 1fr);
     gap: 2rem;
     margin-top: 3rem;
+}
+
+.about-stat-item {
+    text-align: center;
 }
 
 .about-stat-item .value {
@@ -411,16 +409,55 @@ footer.landing-footer {
     text-transform: uppercase;
 }
 
-.about-image {
-    background: #f3f4f6;
-    border-radius: 2rem;
-    height: 400px;
+/* Contact Modal Content */
+.contact-header-icon {
+    font-size: 3rem;
+    margin-bottom: 1.5rem;
+}
+
+.contact-card {
+    text-align: left;
+    background: #f8fafc;
+    padding: 25px;
+    border-radius: 15px;
+    border: 1px solid #e2e8f0;
+}
+
+.contact-item {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+}
+
+.contact-item:not(:last-child) {
+    margin-bottom: 20px;
+}
+
+.contact-icon {
+    color: #fff;
+    width: 40px;
+    height: 40px;
+    border-radius: 10px;
     display: flex;
     align-items: center;
     justify-content: center;
+    font-size: 1.2rem;
+}
+
+.email-bg { background: var(--p); }
+.phone-bg { background: var(--ok); }
+
+.contact-label {
+    font-size: 11px;
     font-weight: 700;
-    color: #9ca3af;
-    border: 2px dashed #d1d5db;
+    text-transform: uppercase;
+}
+
+.email-color { color: var(--p); }
+.phone-color { color: var(--ok); }
+
+.contact-value {
+    font-weight: 600;
 }
 
 /* Bottom CTA */
@@ -452,16 +489,6 @@ footer.landing-footer {
 .bottom-cta .button:hover {
     background: #f3f4f6;
     transform: scale(1.05);
-}
-
-@media (max-width: 968px) {
-    .about-content {
-        grid-template-columns: 1fr;
-    }
-    .about-image {
-        height: 300px;
-        order: -1;
-    }
 }
 
 /* Auth Containers Overlay */
@@ -523,82 +550,12 @@ footer.landing-footer {
     font-weight: 500;
 }
 
-/* Mobile Adjustments */
-@media (max-width: 1024px) {
-    .help-center-body {
-        grid-template-columns: 1fr !important;
-    }
-}
-
-@media (max-width: 768px) {
-    header.landing-header {
-        padding: 1rem;
-        flex-wrap: wrap;
-        justify-content: center;
-        gap: 0.75rem;
-    }
-
-    .landing-header .logo {
-        width: 100%;
-        justify-content: center;
-        margin-bottom: 0.25rem;
-    }
-
-    .landing-header .nav-links {
-        gap: 1rem;
-        font-size: 0.85rem;
-        flex-wrap: wrap;
-        justify-content: center;
-    }
-
-    .landing-header .nav-links button {
-        margin-left: 0 !important;
-        width: 100%;
-    }
-
-    .hero { padding: 4rem 1.5rem; }
-    .hero h1 { font-size: 2.5rem; }
-    .hero p { font-size: 1.1rem; margin-bottom: 2.5rem; }
-
-    .role-grid {
-        grid-template-columns: 1fr;
-        max-width: 350px;
-        gap: 1.5rem;
-        margin-bottom: 4rem;
-    }
-
-    .role-btn { padding: 2rem; }
-    .role-btn .icon { font-size: 3rem; }
-
-    .features, .steps-grid, .footer-grid {
-        grid-template-columns: 1fr !important;
-        gap: 2rem;
-    }
-
-    .overlay .container {
-        padding: 2rem 1.5rem;
-        width: 95%;
-        border-radius: 1.5rem;
-    }
-
-    .help-center-header, .help-center-body {
-        padding: 20px !important;
-    }
-
-    .about-stats {
-        grid-template-columns: 1fr !important;
-        gap: 1.5rem !important;
-    }
-}
-
 .container-inner {
     max-width: 1200px;
     margin: 0 auto;
 }
 
-.text-center { text-align: center; }
 .mb-40 { margin-bottom: 2.5rem; }
-.mt-10 { margin-top: 0.625rem; }
 
 /* Help Center Specifics */
 .help-center-modal {
@@ -616,29 +573,6 @@ footer.landing-footer {
     grid-template-columns: 1fr 350px;
     gap: 40px;
     padding: 40px 60px;
-}
-
-@media (max-width: 1024px) {
-    .help-center-layout {
-        grid-template-columns: 1fr;
-        padding: 40px;
-    }
-}
-
-@media (max-width: 768px) {
-    .help-center-roles {
-        grid-template-columns: 1fr;
-        gap: 20px;
-        max-width: 300px !important;
-    }
-
-    .flippable-card {
-        height: 200px;
-    }
-
-    .help-center-layout {
-        padding: 20px;
-    }
 }
 
 @keyframes slideUp {
@@ -720,4 +654,79 @@ footer.landing-footer {
 .quick-link:hover div {
     transform: scale(1.1);
     transition: transform 0.2s;
+}
+
+/* Responsive Styles */
+@media (max-width: 1024px) {
+    .help-center-layout {
+        grid-template-columns: 1fr;
+        padding: 40px;
+    }
+}
+
+@media (max-width: 768px) {
+    header.landing-header {
+        padding: 1rem;
+        flex-wrap: wrap;
+        justify-content: center;
+        gap: 0.75rem;
+    }
+
+    .landing-header .logo {
+        width: 100%;
+        justify-content: center;
+        margin-bottom: 0.25rem;
+    }
+
+    .landing-header .nav-links {
+        gap: 1rem;
+        font-size: 0.85rem;
+        flex-wrap: wrap;
+        justify-content: center;
+    }
+
+    .landing-header .nav-links button {
+        margin-left: 0 !important;
+        width: 100%;
+    }
+
+    .hero { padding: 4rem 1.5rem; }
+    .hero h1 { font-size: 2.5rem; }
+    .hero p { font-size: 1.1rem; margin-bottom: 2.5rem; }
+
+    .role-grid, .help-center-roles {
+        grid-template-columns: 1fr;
+        gap: 1.5rem;
+        margin-bottom: 4rem;
+        max-width: 350px;
+        margin-left: auto;
+        margin-right: auto;
+    }
+
+    .help-center-roles {
+        gap: 20px;
+        max-width: 300px !important;
+    }
+
+    .flippable-card {
+        height: 200px;
+    }
+
+    .role-btn { padding: 2rem; }
+    .role-btn .icon { font-size: 3rem; }
+
+    .features, .steps-grid, .footer-grid {
+        grid-template-columns: 1fr !important;
+        gap: 2rem;
+    }
+
+    .overlay .container {
+        padding: 2rem 1.5rem;
+        width: 95%;
+        border-radius: 1.5rem;
+    }
+
+    .help-center-layout {
+        padding: 20px;
+    }
 }
