@@ -532,15 +532,15 @@ CREATE OR REPLACE FUNCTION tr_notify_live_class() RETURNS TRIGGER AS $$
 BEGIN
   IF (TG_OP = 'INSERT') THEN
     IF (NEW.status = 'scheduled') THEN
-      PERFORM broadcast_data(NEW.course_id, 'student', 'Live Class Scheduled', 'A new live class "' || NEW.title || '" has been scheduled for ' || NEW.start_at, 'student.html?page=live', 'live_class', INTERVAL '7 days');
+      PERFORM fan_out_course_notif(NEW.course_id, 'student', 'Live Class Scheduled', 'A new live class "' || NEW.title || '" has been scheduled for ' || NEW.start_at, 'student.html?page=live', 'live_class');
     END IF;
   ELSIF (TG_OP = 'UPDATE') THEN
     IF (NEW.status = 'live' AND OLD.status != 'live') THEN
-      PERFORM broadcast_data(NEW.course_id, 'student', 'Live Class Started', 'The class "' || NEW.title || '" has started! Join now.', 'student.html?page=live', 'live_class', INTERVAL '1 day');
+      PERFORM fan_out_course_notif(NEW.course_id, 'student', 'Live Class Started', 'The class "' || NEW.title || '" has started! Join now.', 'student.html?page=live', 'live_class');
     ELSIF (NEW.status = 'scheduled' AND OLD.status = 'live') THEN
-      PERFORM broadcast_data(NEW.course_id, 'student', 'Teacher Left Room', 'The teacher has left the session for "' || NEW.title || '". Please wait for them to rejoin.', 'student.html?page=live', 'teacher_left', INTERVAL '1 hour');
+      PERFORM fan_out_course_notif(NEW.course_id, 'student', 'Teacher Left Room', 'The teacher has left the session for "' || NEW.title || '". Please wait for them to rejoin.', 'student.html?page=live', 'teacher_left');
     ELSIF (NEW.status = 'completed' AND OLD.status = 'live') THEN
-      PERFORM broadcast_data(NEW.course_id, 'student', 'Class Ended', 'The live class "' || NEW.title || '" has ended.', 'student.html?page=live', 'class_ended', INTERVAL '1 day');
+      PERFORM fan_out_course_notif(NEW.course_id, 'student', 'Class Ended', 'The live class "' || NEW.title || '" has ended.', 'student.html?page=live', 'class_ended');
     END IF;
   END IF;
   RETURN NEW;
@@ -553,7 +553,7 @@ CREATE TRIGGER tr_live_class_event AFTER INSERT OR UPDATE ON live_classes FOR EA
 CREATE OR REPLACE FUNCTION tr_notify_assignment() RETURNS TRIGGER AS $$
 BEGIN
   IF (NEW.status = 'published' AND (TG_OP = 'INSERT' OR (TG_OP = 'UPDATE' AND OLD.status != 'published'))) THEN
-    PERFORM broadcast_data(NEW.course_id, 'student', 'New Assignment', 'A new assignment "' || NEW.title || '" has been published.', 'student.html?page=assignments', 'assignment_published', INTERVAL '14 days');
+    PERFORM fan_out_course_notif(NEW.course_id, 'student', 'New Assignment', 'A new assignment "' || NEW.title || '" has been published.', 'student.html?page=assignments', 'assignment_published');
   END IF;
   RETURN NEW;
 END;
@@ -565,7 +565,7 @@ CREATE TRIGGER tr_assignment_published AFTER INSERT OR UPDATE ON assignments FOR
 CREATE OR REPLACE FUNCTION tr_notify_quiz() RETURNS TRIGGER AS $$
 BEGIN
   IF (NEW.status = 'published' AND (TG_OP = 'INSERT' OR (TG_OP = 'UPDATE' AND OLD.status != 'published'))) THEN
-    PERFORM broadcast_data(NEW.course_id, 'student', 'New Quiz Available', 'A new quiz "' || NEW.title || '" has been published.', 'student.html?page=quizzes', 'quiz_published', INTERVAL '14 days');
+    PERFORM fan_out_course_notif(NEW.course_id, 'student', 'New Quiz Available', 'A new quiz "' || NEW.title || '" has been published.', 'student.html?page=quizzes', 'quiz_published');
   END IF;
   RETURN NEW;
 END;
@@ -1330,6 +1330,32 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
+CREATE OR REPLACE FUNCTION fan_out_course_notif(n_course_id UUID, n_role VARCHAR, n_title TEXT, n_msg TEXT, n_link TEXT DEFAULT NULL, n_type TEXT DEFAULT 'system')
+RETURNS VOID AS $$
+BEGIN
+  IF n_role = 'student' THEN
+    INSERT INTO notifications (user_email, title, message, link, type)
+    SELECT student_email, n_title, n_msg, n_link, n_type
+    FROM enrollments
+    WHERE course_id = n_course_id;
+  ELSIF n_role = 'teacher' THEN
+    INSERT INTO notifications (user_email, title, message, link, type)
+    SELECT teacher_email, n_title, n_msg, n_link, n_type
+    FROM courses
+    WHERE id = n_course_id AND teacher_email IS NOT NULL;
+  ELSIF n_role = 'all' OR n_role IS NULL THEN
+    INSERT INTO notifications (user_email, title, message, link, type)
+    SELECT student_email, n_title, n_msg, n_link, n_type
+    FROM enrollments
+    WHERE course_id = n_course_id
+    UNION
+    SELECT teacher_email, n_title, n_msg, n_link, n_type
+    FROM courses
+    WHERE id = n_course_id AND teacher_email IS NOT NULL;
+  END IF;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
 -- 8. Seed Data
 
 INSERT INTO maintenance (id, enabled, schedules)
@@ -1482,11 +1508,16 @@ CREATE POLICY "Notifications: User Access" ON notifications FOR ALL USING (user_
 DROP POLICY IF EXISTS "Broadcasts: Access" ON broadcasts;
 CREATE POLICY "Broadcasts: Access" ON broadcasts FOR SELECT USING (
   is_admin() OR
-  ((target_role IS NULL OR target_role = get_auth_role()) AND (
-    course_id IS NULL OR
-    EXISTS (SELECT 1 FROM enrollments WHERE course_id = broadcasts.course_id AND student_email = get_auth_email()) OR
-    (is_teacher() AND EXISTS (SELECT 1 FROM courses WHERE id = broadcasts.course_id AND teacher_email = get_auth_email()))
-  ))
+  (
+    (target_role IS NULL OR target_role = get_auth_role()) AND (
+      course_id IS NULL OR
+      EXISTS (SELECT 1 FROM enrollments WHERE course_id = broadcasts.course_id AND student_email = get_auth_email()) OR
+      (
+        target_role IS DISTINCT FROM 'student' AND
+        EXISTS (SELECT 1 FROM courses WHERE id = broadcasts.course_id AND teacher_email = get_auth_email())
+      )
+    )
+  )
 );
 DROP POLICY IF EXISTS "Broadcasts: Manage" ON broadcasts;
 CREATE POLICY "Broadcasts: Manage" ON broadcasts FOR ALL USING (is_teacher() OR is_admin());
