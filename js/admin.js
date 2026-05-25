@@ -1340,7 +1340,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const logoutBtn = document.getElementById('logoutBtn');
     if (logoutBtn) {
       logoutBtn.addEventListener('click', async () => {
-        await SessionManager.clearCurrentUser();
+        await SessionManager.clearCurrentUser('manual_logout');
         window.location.href = 'index.html';
       });
     }

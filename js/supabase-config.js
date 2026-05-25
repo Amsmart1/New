@@ -1691,7 +1691,22 @@ class SessionManager {
         return raw ? JSON.parse(raw) : null;
     }
 
-    static async clearCurrentUser() {
+    static async clearCurrentUser(reason = null) {
+        if (reason) {
+            try {
+                const user = await this.getCurrentUser();
+                if (user) {
+                    const fresh = await SupabaseDB.getUser(user.email, true);
+                    if (fresh) {
+                        fresh.metadata = { ...fresh.metadata, last_invalidation_reason: reason };
+                        fresh.session_id = 'invalidated_' + Date.now() + '_' + reason;
+                        await SupabaseDB.saveUser(fresh);
+                    }
+                }
+            } catch (e) {
+                console.warn('Failed to set invalidation reason:', e);
+            }
+        }
         sessionStorage.removeItem('currentUser');
         sessionStorage.removeItem('sessionId');
         // Reset the internal guard to allow re-initialization on next login

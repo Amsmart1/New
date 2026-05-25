@@ -2466,7 +2466,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (logoutBtn) {
       logoutBtn.addEventListener('click', async () => {
         if (typeof stopStudySession === 'function') await stopStudySession();
-        await SessionManager.clearCurrentUser(); 
+        await SessionManager.clearCurrentUser('manual_logout');
         window.location.href = 'index.html'; 
       });
     }

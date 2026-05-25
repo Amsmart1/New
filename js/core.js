@@ -759,7 +759,20 @@ const SessionGuard = {
 
             if ((isMaint && user.role !== 'admin') || isRestricted || sessionMismatch || roleMismatch) {
                 let msg = isMaint ? 'System entered maintenance mode.' : 'Your account status has changed.';
-                if (sessionMismatch) msg = 'You have been logged in from another device or tab.';
+                if (sessionMismatch) {
+                    const reason = fresh.metadata?.last_invalidation_reason;
+                    if (reason === 'password_change') {
+                        msg = 'Your password was changed. Please login again.';
+                    } else if (reason === 'manual_logout') {
+                        msg = 'You have been logged out from another tab.';
+                    } else if (reason === 'idle_timeout') {
+                        msg = 'Your session has expired due to inactivity.';
+                    } else if (reason === 'new_login') {
+                        msg = 'You have been logged in from another device or tab.';
+                    } else {
+                        msg = 'Your session has been invalidated.';
+                    }
+                }
                 if (roleMismatch) msg = 'Your permissions have been updated. Please login again.';
 
                 await this.logout(msg);
@@ -1695,8 +1708,7 @@ const IdleManager = {
         }
 
         if (elapsed >= this.idleLimit) {
-            await SessionManager.clearCurrentUser();
-            alert('Your session has expired due to inactivity.');
+            await SessionManager.clearCurrentUser('idle_timeout');
             window.location.href = 'index.html';
         } else if (elapsed >= (this.idleLimit - this.warningTime) && !this.warningShown) {
             this.warningShown = true;
@@ -1915,6 +1927,7 @@ const SettingsManager = {
             // Generate fresh session to invalidate other sessions (Security Best Practice)
             const sid = SessionManager.getSessionId(true);
             fresh.session_id = sid;
+            fresh.metadata = { ...fresh.metadata, last_invalidation_reason: 'password_change' };
 
             await SupabaseDB.saveUser(fresh);
             window.setSupabaseSession(sid);

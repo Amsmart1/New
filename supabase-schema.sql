@@ -992,7 +992,12 @@ BEGIN
   IF v_secret.password_hash = p_password_hash THEN
     -- Update session and login stats
     UPDATE user_secrets SET session_id = p_session_id WHERE email = p_email;
-    UPDATE users SET last_login = NOW(), failed_attempts = 0, locked_until = NULL WHERE email = p_email;
+    UPDATE users SET
+      last_login = NOW(),
+      failed_attempts = 0,
+      locked_until = NULL,
+      metadata = COALESCE(metadata, '{}'::jsonb) || '{"last_invalidation_reason": "new_login"}'::jsonb
+    WHERE email = p_email;
 
     RETURN jsonb_build_object(
       'success', true,
