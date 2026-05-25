@@ -215,21 +215,6 @@ const LandingUI = {
                         </button>
                     </div>
 
-                    <div class="card" style="background: #fff; padding: 30px; border-radius: 20px; border: 1px solid #eee;">
-                        <h3 style="margin-top: 0; margin-bottom: 20px; font-size: 1.1rem;">Quick Resources</h3>
-                        <div class="quick-link" onclick="LandingUI.showInfoModal('standards')" style="display: flex; align-items: center; gap: 12px; margin-bottom: 15px; cursor: pointer;">
-                            <div style="width: 32px; height: 32px; background: #f5f3ff; color: var(--purple); border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 0.9rem;">📘</div>
-                            <span style="font-size: 0.95rem; font-weight: 600; color: #4b5563;">Teaching Standards</span>
-                        </div>
-                        <div class="quick-link" onclick="LandingUI.showInfoModal('privacy')" style="display: flex; align-items: center; gap: 12px; margin-bottom: 15px; cursor: pointer;">
-                            <div style="width: 32px; height: 32px; background: #fff7ed; color: #f97316; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 0.9rem;">🛡️</div>
-                            <span style="font-size: 0.95rem; font-weight: 600; color: #4b5563;">Privacy Policy</span>
-                        </div>
-                        <div class="quick-link" style="display: flex; align-items: center; gap: 12px; cursor: pointer;">
-                            <div style="width: 32px; height: 32px; background: #ecfdf5; color: #10b981; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 0.9rem;">💬</div>
-                            <span style="font-size: 0.95rem; font-weight: 600; color: #4b5563;">Community Forum</span>
-                        </div>
-                    </div>
                 </div>
             </div>
         `;

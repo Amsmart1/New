@@ -23,29 +23,6 @@
   <header class="landing-header">
     <a href="#" class="logo"><span>🎓</span> SmartLMS</a>
     <div class="nav-links">
-      <div class="dropdown">
-        <a href="#" class="dropbtn">Platform ▾</a>
-        <div class="dropdown-content">
-          <a href="#features">Features</a>
-          <a href="#" onclick="LandingUI.showHelpCenter()">FAQ</a>
-          <a href="#" onclick="LandingUI.showHelpCenter()">Contact</a>
-        </div>
-      </div>
-      <div class="dropdown">
-        <a href="#" class="dropbtn">Company ▾</a>
-        <div class="dropdown-content">
-          <a href="#" onclick="LandingUI.showInfoModal('about')">About Us</a>
-          <a href="#" onclick="LandingUI.showInfoModal('privacy')">Privacy Policy</a>
-          <a href="#" onclick="LandingUI.showInfoModal('terms')">Terms of Service</a>
-          <a href="#" onclick="LandingUI.showHelpCenter()">Support</a>
-        </div>
-      </div>
-      <div class="dropdown">
-        <a href="#" class="dropbtn">Documents ▾</a>
-        <div class="dropdown-content">
-          <a href="#" onclick="LandingUI.showInfoModal('standards')">Teaching Standards</a>
-        </div>
-      </div>
       <a href="#" id="navSignIn" onclick="showLogin()">Sign In</a>
     </div>
     <button id="navGetStarted" class="button" style="width: auto; margin: 0; padding: 0.6rem 1.5rem" onclick="showLogin()">Get Started</button>
@@ -139,6 +116,14 @@
           <li><a href="#" onclick="LandingUI.showInfoModal('privacy')">Privacy Policy</a></li>
           <li><a href="#" onclick="LandingUI.showInfoModal('terms')">Terms of Service</a></li>
           <li><a href="#" onclick="LandingUI.showHelpCenter()">Support</a></li>
+        </ul>
+      </div>
+      <div class="footer-links">
+        <h5>Quick Resources</h5>
+        <ul>
+          <li><a href="#" onclick="LandingUI.showInfoModal('standards')">📘 Teaching Standards</a></li>
+          <li><a href="#" onclick="LandingUI.showInfoModal('privacy')">🛡️ Privacy Policy</a></li>
+          <li><a href="#" onclick="UI.showNotification('Community Forum coming soon!', 'info')">💬 Community Forum</a></li>
         </ul>
       </div>
     </div>
