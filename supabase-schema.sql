@@ -312,6 +312,17 @@ CREATE TABLE IF NOT EXISTS violations (
   expires_at TIMESTAMP WITH TIME ZONE DEFAULT (NOW() + INTERVAL '90 days')
 );
 
+CREATE TABLE IF NOT EXISTS support_tickets (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  user_email VARCHAR(255) NOT NULL,
+  role VARCHAR(50) CHECK (role IN ('student', 'teacher', 'admin')),
+  subject VARCHAR(255) NOT NULL,
+  message TEXT NOT NULL,
+  status VARCHAR(50) DEFAULT 'open' CHECK (status IN ('open', 'pending', 'resolved', 'closed')),
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
 -- 2. Migrations for existing tables (Idempotent)
 
 -- Separate top-level ALTER statements to ensure columns exist for subsequent script parsing
@@ -508,7 +519,7 @@ BEGIN
         SELECT table_name
         FROM information_schema.tables
         WHERE table_schema = 'public'
-        AND table_name IN ('users', 'user_secrets', 'courses', 'lessons', 'enrollments', 'assignments', 'submissions', 'live_classes', 'attendance', 'quizzes', 'quiz_submissions', 'materials', 'discussions', 'notifications', 'broadcasts', 'maintenance', 'planner', 'certificates', 'study_sessions', 'invites', 'violations')
+        AND table_name IN ('users', 'user_secrets', 'courses', 'lessons', 'enrollments', 'assignments', 'submissions', 'live_classes', 'attendance', 'quizzes', 'quiz_submissions', 'materials', 'discussions', 'notifications', 'broadcasts', 'maintenance', 'planner', 'certificates', 'study_sessions', 'invites', 'violations', 'support_tickets')
     LOOP
         EXECUTE format('DROP TRIGGER IF EXISTS update_%I_updated_at ON %I', t, t);
         EXECUTE format('CREATE TRIGGER update_%I_updated_at BEFORE UPDATE ON %I FOR EACH ROW EXECUTE PROCEDURE update_updated_at_column()', t, t);
@@ -1336,7 +1347,7 @@ BEGIN
         SELECT table_name
         FROM information_schema.tables
         WHERE table_schema = 'public'
-        AND table_name IN ('users', 'user_secrets', 'courses', 'lessons', 'enrollments', 'assignments', 'submissions', 'live_classes', 'attendance', 'quizzes', 'quiz_submissions', 'materials', 'discussions', 'notifications', 'broadcasts', 'maintenance', 'planner', 'certificates', 'study_sessions', 'invites', 'violations')
+        AND table_name IN ('users', 'user_secrets', 'courses', 'lessons', 'enrollments', 'assignments', 'submissions', 'live_classes', 'attendance', 'quizzes', 'quiz_submissions', 'materials', 'discussions', 'notifications', 'broadcasts', 'maintenance', 'planner', 'certificates', 'study_sessions', 'invites', 'violations', 'support_tickets')
     LOOP
         EXECUTE format('ALTER TABLE %I ENABLE ROW LEVEL SECURITY', t);
     END LOOP;
@@ -1530,6 +1541,14 @@ DROP POLICY IF EXISTS "Invites: Manage for Admins" ON invites;
 CREATE POLICY "Invites: Manage for Admins" ON invites FOR ALL USING (is_admin());
 DROP POLICY IF EXISTS "Invites: Select for Signup" ON invites;
 CREATE POLICY "Invites: Select for Signup" ON invites FOR SELECT USING (true);
+
+-- 22. Support Tickets Table
+DROP POLICY IF EXISTS "Support Tickets: Public Insert" ON support_tickets;
+CREATE POLICY "Support Tickets: Public Insert" ON support_tickets FOR INSERT WITH CHECK (true);
+DROP POLICY IF EXISTS "Support Tickets: User/Admin Select" ON support_tickets;
+CREATE POLICY "Support Tickets: User/Admin Select" ON support_tickets FOR SELECT USING (user_email = get_auth_email() OR is_admin());
+DROP POLICY IF EXISTS "Support Tickets: Admin Update" ON support_tickets;
+CREATE POLICY "Support Tickets: Admin Update" ON support_tickets FOR UPDATE USING (is_admin());
 
 GRANT ALL ON ALL TABLES IN SCHEMA public TO anon, authenticated, postgres, service_role;
 GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO anon, authenticated, postgres, service_role;

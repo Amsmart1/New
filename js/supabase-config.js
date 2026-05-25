@@ -1436,6 +1436,37 @@ class SupabaseDB {
         if (error) throw error;
     }
 
+    // Support Ticket operations
+    static async saveSupportTicket(ticket) {
+        const payload = {
+            user_email: ticket.user_email,
+            role: ticket.role,
+            subject: ticket.subject,
+            message: ticket.message,
+            status: ticket.status || 'open'
+        };
+        if (ticket.id) payload.id = ticket.id;
+
+        const { data, error } = await supabaseClient
+            .from('support_tickets')
+            .upsert(payload, { onConflict: 'id' })
+            .select();
+        if (error) throw error;
+        return data?.[0];
+    }
+
+    static async getSupportTickets(userEmail = null) {
+        return this._request(async () => {
+            let query = supabaseClient.from('support_tickets').select('*', { count: 'exact' });
+            if (userEmail) query = query.eq('user_email', userEmail);
+
+            const { data, count, error } = await query
+                .order('created_at', { ascending: false });
+            if (error) throw error;
+            return { data: data || [], total: count || 0 };
+        });
+    }
+
     // Violation operations
     static async saveViolation(violation) {
         return this._request(async () => {
