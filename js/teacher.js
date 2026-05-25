@@ -1352,7 +1352,7 @@ window.openAntiCheatModal = openAntiCheatModal;
 window.updateACPreview = updateACPreview;
 
 async function renderSettings() {
-    NotificationManager.renderSettings('Settings', 'Enable real-time desktop notifications even when the app is closed.');
+    SettingsManager.render('Enable real-time desktop notifications for student submissions and system alerts.');
 }
 
 window.renderSettings = renderSettings;

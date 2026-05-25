@@ -971,7 +971,7 @@ async function importBackup(event) {
 }
 
 async function renderSettings() {
-    NotificationManager.renderSettings('Admin Settings', 'Enable real-time desktop notifications for system health and reset requests.');
+    SettingsManager.render('Enable real-time desktop notifications for system health, server alerts, and password reset requests.');
 }
 
 async function renderHelp() {

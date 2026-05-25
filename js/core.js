@@ -574,28 +574,27 @@ const NotificationManager = {
         });
     },
 
-    async renderSettings(title = 'Settings', pushDesc = 'Enable real-time desktop notifications.') {
-        const content = document.getElementById('pageContent');
-        if (!content) return;
+    async renderSettings(containerId, pushDesc = 'Enable real-time desktop notifications.') {
+        const container = document.getElementById(containerId);
+        if (!container) return;
 
         const prefs = await this.getPreferences();
 
-        content.innerHTML = `
-            <h2 class="m-0">${escapeHtml(title)}</h2>
-            <div class="card mt-20">
+        container.innerHTML = `
+            <div class="card">
                 <h3 class="m-0">Notification Preferences</h3>
-                <p class="small mt-5">Choose how you want to receive updates.</p>
-                <div class="flex-column gap-10 mt-15">
+                <p class="small mt-5">Choose how you want to receive updates across different channels.</p>
+                <div class="flex-column gap-15 mt-20">
                     <label class="flex-center-y gap-10"><input type="checkbox" id="prefInApp" ${prefs.inApp ? 'checked' : ''} class="w-auto m-0"> In-App Notifications</label>
                     <label class="flex-center-y gap-10"><input type="checkbox" id="prefPush" ${prefs.push ? 'checked' : ''} class="w-auto m-0"> Browser Push Notifications</label>
                     <label class="flex-center-y gap-10"><input type="checkbox" id="prefEmail" ${prefs.email ? 'checked' : ''} class="w-auto m-0"> Email Alerts</label>
-                    <button class="button w-auto mt-10 px-30" onclick="NotificationManager.saveSettings()">Save Preferences</button>
+                    <button class="button w-auto mt-10 px-40" onclick="NotificationManager.saveSettings()">Save Preferences</button>
                 </div>
             </div>
             <div class="card mt-20">
-                <h3 class="m-0">Push Subscription</h3>
+                <h3 class="m-0">System Integration</h3>
                 <p class="small mt-5">${escapeHtml(pushDesc)}</p>
-                <button class="button secondary w-auto mt-10 px-30" onclick="NotificationManager.subscribeToPush()">Enable Push Notifications</button>
+                <button class="button secondary w-auto mt-15 px-40" onclick="NotificationManager.subscribeToPush()">Enable Browser Push</button>
             </div>
         `;
     },
@@ -873,6 +872,44 @@ window.isStrongPassword = function(pass) {
     const hasNumber = /\d/.test(pass);
     const hasSpecial = /[!@#$%^&*(),.?":{}|<>[\]\\/`~;:'"-=+]/.test(pass);
     return hasUpper && hasLower && hasNumber && hasSpecial;
+};
+
+window.updatePasswordStrength = function(password) {
+    const meter = document.getElementById('passwordStrength');
+    const container = document.getElementById('passwordStrengthContainer');
+    if (!meter || !container) return;
+
+    if (!password) {
+        meter.style.width = '0';
+        container.style.display = 'none';
+        return;
+    }
+
+    container.style.display = 'block';
+    let strength = 0;
+    if (password.length >= 8) strength += 20;
+    if (password.length >= 12) strength += 10;
+    if (/[A-Z]/.test(password)) strength += 20;
+    if (/[a-z]/.test(password)) strength += 10;
+    if (/[0-9]/.test(password)) strength += 20;
+    if (/[!@#$%^&*(),.?":{}|<>[\]\\/`~;:'"-=+]/.test(password)) strength += 20;
+
+    meter.style.width = Math.min(100, strength) + '%';
+
+    if (strength <= 40) meter.style.backgroundColor = 'var(--danger)';
+    else if (strength <= 60) meter.style.backgroundColor = 'var(--warn)';
+    else if (strength <= 80) meter.style.backgroundColor = '#4299e1'; // Blue
+    else meter.style.backgroundColor = 'var(--ok)';
+};
+
+window.togglePasswordVisibility = function(inputId) {
+    const input = document.getElementById(inputId);
+    const toggle = input?.parentElement?.querySelector('.password-toggle');
+    if (input) {
+        const isPassword = input.type === 'password';
+        input.type = isPassword ? 'text' : 'password';
+        if (toggle) toggle.textContent = isPassword ? '🔒' : '👁️';
+    }
 };
 
 window.isAccountLocked = function(user) {
@@ -1660,6 +1697,238 @@ const IdleManager = {
 };
 
 window.IdleManager = IdleManager;
+
+const SettingsManager = {
+    async render(pushDesc) {
+        const content = document.getElementById('pageContent');
+        if (!content) return;
+
+        try {
+            const user = await SessionManager.getCurrentUser();
+            const fresh = await SupabaseDB.getUser(user.email);
+
+            content.innerHTML = `
+                <div class="settings-page">
+                    <h2 class="mb-30" style="font-size: 1.75rem; font-weight: 800; color: var(--text-dark)">Account Settings</h2>
+
+                    <div class="settings-layout">
+                        <aside class="settings-sidebar">
+                            <button class="settings-nav-btn active" data-tab="profile" onclick="SettingsManager.switchTab('profile')">
+                                <span class="icon">👤</span>
+                                <span>Profile Info</span>
+                            </button>
+                            <button class="settings-nav-btn" data-tab="notifications" onclick="SettingsManager.switchTab('notifications', '${escapeAttr(pushDesc || '')}')">
+                                <span class="icon">🔔</span>
+                                <span>Notifications</span>
+                            </button>
+                            <button class="settings-nav-btn" data-tab="security" onclick="SettingsManager.switchTab('security')">
+                                <span class="icon">🔒</span>
+                                <span>Security</span>
+                            </button>
+                        </aside>
+
+                        <main class="settings-content" id="settingsTabContent">
+                            ${this._getProfileHtml(fresh)}
+                        </main>
+                    </div>
+                </div>
+            `;
+        } catch (e) {
+            console.error('Settings render error:', e);
+            content.innerHTML = `<div class="stat-card danger"><h3>Error loading settings</h3><p class="small">${escapeHtml(e.message)}</p></div>`;
+        }
+    },
+
+    _getProfileHtml(user) {
+        const roleIcon = user.role === 'admin' ? '⚙️' : (user.role === 'teacher' ? '🧑‍🏫' : '🧑‍🎓');
+
+        return `
+            <div class="animate-fade-in">
+                <div class="settings-header-box mb-30">
+                    <div class="settings-avatar">
+                        <div class="avatar-icon">${roleIcon}</div>
+                    </div>
+                    <div class="settings-user-meta">
+                        <div class="email bold">${escapeHtml(user.email)}</div>
+                        <div class="role tiny">${user.role.toUpperCase()}</div>
+                    </div>
+                </div>
+
+                <div class="card p-30">
+                    <div class="mb-20">
+                        <label class="settings-label">DISPLAY NAME</label>
+                        <input type="text" id="settingsFullName" class="settings-input" placeholder="Your full name" value="${escapeHtml(user.full_name)}">
+                    </div>
+                    <div class="mb-25">
+                        <label class="settings-label">PHONE NUMBER</label>
+                        <input type="tel" id="settingsPhone" class="settings-input" placeholder="e.g. 0505965310" value="${escapeHtml(user.phone || '')}">
+                    </div>
+
+                    <hr class="mb-25" style="border: 0; border-top: 1px solid var(--border)">
+
+                    <button class="button w-auto px-40" onclick="SettingsManager.saveProfile()" id="saveProfileBtn">
+                        <span style="margin-right: 10px">💾</span> Save Settings
+                    </button>
+                </div>
+            </div>
+        `;
+    },
+
+    _getSecurityHtml() {
+        return `
+            <div class="animate-fade-in">
+                <div class="card p-30">
+                    <h3 class="m-0 mb-10">Security & Password</h3>
+                    <p class="small mb-25">Keep your account secure by regularly updating your password.</p>
+
+                    <div class="mb-20">
+                        <label class="settings-label">CURRENT PASSWORD</label>
+                        <div class="password-wrapper">
+                            <input type="password" id="currPass" class="settings-input" placeholder="••••••••">
+                            <span class="password-toggle" onclick="togglePasswordVisibility('currPass')">👁️</span>
+                        </div>
+                    </div>
+
+                    <div class="grid-2 mb-25">
+                        <div>
+                            <label class="settings-label">NEW PASSWORD</label>
+                            <div class="password-wrapper">
+                                <input type="password" id="newPass" class="settings-input" placeholder="Minimum 8 chars" oninput="window.updatePasswordStrength(this.value)">
+                                <span class="password-toggle" onclick="togglePasswordVisibility('newPass')">👁️</span>
+                            </div>
+                            <div id="passwordStrengthContainer" class="mt-8" style="display:none">
+                                <div class="strength-meter"><div id="passwordStrength" class="strength-meter-fill"></div></div>
+                                <div class="tiny text-muted mt-4">Password Strength</div>
+                            </div>
+                        </div>
+                        <div>
+                            <label class="settings-label">CONFIRM NEW PASSWORD</label>
+                            <div class="password-wrapper">
+                                <input type="password" id="confirmPass" class="settings-input" placeholder="Confirm your new password">
+                                <span class="password-toggle" onclick="togglePasswordVisibility('confirmPass')">👁️</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <button class="button w-auto px-40" onclick="SettingsManager.changePassword()" id="changePassBtn">
+                        <span style="margin-right: 10px">🔐</span> Update Password
+                    </button>
+                </div>
+            </div>
+        `;
+    },
+
+    async switchTab(tab, arg) {
+        const container = document.getElementById('settingsTabContent');
+        if (!container) return;
+
+        // Update nav buttons
+        document.querySelectorAll('.settings-nav-btn').forEach(btn => {
+            btn.classList.toggle('active', btn.dataset.tab === tab);
+        });
+
+        if (tab === 'profile') {
+            const user = await SessionManager.getCurrentUser();
+            const fresh = await SupabaseDB.getUser(user.email);
+            container.innerHTML = this._getProfileHtml(fresh);
+        } else if (tab === 'notifications') {
+            await NotificationManager.renderSettings('settingsTabContent', arg);
+        } else if (tab === 'security') {
+            container.innerHTML = this._getSecurityHtml();
+        }
+    },
+
+    async saveProfile() {
+        const btn = document.getElementById('saveProfileBtn');
+        const name = document.getElementById('settingsFullName').value.trim();
+        const phone = document.getElementById('settingsPhone').value.trim();
+
+        if (!name) return UI.showNotification('Name is required.', 'warn');
+
+        btn.disabled = true;
+        btn.textContent = 'Saving...';
+
+        try {
+            const user = await SessionManager.getCurrentUser();
+            const fresh = await SupabaseDB.getUser(user.email);
+
+            fresh.full_name = name;
+            fresh.phone = phone;
+
+            await SupabaseDB.saveUser(fresh);
+            UI.showNotification('Profile updated successfully!', 'success');
+
+            // Update session data
+            await SessionManager.setCurrentUser(fresh);
+
+            // Update header if applicable
+            const profileName = document.getElementById('profileName');
+            if (profileName) profileName.textContent = name;
+
+        } catch (e) {
+            UI.showNotification('Failed to update profile: ' + e.message, 'error');
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = '<span style="margin-right: 10px">💾</span> Save Settings';
+        }
+    },
+
+    async changePassword() {
+        const btn = document.getElementById('changePassBtn');
+        const curr = document.getElementById('currPass').value;
+        const n1 = document.getElementById('newPass').value;
+        const n2 = document.getElementById('confirmPass').value;
+
+        if (!curr || !n1 || !n2) return UI.showNotification('All password fields are required.', 'warn');
+        if (n1 !== n2) return UI.showNotification('New passwords do not match.', 'warn');
+        if (!isStrongPassword(n1)) return UI.showNotification('New password does not meet security requirements.', 'warn');
+
+        btn.disabled = true;
+        btn.textContent = 'Updating...';
+
+        try {
+            const user = await SessionManager.getCurrentUser();
+
+            // Verify current password via authentication attempt (re-auth)
+            const hashedCurr = await window.hashPassword(curr, user.email);
+            // We use authenticate_user which will also check for locks/flagged etc
+            // Generating a dummy session ID for re-auth check
+            const authCheck = await SupabaseDB.authenticateUser(user.email, hashedCurr, 'reauth_' + Date.now());
+
+            if (!authCheck.success) {
+                throw new Error('Current password incorrect.');
+            }
+
+            const fresh = await SupabaseDB.getUser(user.email);
+            const hashedNew = await window.hashPassword(n1, user.email);
+            fresh.password = hashedNew;
+
+            // Generate fresh session to invalidate other sessions (Security Best Practice)
+            const sid = SessionManager.getSessionId(true);
+            fresh.session_id = sid;
+
+            await SupabaseDB.saveUser(fresh);
+            window.setSupabaseSession(sid);
+            await SessionManager.setCurrentUser(fresh);
+
+            UI.showNotification('Password updated. You have been re-authenticated.', 'success');
+
+            // Clear fields
+            document.getElementById('currPass').value = '';
+            document.getElementById('newPass').value = '';
+            document.getElementById('confirmPass').value = '';
+            document.getElementById('passwordStrengthContainer').style.display = 'none';
+
+        } catch (e) {
+            UI.showNotification(e.message, 'error');
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = '<span style="margin-right: 10px">🔐</span> Update Password';
+        }
+    }
+};
+
+window.SettingsManager = SettingsManager;
 
 // Global error handling for unhandled promise rejections
 window.addEventListener('unhandledrejection', (event) => {

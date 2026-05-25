@@ -290,41 +290,11 @@ const Auth = {
     },
 
     togglePasswordVisibility(inputId) {
-        const input = document.getElementById(inputId);
-        const toggle = input?.parentElement?.querySelector('.password-toggle');
-        if (input) {
-            const isPassword = input.type === 'password';
-            input.type = isPassword ? 'text' : 'password';
-            if (toggle) toggle.textContent = isPassword ? '🔒' : '👁️';
-        }
+        window.togglePasswordVisibility(inputId);
     },
 
     updatePasswordStrength(password) {
-        const meter = document.getElementById('passwordStrength');
-        const container = document.getElementById('passwordStrengthContainer');
-        if (!meter || !container) return;
-
-        if (!password) {
-            meter.style.width = '0';
-            container.style.display = 'none';
-            return;
-        }
-
-        container.style.display = 'block';
-        let strength = 0;
-        if (password.length >= 8) strength += 20;
-        if (password.length >= 12) strength += 10;
-        if (/[A-Z]/.test(password)) strength += 20;
-        if (/[a-z]/.test(password)) strength += 10;
-        if (/[0-9]/.test(password)) strength += 20;
-        if (/[!@#$%^&*(),.?":{}|<>[\]\\/`~;:'"-=+]/.test(password)) strength += 20;
-
-        meter.style.width = Math.min(100, strength) + '%';
-
-        if (strength <= 40) meter.style.backgroundColor = 'var(--danger)';
-        else if (strength <= 60) meter.style.backgroundColor = 'var(--warn)';
-        else if (strength <= 80) meter.style.backgroundColor = '#4299e1'; // Blue
-        else meter.style.backgroundColor = 'var(--ok)';
+        window.updatePasswordStrength(password);
     }
 };
 
