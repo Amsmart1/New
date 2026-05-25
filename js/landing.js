@@ -78,7 +78,27 @@ const LandingUI = {
             case 'about':
                 html = `<h2>About SmartLMS</h2>
                         <p>SmartLMS is a secure, next-generation learning platform designed for modern education. We focus on academic integrity, student engagement, and providing educators with the tools they need to succeed in a digital-first world.</p>
-                        <p>Our mission is to make education accessible and interactive for everyone, everywhere. We believe in the power of technology to transform learning and empower both students and teachers.</p>`;
+                        <p>Our mission is to make education accessible and interactive for everyone, everywhere. We believe in the power of technology to transform learning and empower both students and teachers.</p>
+                        <div class="about-image" style="margin: 2rem 0; height: 200px; display: flex; align-items: center; justify-content: center; background: #f8fafc; border-radius: 1.5rem; color: #9ca3af; font-weight: 700; border: 2px dashed #e2e8f0;">
+                            <div style="text-align: center;">
+                                <div style="font-size: 3rem; margin-bottom: 0.5rem;">🌐</div>
+                                <div>Global Learning Platform</div>
+                            </div>
+                        </div>
+                        <div class="about-stats" style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 2rem; margin-top: 3rem;">
+                            <div class="about-stat-item" style="text-align: center;">
+                                <div class="value" style="font-size: 2rem; font-weight: 800; color: var(--p);">100%</div>
+                                <div class="label" style="font-size: 0.9rem; color: #6b7280; font-weight: 600; text-transform: uppercase;">Secure</div>
+                            </div>
+                            <div class="about-stat-item" style="text-align: center;">
+                                <div class="value" style="font-size: 2rem; font-weight: 800; color: var(--p);">24/7</div>
+                                <div class="label" style="font-size: 0.9rem; color: #6b7280; font-weight: 600; text-transform: uppercase;">Accessible</div>
+                            </div>
+                            <div class="about-stat-item" style="text-align: center;">
+                                <div class="value" style="font-size: 2rem; font-weight: 800; color: var(--p);">Real-time</div>
+                                <div class="label" style="font-size: 0.9rem; color: #6b7280; font-weight: 600; text-transform: uppercase;">Analytics</div>
+                            </div>
+                        </div>`;
                 break;
             case 'privacy':
                 html = `<h2>Privacy Policy</h2>
@@ -164,7 +184,7 @@ const LandingUI = {
                 <h1 style="font-size: 2.5rem; margin-bottom: 10px;">Help Center</h1>
                 <p class="text-muted">How can we help you today? Please select your role to continue.</p>
 
-                <div class="role-grid" style="max-width: 900px; margin: 40px auto 0; display: grid; grid-template-columns: repeat(3, 1fr); gap: 30px;">
+                <div class="role-grid help-center-roles" style="max-width: 900px; margin: 40px auto 0;">
                     <div class="flippable-card" id="card-student" onclick="LandingUI.selectRole('student')">
                         <div class="flippable-card-inner">
                             <div class="flippable-card-front">
@@ -208,7 +228,7 @@ const LandingUI = {
 
         overlay.classList.add('active');
 
-        // Add flip listeners
+        // Add flip listeners - Mouse only, touch is handled by click
         document.querySelectorAll('.flippable-card').forEach(card => {
             card.addEventListener('mouseenter', () => card.classList.add('flipped'));
             card.addEventListener('mouseleave', () => card.classList.remove('flipped'));
@@ -216,17 +236,33 @@ const LandingUI = {
     },
 
     selectRole(role) {
+        console.log('[LandingUI] selectRole:', role);
         const hero = document.getElementById('helpCenterHero');
-        hero.classList.add('minimized');
+        if (hero) hero.classList.add('minimized');
+
+        const isMobile = window.innerWidth <= 768;
 
         // Highlight selected role card visually by adding a class or just shrinking others
         document.querySelectorAll('.flippable-card').forEach(c => {
             if (c.id !== `card-${role}`) {
-                c.style.opacity = '0.5';
-                c.style.pointerEvents = 'none';
+                if (isMobile) {
+                    c.style.display = 'none';
+                } else {
+                    c.style.opacity = '0.5';
+                    c.style.pointerEvents = 'none';
+                }
             } else {
                 c.style.opacity = '1';
-                c.style.transform = 'scale(0.9)';
+                if (isMobile) {
+                    c.style.height = 'auto';
+                    c.style.transform = 'scale(0.9)';
+                    // Reset flip for better mobile view of selected item
+                    const inner = c.querySelector('.flippable-card-inner');
+                    if (inner) inner.style.transform = 'none';
+                    c.classList.remove('flipped');
+                } else {
+                    c.style.transform = 'scale(0.9)';
+                }
             }
         });
 
@@ -234,17 +270,28 @@ const LandingUI = {
     },
 
     async renderHelpCenter(role) {
+        console.log('[LandingUI] renderHelpCenter:', role);
         const bodyContainer = document.getElementById('helpCenterBodyContainer');
+        if (!bodyContainer) {
+            console.error('[LandingUI] helpCenterBodyContainer not found');
+            return;
+        }
+
         const roleTitle = role.charAt(0).toUpperCase() + role.slice(1);
         const faqs = this.faqs[role] || [];
 
         bodyContainer.style.display = 'block';
 
-        const user = await SessionManager.getCurrentUser();
-        const userEmail = user?.email || null;
+        let userEmail = null;
+        try {
+            const user = await SessionManager.getCurrentUser();
+            userEmail = user?.email || null;
+        } catch (e) {
+            console.warn('[LandingUI] Failed to get current user:', e);
+        }
 
         bodyContainer.innerHTML = `
-            <div class="help-center-body" style="height: 100%; overflow-y: auto; background: #f9fafb; padding: 40px 60px; display: grid; grid-template-columns: 1fr 350px; gap: 40px;">
+            <div class="help-center-body help-center-layout" style="height: 100%; overflow-y: auto; background: #f9fafb;">
                 <div class="help-main-col">
                     <div class="section-title mb-20" style="display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 1.1rem;">
                         <span style="color: var(--warn); font-size: 1.2rem;">🕒</span> Your Recent Requests

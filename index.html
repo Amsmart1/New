@@ -23,7 +23,10 @@
   <header class="landing-header">
     <a href="#" class="logo"><span>🎓</span> SmartLMS</a>
     <nav class="nav-links">
+      <a href="#" onclick="LandingUI.showInfoModal('about')">About Us</a>
+      <a href="#" onclick="LandingUI.showContactUs()">Contact Us</a>
       <a href="#" id="navSignIn" onclick="showLogin()">Sign In</a>
+      <button class="button primary small w-auto" style="margin-left: 1rem" onclick="showSignup()">Get Started</button>
     </nav>
   </header>
 
@@ -115,34 +118,6 @@
       </div>
     </section>
 
-    <section id="about" class="about-section">
-      <div class="container-inner">
-        <div class="about-content">
-          <div class="about-text">
-            <h2>About SmartLMS</h2>
-            <p>SmartLMS is a secure, next-generation learning platform designed for modern education. We focus on academic integrity, student engagement, and providing educators with the tools they need to succeed in a digital-first world.</p>
-            <p>Our mission is to make education accessible and interactive for everyone, everywhere. We believe in the power of technology to transform learning and empower both students and teachers.</p>
-            <div class="about-stats">
-              <div class="about-stat-item">
-                <div class="value">100%</div>
-                <div class="label">Secure</div>
-              </div>
-              <div class="about-stat-item">
-                <div class="value">24/7</div>
-                <div class="label">Accessible</div>
-              </div>
-              <div class="about-stat-item">
-                <div class="value">Real-time</div>
-                <div class="label">Analytics</div>
-              </div>
-            </div>
-          </div>
-          <div class="about-image">
-            <div class="image-placeholder">🎓 SmartLMS Platform</div>
-          </div>
-        </div>
-      </div>
-    </section>
 
     <section class="bottom-cta">
       <div class="container-inner text-center">
