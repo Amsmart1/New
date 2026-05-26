@@ -535,8 +535,9 @@ async function showAssignmentForm(assignmentId) {
       ` : ''}
 
       <div id="qwrap-${a.id}" class="mt-20"></div>
-      <div class="flex gap-10 mt-20">
-        <button class="button w-auto px-40" id="submitAssignBtn" onclick="submitAssignment('${a.id}', '${user.email}')">Submit Assignment</button>
+      <div class="flex gap-10 mt-20 flex-wrap">
+        <button class="button w-auto px-40" id="submitAssignBtn" onclick="submitAssignment('${a.id}', '${user.email}', false)">Submit Assignment</button>
+        <button class="button secondary w-auto px-40" id="saveDraftBtn" onclick="submitAssignment('${a.id}', '${user.email}', true)">Save Draft</button>
         ${submission ? `<button class="button danger w-auto px-40" onclick="deleteSubmissionById('${a.id}', '${user.email}')">Delete Submission</button>` : ''}
       </div>
     </div>
@@ -2428,8 +2429,9 @@ async function deleteSubmissionById(assignmentId, studentEmail) {
     }
   }
 }
-async function submitAssignment(assignmentId, studentEmail) {
-  const btn = document.getElementById('submitAssignBtn');
+async function submitAssignment(assignmentId, studentEmail, isDraft = false) {
+  const btn = isDraft ? document.getElementById('saveDraftBtn') : document.getElementById('submitAssignBtn');
+  const otherBtn = isDraft ? document.getElementById('submitAssignBtn') : document.getElementById('saveDraftBtn');
   const questions = document.querySelectorAll(`#qwrap-${assignmentId} .question`);
 
   // Capture values before UI.showLoading overwrites the DOM
@@ -2447,8 +2449,9 @@ async function submitAssignment(assignmentId, studentEmail) {
       });
   }
 
-  if (btn) { btn.disabled = true; btn.textContent = 'Uploading...'; }
-  UI.showLoading('assignmentForm', 'Uploading submission...');
+  if (btn) { btn.disabled = true; btn.textContent = isDraft ? 'Saving Draft...' : 'Uploading...'; }
+  if (otherBtn) { otherBtn.disabled = true; }
+  UI.showLoading('assignmentForm', isDraft ? 'Saving draft...' : 'Uploading submission...');
 
   try {
     const existing = await SupabaseDB.getSubmission(assignmentId, studentEmail);
@@ -2460,7 +2463,7 @@ async function submitAssignment(assignmentId, studentEmail) {
       if (captured.essay !== null) {
         answers[idx] = captured.essay;
       } else if (captured.link !== null) {
-        if (captured.link && !isValidUrl(captured.link)) {
+        if (!isDraft && captured.link && !isValidUrl(captured.link)) {
             throw new Error(`Invalid URL for Question ${idx + 1}. Please start with http:// or https://`);
         }
         answers[idx] = captured.link;
@@ -2472,28 +2475,31 @@ async function submitAssignment(assignmentId, studentEmail) {
       }
     }
 
-    // Validation: Ensure at least one answer is provided
-    const hasAnyContent = Object.values(answers).some(val => val && String(val).trim() !== '');
-    if (!hasAnyContent) {
-        throw new Error('Cannot submit an empty assignment. Please provide at least one answer.');
+    // Validation: Ensure at least one answer is provided if submitting
+    if (!isDraft) {
+        const hasAnyContent = Object.values(answers).some(val => val && String(val).trim() !== '');
+        if (!hasAnyContent) {
+            throw new Error('Cannot submit an empty assignment. Please provide at least one answer.');
+        }
     }
 
     const submission = {
       ...existing,
       assignment_id: assignmentId,
       student_email: studentEmail,
-      submitted_at: new Date().toISOString(),
+      submitted_at: isDraft ? (existing?.submitted_at || null) : new Date().toISOString(),
+      updated_at: new Date().toISOString(),
       answers: answers,
       attachments: existing?.attachments || [],
-      status: 'submitted',
+      status: isDraft ? 'draft' : 'submitted',
       // Reset grading fields on re-submission to ensure teacher re-grades fresh content
-      grade: null,
-      final_grade: null,
-      question_scores: {},
-      question_feedback: {},
-      graded_at: null,
-      late_penalty_applied: 0,
-      regrade_request: null
+      grade: isDraft ? (existing?.grade ?? null) : null,
+      final_grade: isDraft ? (existing?.final_grade ?? null) : null,
+      question_scores: isDraft ? (existing?.question_scores ?? {}) : {},
+      question_feedback: isDraft ? (existing?.question_feedback ?? {}) : {},
+      graded_at: isDraft ? (existing?.graded_at ?? null) : null,
+      late_penalty_applied: isDraft ? (existing?.late_penalty_applied ?? 0) : 0,
+      regrade_request: isDraft ? (existing?.regrade_request ?? null) : null
     };
 
     if (await SupabaseDB.saveSubmission(submission)) {
@@ -2501,7 +2507,7 @@ async function submitAssignment(assignmentId, studentEmail) {
       const a = await SupabaseDB.getAssignment(assignmentId);
       if (a) await SupabaseDB.updateCourseProgress(a.course_id, studentEmail);
 
-      UI.showNotification('Submitted!');
+      UI.showNotification(isDraft ? 'Draft saved successfully!' : 'Assignment submitted successfully!', 'success');
       renderAssignments();
     } else {
         throw new Error('Save failed');
