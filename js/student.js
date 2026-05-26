@@ -543,9 +543,11 @@ async function showAssignmentForm(assignmentId) {
   `;
 
   const qwrap = formWrap.querySelector(`#qwrap-${a.id}`);
+  const submissionAnswers = submission?.answers || {};
+
   (a.questions || []).forEach((q, idx) => {
     const qDiv = document.createElement('div'); qDiv.className = 'question';
-    const answer = submission?.answers?.[idx] || '';
+    const answer = submissionAnswers[idx] || '';
     let inputHtml = '';
     if (q.type === 'essay') {
       inputHtml = `<textarea class="input" rows="6" placeholder="Your answer" data-q-idx="${idx}">${escapeHtml(answer)}</textarea>`;
@@ -2423,7 +2425,7 @@ async function submitAssignment(assignmentId, studentEmail) {
 
   try {
     const existing = await SupabaseDB.getSubmission(assignmentId, studentEmail);
-    const answers = existing?.answers || {};
+    const answers = (existing && existing.answers) ? { ...existing.answers } : {};
     const questions = document.querySelectorAll(`#qwrap-${assignmentId} .question`);
 
     for (let idx = 0; idx < questions.length; idx++) {
@@ -2433,7 +2435,7 @@ async function submitAssignment(assignmentId, studentEmail) {
       const fileInput = qDiv.querySelector('.q-file');
 
       if (essay) {
-        answers[idx] = essay.value;
+        answers[idx] = essay.value.trim();
       } else if (link) {
         const val = link.value.trim();
         if (val && !isValidUrl(val)) {
@@ -2447,8 +2449,13 @@ async function submitAssignment(assignmentId, studentEmail) {
           await SupabaseDB.uploadFile('assignments', path, file);
           answers[idx] = await SupabaseDB.getPublicUrl('assignments', path);
         }
-        // If no new file, existing answers[idx] remains as is
       }
+    }
+
+    // Validation: Ensure at least one answer is provided
+    const hasAnyContent = Object.values(answers).some(val => val && String(val).trim() !== '');
+    if (!hasAnyContent) {
+        throw new Error('Cannot submit an empty assignment. Please provide at least one answer.');
     }
 
     const submission = {

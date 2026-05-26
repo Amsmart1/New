@@ -843,6 +843,8 @@ async function gradeSubmission(assignmentId, studentEmail) {
         SupabaseDB.getSubmission(assignmentId, studentEmail)
     ]);
 
+    if (!submission) throw new Error('Submission not found.');
+
     // Late penalty calculation
     const dueDate = new Date(assignment.due_date);
     const subDate = new Date(submission.submitted_at);
@@ -852,6 +854,8 @@ async function gradeSubmission(assignmentId, studentEmail) {
         lateDays = Math.floor((subDate - dueDate) / (1000 * 60 * 60 * 24));
         latePenalty = lateDays * (assignment.late_penalty_per_day || 0);
     }
+
+    const submissionAnswers = submission.answers || {};
 
     content.innerHTML = `
     <div class="card">
@@ -880,8 +884,8 @@ async function gradeSubmission(assignmentId, studentEmail) {
           <h4 class="m-0">Submitted Answers & Individual Scoring:</h4>
           <div class="mt-15">
             ${(assignment.questions || []).map((q, idx) => {
-              const answer = submission.answers[idx];
-              const score = submission.question_scores?.[idx] || 0;
+              const answer = submissionAnswers[idx];
+              const score = submission?.question_scores?.[idx] || 0;
               const isUrl = typeof answer === 'string' && (answer.startsWith('http://') || answer.startsWith('https://'));
               const displayAnswer = answer ? (isUrl ? `<button type="button" class="button secondary small w-auto" onclick="UI.viewFile('${escapeAttr(answer)}', 'Student Submission - Q${idx+1}')">View Submitted File/Link</button>` : `<div class="small p-10 mt-5" style="white-space: pre-wrap; background: #f7fafc; border-radius: 4px;">${escapeHtml(answer)}</div>`) : '<div class="small p-10 mt-5 text-muted italic">No answer provided.</div>';
               return `<div class="list-item mb-20 card border-light">
