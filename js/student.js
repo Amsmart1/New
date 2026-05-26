@@ -277,10 +277,31 @@ async function showLesson(lessonId, courseId, fromMyCourses = false) {
       SupabaseDB.markLessonComplete(courseId, user.email, lessonId).catch(e => console.warn('Completion tracking failed:', e));
   }
 
+  let videoHtml = '';
+  if (lesson.video_url) {
+      if (lesson.video_url.includes('youtube.com') || lesson.video_url.includes('youtu.be')) {
+          let vidId = '';
+          if (lesson.video_url.includes('v=')) vidId = lesson.video_url.split('v=')[1].split('&')[0];
+          else vidId = lesson.video_url.split('/').pop();
+
+          // Security: Validate vidId contains only alphanumeric characters and hyphens/underscores to prevent XSS
+          if (/^[a-zA-Z0-9_-]+$/.test(vidId)) {
+            videoHtml = `<div class="video-container mb-20" style="position:relative; padding-bottom:56.25%; height:0; overflow:hidden; border-radius:8px">
+              <iframe src="https://www.youtube.com/embed/${vidId}" style="position:absolute; top:0; left:0; width:100%; height:100%; border:none" allowfullscreen></iframe>
+            </div>`;
+          } else {
+            videoHtml = `<div class="card danger-border small">Invalid video ID detected. For security, this embed has been blocked.</div>`;
+          }
+      } else {
+          videoHtml = `<div class="mb-20"><video src="${escapeAttr(lesson.video_url)}" controls style="width:100%; border-radius:8px; background:#000"></video></div>`;
+      }
+  }
+
   container.innerHTML = `
     <button class="button secondary w-auto mb-15" onclick="viewCourse('${escapeAttr(courseId)}', ${fromMyCourses})">← Back to Lessons</button>
     <div class="card">
-      <h2 class="m-0">${escapeHtml(lesson.title)}</h2>
+      <h2 class="m-0 mb-20">${escapeHtml(lesson.title)}</h2>
+      ${videoHtml}
       <div class="mt-20" style="line-height:1.6">${escapeHtml(lesson.content).replace(/\n/g, '<br>')}</div>
     </div>`;
 }
@@ -505,6 +526,20 @@ async function showAssignmentForm(assignmentId) {
         </div>
       ` : ''}
 
+      ${a.attachments && a.attachments.length > 0 ? `
+        <div class="mt-20">
+            <h4 class="m-0 mb-10">Supporting Materials</h4>
+            <div class="grid" style="gap:10px">
+                ${a.attachments.map(att => `
+                    <div class="flex-between list-item p-10">
+                        <span class="small bold">${escapeHtml(att.name)}</span>
+                        <button class="button secondary tiny w-auto" onclick="UI.viewFile('${escapeAttr(att.url)}', '${escapeAttr(att.name)}')">View / Download</button>
+                    </div>
+                `).join('')}
+            </div>
+        </div>
+      ` : ''}
+
       <div id="qwrap-${a.id}" class="mt-20"></div>
       <div class="flex gap-10 mt-20">
         <button class="button w-auto px-40" id="submitAssignBtn" onclick="submitAssignment('${a.id}', '${user.email}')">Submit Assignment</button>
@@ -584,6 +619,20 @@ async function viewFeedback(assignmentId) {
           <div class="bold">${submission.status.toUpperCase()}</div>
         </div>
       </div>
+
+      ${assignment.attachments && assignment.attachments.length > 0 ? `
+        <div class="mt-20">
+            <h4 class="m-0 mb-10">Assignment Materials</h4>
+            <div class="grid" style="gap:10px">
+                ${assignment.attachments.map(att => `
+                    <div class="flex-between list-item p-10">
+                        <span class="small bold">${escapeHtml(att.name)}</span>
+                        <button class="button secondary tiny w-auto" onclick="UI.viewFile('${escapeAttr(att.url)}', '${escapeAttr(att.name)}')">View</button>
+                    </div>
+                `).join('')}
+            </div>
+        </div>
+      ` : ''}
 
       <div class="mt-20 pt-20" style="border-top:1px solid var(--border)">
         <h4>Your Submission & Grades</h4>
@@ -1205,18 +1254,24 @@ async function renderPlanner() {
     const overdueTasks = items.filter(i => !i.completed && new Date(i.due_date).setHours(0,0,0,0) < now.getTime());
     const completedTasks = items.filter(i => i.completed);
 
-    const renderTask = (item) => `
+    const renderTask = (item) => {
+      const priorityClass = item.priority === 'high' ? 'badge-inactive' : (item.priority === 'low' ? 'badge-active' : 'badge-warn');
+      // Badge mapping: high -> inactive (red), medium -> warn (yellow), low -> active (green)
+      return `
       <div class="flex-between list-item">
         <div class="flex-center-y gap-10">
           <input type="checkbox" class="w-auto m-0" ${item.completed ? 'checked' : ''} onchange="togglePlannerItem('${item.id}', this.checked)">
           <div class="${item.completed ? 'text-muted' : ''}" style="${item.completed ? 'text-decoration: line-through' : ''}">
-            <span class="bold small">${escapeHtml(item.title)}</span>
+            <div class="flex-center-y gap-5">
+              <span class="bold small">${escapeHtml(item.title)}</span>
+              ${item.priority ? `<span class="badge ${priorityClass} tiny" style="padding: 2px 6px; font-size: 9px">${item.priority.toUpperCase()}</span>` : ''}
+            </div>
             <div class="tiny ${!item.completed && new Date(item.due_date) < now ? 'danger-text' : 'text-muted'}">${new Date(item.due_date).toLocaleDateString()}</div>
           </div>
         </div>
         <button class="button danger tiny w-auto" onclick="deletePlannerItem('${item.id}')">✕</button>
       </div>
-    `;
+    `;};
 
     container.innerHTML = `
       <div class="flex-between mb-20">
@@ -1226,9 +1281,14 @@ async function renderPlanner() {
 
       <div class="card">
         <h3 class="m-0 small mb-15">Quick Add Task</h3>
-        <div class="flex gap-10">
-          <input type="text" id="plannerTitle" placeholder="What needs to be done?" class="m-0">
+        <div class="flex gap-10 flex-wrap">
+          <input type="text" id="plannerTitle" placeholder="What needs to be done?" class="m-0" style="flex: 1; min-width: 200px">
           <input type="date" id="plannerDate" class="m-0" value="${new Date().toISOString().split('T')[0]}" style="width: 150px">
+          <select id="plannerPriority" class="m-0" style="width: 120px">
+            <option value="medium">Medium</option>
+            <option value="low">Low</option>
+            <option value="high">High</option>
+          </select>
           <button class="button w-auto px-30" onclick="addPlannerItem()">Add</button>
         </div>
       </div>
@@ -1292,12 +1352,14 @@ async function addPlannerItem() {
   const user = await SessionManager.getCurrentUser();
   const title = document.getElementById('plannerTitle').value;
   const date = document.getElementById('plannerDate').value;
+  const priority = document.getElementById('plannerPriority').value;
   if (!title || !date) return;
   await SupabaseDB.savePlannerItem({
       id: crypto.randomUUID(),
       user_email: user.email,
       title,
       due_date: date,
+      priority: priority,
       completed: false,
       created_at: new Date().toISOString()
   });
@@ -1335,6 +1397,7 @@ async function renderLiveClasses() {
           const isUpcoming = startAt > now;
 
           const createdAtTs = liveClass.created_at ? new Date(liveClass.created_at).getTime() : now;
+          const isFinished = !isLive && !isUpcoming;
           return `
             <div class="card">
               <div class="flex-between" style="align-items:start">
@@ -1352,7 +1415,13 @@ async function renderLiveClasses() {
                         <div class="live-countdown" data-target="${startAt}" data-start="${createdAtTs}"></div>
                     </div>
                     <button class="button secondary w-auto mt-10" disabled>Not Started</button>
-                  ` : `<button class="button secondary w-auto" disabled>Not Started</button>`
+                  ` : `
+                    <div class="mb-10 p-10 border-radius-sm" style="background:var(--bg); border:1px solid var(--border)">
+                        <div class="tiny text-muted">Session Finished</div>
+                        ${liveClass.recording_url ? `<div class="mt-5"><a href="${escapeAttr(liveClass.recording_url)}" target="_blank" class="button secondary tiny w-auto">View Recording</a></div>` : ''}
+                    </div>
+                    <button class="button secondary w-auto" disabled>Finished</button>
+                  `
                 }
               </div>
             </div>
