@@ -759,7 +759,12 @@ const SessionGuard = {
 
             if ((isMaint && user.role !== 'admin') || isRestricted || sessionMismatch || roleMismatch) {
                 let msg = isMaint ? 'System entered maintenance mode.' : 'Your account status has changed.';
-                if (sessionMismatch) {
+
+                if (isRestricted) {
+                    if (!fresh.active) msg = 'Your account has been deactivated.';
+                    else if (fresh.flagged) msg = 'Your account has been flagged for suspicious activity.';
+                    else if (isAccountLocked(fresh)) msg = 'Your account has been locked due to multiple failed attempts.';
+                } else if (sessionMismatch) {
                     const reason = fresh.metadata?.last_invalidation_reason;
                     if (reason === 'password_change') {
                         msg = 'Your password was changed. Please login again.';
@@ -772,8 +777,9 @@ const SessionGuard = {
                     } else {
                         msg = 'Your session has been invalidated.';
                     }
+                } else if (roleMismatch) {
+                    msg = 'Your permissions have been updated. Please login again.';
                 }
-                if (roleMismatch) msg = 'Your permissions have been updated. Please login again.';
 
                 await this.logout(msg);
             }
@@ -787,6 +793,9 @@ const SessionGuard = {
         if (!window.location.href.includes('index.html')) {
             alert(message + ' Logging out.');
             window.location.href = 'index.html';
+        } else {
+            // If already on landing page, show notification so user knows why they were cleared
+            UI.showNotification(message, 'info');
         }
     },
 

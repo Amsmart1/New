@@ -289,13 +289,6 @@ const Auth = {
         else if (role === 'admin') window.location.href = 'admin.html';
     },
 
-    togglePasswordVisibility(inputId) {
-        window.togglePasswordVisibility(inputId);
-    },
-
-    updatePasswordStrength(password) {
-        window.updatePasswordStrength(password);
-    }
 };
 
 // Global helpers (accessible from onclick)
@@ -305,7 +298,6 @@ window.showLogin = () => Auth.showLogin();
 window.showReset = () => Auth.showReset();
 window.showSection = (id) => Auth.showSection(id);
 window.closeAuth = () => Auth.closeAuth();
-window.togglePasswordVisibility = (id) => Auth.togglePasswordVisibility(id);
 
 // Event Listeners
 document.addEventListener('DOMContentLoaded', () => {
@@ -314,7 +306,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const signupPassword = document.getElementById('password');
     if (signupPassword) {
         signupPassword.addEventListener('input', (e) => {
-            Auth.updatePasswordStrength(e.target.value);
+            window.updatePasswordStrength(e.target.value);
         });
     }
 
