@@ -352,7 +352,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
 
-            // Enforce limit of 3 accounts for admin and teacher roles for landing page signups
+            // Enforce limit of 1 account for admin and teacher roles for landing page signups
             // Bypassed if using a valid invitation
             const activeInviteRaw = sessionStorage.getItem('activeInvite');
             let activeInvite = null;
@@ -363,7 +363,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if ((role === 'admin' || role === 'teacher') && !activeInvite) {
                 try {
                     const roleCount = await SupabaseDB.getCount('users', q => q.eq('role', role));
-                    if (roleCount >= 3) {
+                    if (roleCount >= 1) {
                         const roleName = role.charAt(0).toUpperCase() + role.slice(1);
                         errorEl.innerText = `The maximum number of ${roleName} accounts has been reached. Please contact an existing admin to create more accounts.`;
                         return;
