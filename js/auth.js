@@ -66,8 +66,15 @@ const Auth = {
         this.updateMaintBanners(m);
         setInterval(() => this.updateMaintBanners(), 30000);
 
-        // Check for invite token in URL
+        // Check for reason or invite token in URL
         const urlParams = new URLSearchParams(window.location.search);
+        const reason = urlParams.get('reason');
+        if (reason) {
+            UI.showNotification(reason, 'info');
+            // Clean up the URL
+            window.history.replaceState({}, document.title, window.location.pathname);
+        }
+
         const inviteToken = urlParams.get('invite');
         if (inviteToken) {
             await this.handleInvite(inviteToken);

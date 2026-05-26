@@ -5,11 +5,8 @@ window.isAccountLocked = function(user) {
 
 window.isActiveMaintenance = function(m) {
     if (!m) return false;
+    if (m.enabled) return true; // Master manual override
     const now = new Date().getTime();
-    if (m.enabled) {
-        if (!m.manual_until) return true;
-        if (now < new Date(m.manual_until).getTime()) return true;
-    }
     const schedules = Array.isArray(m.schedules) ? m.schedules : [];
     return schedules.some(s => now >= new Date(s.startAt).getTime() && now <= new Date(s.endAt).getTime());
 };
@@ -22,7 +19,10 @@ window.getUpcomingMaintenance = function(m) {
 
 window.getActiveMaintenanceEnd = function(m) {
     const now = new Date().getTime();
-    if (m && m.manual_until && now < new Date(m.manual_until).getTime()) return new Date(m.manual_until).getTime();
+    if (m && m.manual_until) {
+        const end = new Date(m.manual_until).getTime();
+        if (now < end) return end;
+    }
     const s = (Array.isArray(m.schedules) ? m.schedules : []).find(s => now >= new Date(s.startAt).getTime() && now <= new Date(s.endAt).getTime());
     return s ? new Date(s.endAt).getTime() : null;
 };
@@ -908,8 +908,7 @@ const SessionGuard = {
     async logout(message) {
         await SessionManager.clearCurrentUser();
         if (!window.location.href.includes('index.html')) {
-            alert(message + ' Logging out.');
-            window.location.href = 'index.html';
+            window.location.href = 'index.html?reason=' + encodeURIComponent(message);
         } else {
             // If already on landing page, show notification so user knows why they were cleared
             UI.showNotification(message, 'info');
@@ -950,7 +949,7 @@ async function updateMaintBanner() {
 
     if (isActiveMaintenance(m)) {
         targetDate = getActiveMaintenanceEnd(m);
-        labelPrefix = 'System maintenance ACTIVE — restores in ';
+        labelPrefix = 'System maintenance ACTIVE — ' + (targetDate ? 'restores in ' : 'please check back later');
     } else {
         const up = getUpcomingMaintenance(m);
         if (up) {
@@ -959,7 +958,7 @@ async function updateMaintBanner() {
         }
     }
 
-    if (targetDate) {
+    if (isActiveMaintenance(m) || targetDate) {
         if (!maintCountdown) {
             maintCountdown = new Countdown({
                 targetDate: targetDate,
@@ -969,16 +968,19 @@ async function updateMaintBanner() {
                     updateMaintBanner();
                 },
                 onTick: (time) => {
-                    const h = Math.floor(time.total / 3600000);
-                    const mm = Math.floor((time.total % 3600000) / 60000);
-                    const ss = Math.floor((time.total % 60000) / 1000);
-                    const timeStr = `${h}h ${mm}m ${ss}s (at ${new Date(targetDate).toLocaleString()})`;
+                    let displayStr = labelPrefix;
+                    if (targetDate) {
+                        const h = Math.floor(time.total / 3600000);
+                        const mm = Math.floor((time.total % 3600000) / 60000);
+                        const ss = Math.floor((time.total % 60000) / 1000);
+                        displayStr += `${h}h ${mm}m ${ss}s (at ${new Date(targetDate).toLocaleString()})`;
+                    }
 
                     ids.forEach(id => {
                         const b = document.getElementById(id);
                         if (b) {
                             b.style.display = 'block';
-                            b.textContent = labelPrefix + timeStr;
+                            b.textContent = displayStr;
                         }
                     });
                 }
