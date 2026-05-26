@@ -1071,8 +1071,8 @@ BEGIN
             -- Admins can create any role
             v_actual_role := p_role;
         ELSIF p_invite_token IS NULL THEN
-            -- Public signups for admin/teacher limited to 3
-            IF (SELECT COUNT(*) FROM users WHERE role = p_role) >= 3 THEN
+            -- Public signups for admin/teacher limited to 1
+            IF (SELECT COUNT(*) FROM users WHERE role = p_role) >= 1 THEN
                 RETURN jsonb_build_object('success', false, 'message', 'Maximum number of ' || p_role || ' accounts reached. Invitation required.');
             END IF;
             v_actual_role := p_role;
