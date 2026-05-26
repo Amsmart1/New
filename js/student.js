@@ -2415,40 +2415,60 @@ async function requestRegrade(assignmentId) {
 window.requestRegrade = requestRegrade;
 
 async function deleteSubmissionById(assignmentId, studentEmail) {
-  if (confirm('Delete submission?')) { try { await SupabaseDB.deleteSubmission(assignmentId, studentEmail); renderAssignments(); } catch (e) { UI.showNotification('Error'); } }
+  if (confirm('Are you sure you want to delete your submission? This action cannot be undone.')) {
+    try {
+      const a = await SupabaseDB.getAssignment(assignmentId);
+      await SupabaseDB.deleteSubmission(assignmentId, studentEmail);
+      if (a) await SupabaseDB.updateCourseProgress(a.course_id, studentEmail);
+      renderAssignments();
+      UI.showNotification('Submission deleted successfully.');
+    } catch (e) {
+      console.error('Delete failed:', e);
+      UI.showNotification('Error deleting submission: ' + (e.message || 'Unknown error'));
+    }
+  }
 }
 async function submitAssignment(assignmentId, studentEmail) {
   const btn = document.getElementById('submitAssignBtn');
-  if (btn) { btn.disabled = true; btn.textContent = 'Uploading...'; }
-  UI.showLoading('assignmentForm', 'Uploading submission...');
-  AntiCheat.destroy();
+  const questions = document.querySelectorAll(`#qwrap-${assignmentId} .question`);
 
-  try {
-    const existing = await SupabaseDB.getSubmission(assignmentId, studentEmail);
-    const answers = (existing && existing.answers) ? { ...existing.answers } : {};
-    const questions = document.querySelectorAll(`#qwrap-${assignmentId} .question`);
-
-    for (let idx = 0; idx < questions.length; idx++) {
+  // Capture values before UI.showLoading overwrites the DOM
+  const capturedAnswers = [];
+  for (let idx = 0; idx < questions.length; idx++) {
       const qDiv = questions[idx];
       const essay = qDiv.querySelector('textarea');
       const link = qDiv.querySelector('.q-link');
       const fileInput = qDiv.querySelector('.q-file');
 
-      if (essay) {
-        answers[idx] = essay.value.trim();
-      } else if (link) {
-        const val = link.value.trim();
-        if (val && !isValidUrl(val)) {
+      capturedAnswers.push({
+          essay: essay ? essay.value.trim() : null,
+          link: link ? link.value.trim() : null,
+          file: fileInput ? fileInput.files[0] : null
+      });
+  }
+
+  if (btn) { btn.disabled = true; btn.textContent = 'Uploading...'; }
+  UI.showLoading('assignmentForm', 'Uploading submission...');
+
+  try {
+    const existing = await SupabaseDB.getSubmission(assignmentId, studentEmail);
+    const answers = (existing && existing.answers) ? { ...existing.answers } : {};
+
+    for (let idx = 0; idx < capturedAnswers.length; idx++) {
+      const captured = capturedAnswers[idx];
+
+      if (captured.essay !== null) {
+        answers[idx] = captured.essay;
+      } else if (captured.link !== null) {
+        if (captured.link && !isValidUrl(captured.link)) {
             throw new Error(`Invalid URL for Question ${idx + 1}. Please start with http:// or https://`);
         }
-        answers[idx] = val;
-      } else if (fileInput) {
-        if (fileInput.files[0]) {
-          const file = fileInput.files[0];
+        answers[idx] = captured.link;
+      } else if (captured.file) {
+          const file = captured.file;
           const path = `submissions/${assignmentId}/${studentEmail}/${idx}_${Date.now()}_${file.name}`;
           await SupabaseDB.uploadFile('assignments', path, file);
           answers[idx] = await SupabaseDB.getPublicUrl('assignments', path);
-        }
       }
     }
 
@@ -2466,6 +2486,13 @@ async function submitAssignment(assignmentId, studentEmail) {
       answers: answers,
       attachments: existing?.attachments || [],
       status: 'submitted',
+      // Reset grading fields on re-submission to ensure teacher re-grades fresh content
+      grade: null,
+      final_grade: null,
+      question_scores: {},
+      question_feedback: {},
+      graded_at: null,
+      late_penalty_applied: 0,
       regrade_request: null
     };
 
@@ -2483,6 +2510,7 @@ async function submitAssignment(assignmentId, studentEmail) {
     console.error('Submission failed:', e);
     UI.showNotification(`Submission failed: ${e.message || 'Unknown error'}. ${e.details || ''}`);
   } finally {
+    AntiCheat.destroy(); // Destroy after all processing is complete
     UI.hideLoading('assignmentForm');
     if (btn) { btn.disabled = false; btn.textContent = 'Submit Assignment'; }
   }

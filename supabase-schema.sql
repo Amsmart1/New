@@ -1430,11 +1430,13 @@ DROP POLICY IF EXISTS "Enrollments: Self Enroll" ON enrollments;
 CREATE POLICY "Enrollments: Self Enroll" ON enrollments FOR INSERT WITH CHECK (student_email = get_auth_email());
 DROP POLICY IF EXISTS "Enrollments: Manage for Admins" ON enrollments;
 CREATE POLICY "Enrollments: Manage for Admins" ON enrollments FOR ALL USING (is_admin());
+DROP POLICY IF EXISTS "Enrollments: Student Update Progress" ON enrollments;
+CREATE POLICY "Enrollments: Student Update Progress" ON enrollments FOR UPDATE USING (student_email = get_auth_email()) WITH CHECK (student_email = get_auth_email());
 
 -- 5. Assignments Table
 DROP POLICY IF EXISTS "Assignments: Select" ON assignments;
 CREATE POLICY "Assignments: Select" ON assignments FOR SELECT USING (
-  EXISTS (SELECT 1 FROM enrollments WHERE course_id = assignments.course_id AND student_email = get_auth_email()) OR
+  (EXISTS (SELECT 1 FROM enrollments WHERE course_id = assignments.course_id AND student_email = get_auth_email()) AND status = 'published') OR
   teacher_email = get_auth_email() OR is_admin()
 );
 DROP POLICY IF EXISTS "Assignments: Teachers Manage" ON assignments;
@@ -1476,7 +1478,7 @@ CREATE POLICY "Attendance: Insert" ON attendance FOR INSERT WITH CHECK (student_
 -- 9. Quizzes Table
 DROP POLICY IF EXISTS "Quizzes: Select" ON quizzes;
 CREATE POLICY "Quizzes: Select" ON quizzes FOR SELECT USING (
-  EXISTS (SELECT 1 FROM enrollments WHERE course_id = quizzes.course_id AND student_email = get_auth_email()) OR
+  (EXISTS (SELECT 1 FROM enrollments WHERE course_id = quizzes.course_id AND student_email = get_auth_email()) AND status = 'published') OR
   teacher_email = get_auth_email() OR is_admin()
 );
 DROP POLICY IF EXISTS "Quizzes: Teachers Manage" ON quizzes;
