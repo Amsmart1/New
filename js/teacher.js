@@ -252,12 +252,20 @@ function showLessonForm(courseId, lesson = null) {
     btn.textContent = 'Saving...';
 
     try {
+      const videoUrl = document.getElementById('lessonVideoUrl').value || null;
+      if (videoUrl && !isValidUrl(videoUrl)) {
+          UI.showNotification('Please enter a valid URL for the video.', 'error');
+          btn.disabled = false;
+          btn.textContent = originalText;
+          return;
+      }
+
       const data = {
           ...lesson,
           id: isEdit ? lesson.id : crypto.randomUUID(),
           course_id: courseId,
           title: document.getElementById('lessonTitle').value,
-          video_url: document.getElementById('lessonVideoUrl').value || null,
+          video_url: videoUrl,
           content: document.getElementById('lessonContent').value,
           order_index: parseInt(document.getElementById('lessonOrder').value) || 0
       };
@@ -724,6 +732,8 @@ async function showAssignmentForm(assignment = null, courseId = null) {
       const label = document.getElementById('attLinkLabel').value.trim();
       const url = document.getElementById('attLinkUrl').value.trim();
       if (!url) return UI.showNotification('URL required', 'warn');
+      if (!isValidUrl(url)) return UI.showNotification('Please enter a valid URL (starting with http:// or https://)', 'error');
+
       const container = document.getElementById('attachmentsContainer');
       const div = document.createElement('div');
       div.className = 'flex-between list-item mb-5';
@@ -1613,6 +1623,10 @@ async function showLiveClassForm(liveClass = null) {
       const selCourseId = document.getElementById('liveClassCourseId').value;
       const selPattern = document.getElementById('liveClassRecurring').value;
       const selUrl = document.getElementById('liveClassMeetingUrl').value;
+      const selRecUrl = document.getElementById('liveClassRecordingUrl').value;
+
+      if (selUrl && !isValidUrl(selUrl)) return UI.showNotification('Please enter a valid Meeting URL', 'error');
+      if (selRecUrl && !isValidUrl(selRecUrl)) return UI.showNotification('Please enter a valid Recording URL', 'error');
 
       const roomName = isEdit ? liveClass.room_name : 'SmartLMS_' + Math.random().toString(36).substring(2, 12);
       const data = {

@@ -279,19 +279,13 @@ async function showLesson(lessonId, courseId, fromMyCourses = false) {
 
   let videoHtml = '';
   if (lesson.video_url) {
-      if (lesson.video_url.includes('youtube.com') || lesson.video_url.includes('youtu.be')) {
-          let vidId = '';
-          if (lesson.video_url.includes('v=')) vidId = lesson.video_url.split('v=')[1].split('&')[0];
-          else vidId = lesson.video_url.split('/').pop();
-
-          // Security: Validate vidId contains only alphanumeric characters and hyphens/underscores to prevent XSS
-          if (/^[a-zA-Z0-9_-]+$/.test(vidId)) {
-            videoHtml = `<div class="video-container mb-20" style="position:relative; padding-bottom:56.25%; height:0; overflow:hidden; border-radius:8px">
-              <iframe src="https://www.youtube.com/embed/${vidId}" style="position:absolute; top:0; left:0; width:100%; height:100%; border:none" allowfullscreen></iframe>
-            </div>`;
-          } else {
-            videoHtml = `<div class="card danger-border small">Invalid video ID detected. For security, this embed has been blocked.</div>`;
-          }
+      const vidId = extractYoutubeId(lesson.video_url);
+      if (vidId) {
+          videoHtml = `<div class="video-container mb-20" style="position:relative; padding-bottom:56.25%; height:0; overflow:hidden; border-radius:8px">
+            <iframe src="https://www.youtube.com/embed/${vidId}" style="position:absolute; top:0; left:0; width:100%; height:100%; border:none" allowfullscreen></iframe>
+          </div>`;
+      } else if (lesson.video_url.includes('youtube.com') || lesson.video_url.includes('youtu.be')) {
+          videoHtml = `<div class="card danger-border small">Invalid video ID detected. For security, this embed has been blocked.</div>`;
       } else {
           videoHtml = `<div class="mb-20"><video src="${escapeAttr(lesson.video_url)}" controls style="width:100%; border-radius:8px; background:#000"></video></div>`;
       }
@@ -640,7 +634,7 @@ async function viewFeedback(assignmentId) {
           ${(assignment.questions || []).map((q, idx) => {
             const answer = submission.answers[idx];
             const score = submission.question_scores?.[idx] || 0;
-            const isUrl = typeof answer === 'string' && (answer.startsWith('http://') || answer.startsWith('https://'));
+            const isUrl = typeof answer === 'string' && isValidUrl(answer);
             const displayAnswer = answer ? (isUrl ? `<button class="button secondary small w-auto" onclick="UI.viewFile('${escapeAttr(answer)}', 'Question ${idx + 1} Submission')">View Submitted File/Link</button>` : `<div class="small p-10 mt-5" style="white-space: pre-wrap; background: #f7fafc; border-radius: 4px;">${escapeHtml(answer)}</div>`) : '<div class="small p-10 mt-5 text-muted italic">No answer provided.</div>';
             return `<div class="list-item mb-20 card border-light">
               <div class="flex-between">
@@ -2421,7 +2415,11 @@ async function submitAssignment(assignmentId, studentEmail) {
       if (essay) {
         answers[idx] = essay.value;
       } else if (link) {
-        answers[idx] = link.value;
+        const val = link.value.trim();
+        if (val && !isValidUrl(val)) {
+            throw new Error(`Invalid URL for Question ${idx + 1}. Please start with http:// or https://`);
+        }
+        answers[idx] = val;
       } else if (fileInput) {
         if (fileInput.files[0]) {
           const file = fileInput.files[0];
