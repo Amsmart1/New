@@ -891,6 +891,8 @@ const SessionGuard = {
                         msg = 'Your session has expired due to inactivity.';
                     } else if (reason === 'new_login') {
                         msg = 'You have been logged in from another device or tab.';
+                    } else if (reason === 'role_change') {
+                        msg = 'Your account permissions have been updated.';
                     } else {
                         msg = 'Your session has been invalidated.';
                     }
@@ -1077,6 +1079,87 @@ const CertificateGenerator = {
 };
 
 window.CertificateGenerator = CertificateGenerator;
+
+const Exporter = {
+    csv(filename, headers, rows) {
+        const csvContent = [
+            headers,
+            ...rows.map(row => row.map(val => `"${String(val || '').replace(/"/g, '""')}"`))
+        ].map(e => e.join(",")).join("\n");
+
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.setAttribute("href", url);
+        link.setAttribute("download", filename);
+        link.style.visibility = 'hidden';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    },
+
+    async pdf(filename, title, headers, rows) {
+        if (!window.jspdf) {
+            UI.showNotification('PDF Library not loaded.', 'error');
+            return;
+        }
+        const { jsPDF } = window.jspdf;
+        const orientation = headers.length > 4 ? 'landscape' : 'portrait';
+        const doc = new jsPDF({ orientation });
+        const width = doc.internal.pageSize.getWidth();
+
+        // Title
+        doc.setFontSize(18);
+        doc.text(title, width / 2, 20, { align: 'center' });
+        doc.setFontSize(10);
+        doc.text(`Generated on: ${new Date().toLocaleString()}`, width / 2, 28, { align: 'center' });
+
+        // Table logic
+        let y = 40;
+        const margin = 15;
+        const colWidth = (width - (margin * 2)) / headers.length;
+
+        // Headers
+        doc.setFont('helvetica', 'bold');
+        doc.setFillColor(240, 240, 240);
+        doc.rect(margin, y - 5, width - (margin * 2), 7, 'F');
+        headers.forEach((h, i) => {
+            doc.text(String(h), margin + (i * colWidth), y);
+        });
+
+        y += 10;
+        doc.setFont('helvetica', 'normal');
+
+        // Rows
+        rows.forEach((row, rowIndex) => {
+            // Page break check
+            if (y > 280) {
+                doc.addPage();
+                y = 20;
+                // Re-render headers on new page
+                doc.setFont('helvetica', 'bold');
+                doc.setFillColor(240, 240, 240);
+                doc.rect(margin, y - 5, width - (margin * 2), 7, 'F');
+                headers.forEach((h, i) => {
+                    doc.text(String(h), margin + (i * colWidth), y);
+                });
+                y += 10;
+                doc.setFont('helvetica', 'normal');
+            }
+
+            row.forEach((cell, i) => {
+                const text = String(cell || '');
+                const truncated = text.length > 25 ? text.substring(0, 22) + '...' : text;
+                doc.text(truncated, margin + (i * colWidth), y);
+            });
+            y += 8;
+        });
+
+        doc.save(filename);
+    }
+};
+
+window.Exporter = Exporter;
 
 UI.createFileUploader = function(containerId, options = {}) {
     const container = document.getElementById(containerId);

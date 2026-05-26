@@ -464,6 +464,8 @@ async function renderStudents() {
         <h2 class="m-0">My Enrolled Students</h2>
         <div class="flex gap-10">
             <input type="text" id="studentSearch" placeholder="Search by name or email..." class="m-0" style="width:250px" value="${escapeAttr(searchTerm)}" oninput="renderStudents()">
+            <button class="button secondary small w-auto" onclick="exportStudents('csv')">CSV</button>
+            <button class="button secondary small w-auto" onclick="exportStudents('pdf')">PDF</button>
         </div>
       </div>
       <div class="p-0 mt-15" style="overflow-x:auto">
@@ -487,6 +489,18 @@ async function renderStudents() {
     </div>
     <div id="certFormArea" class="hidden mt-20"></div>
     `;
+
+    window.exportStudents = async (type) => {
+        const headers = ['Name', 'Email', 'Course'];
+        const rows = students.map(s => [s.full_name || 'N/A', s.email, s.course_title || 'Unknown']);
+
+        if (type === 'csv') {
+            Exporter.csv('students_list.csv', headers, rows);
+        } else {
+            await Exporter.pdf('students_list.pdf', 'Enrolled Students List', headers, rows);
+        }
+    };
+
   } catch (error) {
     console.error('Students error:', error);
     content.innerHTML = `<div class="stat-card danger">
@@ -2499,6 +2513,8 @@ async function renderGradeBook() {
                         <option value="">All Courses</option>
                         ${courses.map(c => `<option value="${c.id}">${escapeHtml(c.title)}</option>`).join('')}
                     </select>
+                    <button class="button secondary small w-auto" onclick="exportGradeBook('csv')">CSV</button>
+                    <button class="button secondary small w-auto" onclick="exportGradeBook('pdf')">PDF</button>
                 </div>
             </div>
             <div id="gradeBookArea" class="mt-20"></div>
@@ -2512,6 +2528,8 @@ async function renderGradeBook() {
             let courseIds = filteredCourses.map(c => c.id);
 
             const { data: enrollments } = await SupabaseDB.getEnrollmentsByCourses(courseIds);
+
+            window.currentGradeBookData = { filteredCourses, enrollments, assignments, quizzes, submissions, quizSubs };
 
             let html = '';
 
@@ -2602,6 +2620,70 @@ async function renderGradeBook() {
         content.innerHTML = `<div class="card danger-border"><h3>Error Loading Grade Book</h3><p class="small">${escapeHtml(error.message)}</p></div>`;
     }
 }
+
+window.exportGradeBook = async (type) => {
+    const data = window.currentGradeBookData;
+    if (!data) return UI.showNotification('No data to export', 'warn');
+
+    const { filteredCourses, enrollments, assignments, quizzes, submissions, quizSubs } = data;
+
+    let allHeaders = ['Course', 'Student', 'Type', 'Title', 'Grade', 'Raw Score', 'Max Points'];
+    let allRows = [];
+
+    for (const course of filteredCourses) {
+        const courseAssigns = assignments.filter(a => a.course_id === course.id && a.status === 'published');
+        const courseQuizzes = quizzes.filter(q => q.course_id === course.id && q.status === 'published');
+        const courseStudents = enrollments.filter(e => e.course_id === course.id).map(e => e.student_email);
+
+        for (const email of courseStudents) {
+            // Assignments
+            courseAssigns.forEach(a => {
+                const sub = submissions.find(s => s.assignment_id === a.id && s.student_email === email);
+                if (sub && sub.status === 'graded') {
+                    allRows.push([
+                        course.title,
+                        email,
+                        'Assignment',
+                        a.title,
+                        `${sub.final_grade}%`,
+                        sub.grade,
+                        a.points_possible
+                    ]);
+                } else {
+                    allRows.push([course.title, email, 'Assignment', a.title, '-', '-', a.points_possible]);
+                }
+            });
+
+            // Quizzes
+            courseQuizzes.forEach(q => {
+                const sub = quizSubs.filter(s => s.quiz_id === q.id && s.student_email === email && s.status === 'submitted')
+                                   .sort((a,b) => (b.score || 0) - (a.score || 0))[0];
+                if (sub) {
+                    const rawScore = Math.round((sub.score / 100) * sub.total_points);
+                    allRows.push([
+                        course.title,
+                        email,
+                        'Quiz',
+                        q.title,
+                        `${sub.score}%`,
+                        rawScore,
+                        sub.total_points
+                    ]);
+                } else {
+                    allRows.push([course.title, email, 'Quiz', q.title, '-', '-', '-']);
+                }
+            });
+        }
+    }
+
+    if (allRows.length === 0) return UI.showNotification('No grades to export', 'warn');
+
+    if (type === 'csv') {
+        Exporter.csv('gradebook_export.csv', allHeaders, allRows);
+    } else {
+        await Exporter.pdf('gradebook_export.pdf', 'Detailed Grade Book Report', allHeaders, allRows);
+    }
+};
 
 window.renderGradeBook = renderGradeBook;
 

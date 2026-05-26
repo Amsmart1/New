@@ -252,12 +252,22 @@ async function toggleUserStatus(email, currentStatus) {
     const user = await SupabaseDB.getUser(email);
     if (user) {
       user.active = !currentStatus;
+
+      // Explicit session invalidation if deactivating
+      if (!user.active) {
+          user.session_id = 'deactivated_' + Date.now();
+          user.metadata = { ...(user.metadata || {}), last_invalidation_reason: 'deactivated' };
+      }
+
       await SupabaseDB.saveUser(user);
       UI.showNotification(`User ${user.active ? 'activated' : 'deactivated'}`, 'success');
 
       // Update local state if filtered
       const idx = allUsers.findIndex(u => u.email === email);
-      if (idx !== -1) allUsers[idx].active = user.active;
+      if (idx !== -1) {
+          allUsers[idx].active = user.active;
+          allUsers[idx].metadata = user.metadata;
+      }
 
       filterUsers(); // Refresh display with current filters
     }
@@ -279,6 +289,11 @@ async function lockUser(email, minutes) {
     const user = await SupabaseDB.getUser(email);
     if (user) {
       user.locked_until = new Date(Date.now() + minutes * 60000).toISOString();
+
+      // Explicit session invalidation
+      user.session_id = 'locked_' + Date.now();
+      user.metadata = { ...(user.metadata || {}), last_invalidation_reason: 'locked' };
+
       await SupabaseDB.saveUser(user);
       UI.showNotification(`User locked for ${minutes} minutes`);
       renderUsers();
@@ -304,12 +319,22 @@ async function toggleUserFlag(email, currentFlag) {
     const user = await SupabaseDB.getUser(email);
     if (user) {
       user.flagged = !currentFlag;
+
+      // Explicit session invalidation if flagging
+      if (user.flagged) {
+          user.session_id = 'flagged_' + Date.now();
+          user.metadata = { ...(user.metadata || {}), last_invalidation_reason: 'flagged' };
+      }
+
       await SupabaseDB.saveUser(user);
       UI.showNotification(`User ${user.flagged ? 'flagged' : 'unflagged'}`, user.flagged ? 'warn' : 'success');
 
       // Update local state
       const idx = allUsers.findIndex(u => u.email === email);
-      if (idx !== -1) allUsers[idx].flagged = user.flagged;
+      if (idx !== -1) {
+          allUsers[idx].flagged = user.flagged;
+          allUsers[idx].metadata = user.metadata;
+      }
 
       filterUsers();
     }
@@ -1132,6 +1157,18 @@ function showUserForm(user = null) {
           active: document.getElementById('active').checked
       };
       if (isEdit) userData.created_at = user.created_at;
+      if (isEdit) {
+          const roleChanged = user.role !== userData.role;
+          const statusChanged = user.active !== userData.active;
+          if (roleChanged || (statusChanged && !userData.active)) {
+              userData.session_id = 'admin_mod_' + Date.now();
+              userData.metadata = {
+                  ...(user.metadata || {}),
+                  last_invalidation_reason: roleChanged ? 'role_change' : 'deactivated'
+              };
+          }
+      }
+
       if (isEdit && user.email !== userData.email) {
           if (await SupabaseDB.updateUserEmail(user.email, userData.email, userData)) {
             UI.showNotification('User updated including email', 'success');
