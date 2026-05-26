@@ -696,6 +696,7 @@ document.addEventListener('DOMContentLoaded', () => {
             // After updating the password, generate a fresh session ID
             const sid = SessionManager.getSessionId(true);
             freshUser.session_id = sid;
+            freshUser.metadata = { ...(freshUser.metadata || {}), last_invalidation_reason: 'password_change' };
 
             // Persist changes and get authoritative user object
             const updatedUser = await SupabaseDB.saveUser(freshUser);

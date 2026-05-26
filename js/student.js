@@ -907,7 +907,10 @@ async function renderGrades() {
     const graded = submissions.sort((a,b) => new Date(a.submitted_at) - new Date(b.submitted_at));
 
     container.innerHTML = `
-      <h2 class="m-0">My Grades</h2>
+      <div class="flex-between">
+        <h2 class="m-0">My Grades</h2>
+        <button class="button secondary small w-auto" onclick="exportStudentGrades()">Export PDF</button>
+      </div>
       <div class="card p-0 mt-20" style="overflow-x:auto">
         <table>
           <thead><tr><th>Assignment</th><th>Date</th><th>Grade</th><th>Feedback</th></tr></thead>
@@ -920,6 +923,23 @@ async function renderGrades() {
         </table>
       </div>
     `;
+
+    window.exportStudentGrades = async () => {
+        const headers = ['Assignment', 'Date', 'Grade', 'Score'];
+        const rows = graded.map(s => {
+            const a = assigns.find(x => x.id === s.assignment_id);
+            return [
+                a?.title || 'Unknown',
+                new Date(s.submitted_at).toLocaleDateString(),
+                `${s.final_grade}%`,
+                `${s.grade} / ${a?.points_possible || '-'}`
+            ];
+        });
+
+        if (rows.length === 0) return UI.showNotification('No grades to export', 'warn');
+        await Exporter.pdf('my_grades.pdf', 'My Academic Grades Report', headers, rows);
+    };
+
   } catch (error) {
     console.error('Grades error:', error);
     container.innerHTML = `<div class="stat-card danger">
