@@ -55,10 +55,6 @@ const RESET_TAXONOMY = {
 };
 
 const Auth = {
-    async hashPassword(password, email = '') {
-        return window.hashPassword(password, email);
-    },
-
     async init() {
         // Parallelize initial checks
         const [m, user] = await Promise.all([
@@ -394,7 +390,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
 
-            const hashedPassword = await Auth.hashPassword(password, email);
+            const hashedPassword = await window.hashPassword(password, email);
 
             // Generate a fresh session ID for the new signup
             const sid = SessionManager.getSessionId(true);
@@ -505,7 +501,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             }
 
-            const hashedInput = await Auth.hashPassword(password, email);
+            const hashedInput = await window.hashPassword(password, email);
 
             try {
                 // Clear existing session and generate a fresh one BEFORE authentication
@@ -687,7 +683,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             // Update password and clear reset request
-            freshUser.password = await Auth.hashPassword(newPass, freshUser.email);
+            freshUser.password = await window.hashPassword(newPass, freshUser.email);
             freshUser.reset_request = null;
 
             // After updating the password, generate a fresh session ID

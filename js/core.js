@@ -1,3 +1,104 @@
+// Global Utilities
+window.isAccountLocked = function(user) {
+    return !!(user && user.locked_until && Date.now() < new Date(user.locked_until).getTime());
+};
+
+window.isActiveMaintenance = function(m) {
+    if (!m) return false;
+    const now = new Date().getTime();
+    if (m.enabled) {
+        if (!m.manual_until) return true;
+        if (now < new Date(m.manual_until).getTime()) return true;
+    }
+    const schedules = Array.isArray(m.schedules) ? m.schedules : [];
+    return schedules.some(s => now >= new Date(s.startAt).getTime() && now <= new Date(s.endAt).getTime());
+};
+
+window.getUpcomingMaintenance = function(m) {
+    const now = new Date().getTime();
+    const schedules = (Array.isArray(m.schedules) ? m.schedules : []).filter(s => new Date(s.startAt).getTime() > now).sort((a, b) => new Date(a.startAt).getTime() - new Date(b.startAt).getTime());
+    return schedules[0] || null;
+};
+
+window.getActiveMaintenanceEnd = function(m) {
+    const now = new Date().getTime();
+    if (m && m.manual_until && now < new Date(m.manual_until).getTime()) return new Date(m.manual_until).getTime();
+    const s = (Array.isArray(m.schedules) ? m.schedules : []).find(s => now >= new Date(s.startAt).getTime() && now <= new Date(s.endAt).getTime());
+    return s ? new Date(s.endAt).getTime() : null;
+};
+
+window.normalizeEmail = function(email) {
+    return (email || '').trim().toLowerCase();
+};
+
+window.isValidEmail = function(email) {
+    const re = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    return re.test(email);
+};
+
+window.isStrongPassword = function(pass) {
+    if (!pass || pass.length < 8) return false;
+    const hasUpper = /[A-Z]/.test(pass);
+    const hasLower = /[a-z]/.test(pass);
+    const hasNumber = /\d/.test(pass);
+    const hasSpecial = /[!@#$%^&*(),.?":{}|<>[\]\\/`~;:'"-=+]/.test(pass);
+    return hasUpper && hasLower && hasNumber && hasSpecial;
+};
+
+window.updatePasswordStrength = function(password) {
+    const meter = document.getElementById('passwordStrength');
+    const container = document.getElementById('passwordStrengthContainer');
+    if (!meter || !container) return;
+
+    if (!password) {
+        meter.style.width = '0';
+        container.style.display = 'none';
+        return;
+    }
+
+    container.style.display = 'block';
+    let strength = 0;
+    if (password.length >= 8) strength += 20;
+    if (password.length >= 12) strength += 10;
+    if (/[A-Z]/.test(password)) strength += 20;
+    if (/[a-z]/.test(password)) strength += 10;
+    if (/[0-9]/.test(password)) strength += 20;
+    if (/[!@#$%^&*(),.?":{}|<>[\]\\/`~;:'"-=+]/.test(password)) strength += 20;
+
+    meter.style.width = Math.min(100, strength) + '%';
+
+    if (strength <= 40) meter.style.backgroundColor = 'var(--danger)';
+    else if (strength <= 60) meter.style.backgroundColor = 'var(--warn)';
+    else if (strength <= 80) meter.style.backgroundColor = '#4299e1'; // Blue
+    else meter.style.backgroundColor = 'var(--ok)';
+};
+
+window.togglePasswordVisibility = function(inputId) {
+    const input = document.getElementById(inputId);
+    if (!input) return;
+    const toggle = input.parentElement?.querySelector('.password-toggle');
+    const isPassword = input.type === 'password';
+    input.type = isPassword ? 'text' : 'password';
+    if (toggle) toggle.textContent = isPassword ? '🔒' : '👁️';
+};
+
+window.hashPassword = async function(password, salt = '') {
+    const encoder = new TextEncoder();
+    const systemSalt = 'smart-lms-v1-';
+    const data = encoder.encode(systemSalt + salt + password);
+    const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+};
+
+window.legacyHashPassword = async function(password) {
+    const encoder = new TextEncoder();
+    const data = encoder.encode(password);
+    const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+};
+
 // Common Utilities
 window.escapeHtml = function(s) {
     if (s === null || s === undefined) return '';
@@ -887,109 +988,7 @@ async function updateMaintBanner() {
     }
 }
 
-window.normalizeEmail = function(email) {
-    return (email || '').trim().toLowerCase();
-};
-
-window.isValidEmail = function(email) {
-    const re = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    return re.test(email);
-};
-
-window.isStrongPassword = function(pass) {
-    if (!pass || pass.length < 8) return false;
-    const hasUpper = /[A-Z]/.test(pass);
-    const hasLower = /[a-z]/.test(pass);
-    const hasNumber = /\d/.test(pass);
-    const hasSpecial = /[!@#$%^&*(),.?":{}|<>[\]\\/`~;:'"-=+]/.test(pass);
-    return hasUpper && hasLower && hasNumber && hasSpecial;
-};
-
-window.updatePasswordStrength = function(password) {
-    const meter = document.getElementById('passwordStrength');
-    const container = document.getElementById('passwordStrengthContainer');
-    if (!meter || !container) return;
-
-    if (!password) {
-        meter.style.width = '0';
-        container.style.display = 'none';
-        return;
-    }
-
-    container.style.display = 'block';
-    let strength = 0;
-    if (password.length >= 8) strength += 20;
-    if (password.length >= 12) strength += 10;
-    if (/[A-Z]/.test(password)) strength += 20;
-    if (/[a-z]/.test(password)) strength += 10;
-    if (/[0-9]/.test(password)) strength += 20;
-    if (/[!@#$%^&*(),.?":{}|<>[\]\\/`~;:'"-=+]/.test(password)) strength += 20;
-
-    meter.style.width = Math.min(100, strength) + '%';
-
-    if (strength <= 40) meter.style.backgroundColor = 'var(--danger)';
-    else if (strength <= 60) meter.style.backgroundColor = 'var(--warn)';
-    else if (strength <= 80) meter.style.backgroundColor = '#4299e1'; // Blue
-    else meter.style.backgroundColor = 'var(--ok)';
-};
-
-window.togglePasswordVisibility = function(inputId) {
-    const input = document.getElementById(inputId);
-    const toggle = input?.parentElement?.querySelector('.password-toggle');
-    if (input) {
-        const isPassword = input.type === 'password';
-        input.type = isPassword ? 'text' : 'password';
-        if (toggle) toggle.textContent = isPassword ? '🔒' : '👁️';
-    }
-};
-
-window.isAccountLocked = function(user) {
-    return !!(user && user.locked_until && Date.now() < new Date(user.locked_until).getTime());
-};
-
-window.isActiveMaintenance = function(m) {
-    if (!m) return false;
-    const now = new Date().getTime();
-    if (m.enabled) {
-        if (!m.manual_until) return true;
-        if (now < new Date(m.manual_until).getTime()) return true;
-    }
-    const schedules = Array.isArray(m.schedules) ? m.schedules : [];
-    return schedules.some(s => now >= new Date(s.startAt).getTime() && now <= new Date(s.endAt).getTime());
-};
-
-window.getUpcomingMaintenance = function(m) {
-    const now = new Date().getTime();
-    const schedules = (Array.isArray(m.schedules) ? m.schedules : []).filter(s => new Date(s.startAt).getTime() > now).sort((a, b) => new Date(a.startAt).getTime() - new Date(b.startAt).getTime());
-    return schedules[0] || null;
-};
-
-window.getActiveMaintenanceEnd = function(m) {
-    const now = new Date().getTime();
-    if (m && m.manual_until && now < new Date(m.manual_until).getTime()) return new Date(m.manual_until).getTime();
-    const s = (Array.isArray(m.schedules) ? m.schedules : []).find(s => now >= new Date(s.startAt).getTime() && now <= new Date(s.endAt).getTime());
-    return s ? new Date(s.endAt).getTime() : null;
-};
-
 window.NotificationManager = NotificationManager;
-
-window.legacyHashPassword = async function(password) {
-    const encoder = new TextEncoder();
-    const data = encoder.encode(password);
-    const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-    const hashArray = Array.from(new Uint8Array(hashBuffer));
-    return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-};
-
-window.hashPassword = async function(password, salt = '') {
-    const encoder = new TextEncoder();
-    // Use a fixed system salt + provided salt (e.g. email)
-    const systemSalt = 'smart-lms-v1-';
-    const data = encoder.encode(systemSalt + salt + password);
-    const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-    const hashArray = Array.from(new Uint8Array(hashBuffer));
-    return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-};
 
 const CertificateGenerator = {
     async generatePDF(studentName, courseTitle, issueDate, verificationId) {
