@@ -641,14 +641,21 @@ async function renderMaintenance() {
         await SupabaseDB.saveMaintenance(maintenance);
     }
 
+    const isActive = isActiveMaintenance(maintenance);
+
     content.innerHTML = `
     <section>
-      <h3>Maintenance Settings</h3>
+      <div class="flex-between">
+        <h3>Maintenance Settings</h3>
+        <span class="badge ${isActive ? 'badge-warn' : 'badge-active'}" style="font-size: 0.9rem; padding: 5px 15px;">
+            STATUS: ${isActive ? 'ACTIVE' : 'INACTIVE'}
+        </span>
+      </div>
       <form id="maintenanceForm" class="card">
         <div style="margin-bottom:15px">
             <label class="flex" style="align-items:center; gap:10px">
                 <input type="checkbox" id="maintenanceEnabled" ${maintenance.enabled ? 'checked' : ''} style="width:auto; margin:0">
-                Enable Maintenance Mode
+                Enable Maintenance Mode (Master Toggle)
             </label>
         </div>
         <div style="margin-bottom:15px">
