@@ -36,6 +36,22 @@ window.isValidEmail = function(email) {
     return re.test(email);
 };
 
+window.isValidUrl = function(string) {
+    try {
+        const url = new URL(string);
+        return url.protocol === 'http:' || url.protocol === 'https:';
+    } catch (_) {
+        return false;
+    }
+};
+
+window.extractYoutubeId = function(url) {
+    if (!url) return null;
+    const regex = /(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/|youtube\.com\/shorts\/)([a-zA-Z0-9_-]{11})/i;
+    const match = url.match(regex);
+    return match ? match[1] : null;
+};
+
 window.isStrongPassword = function(pass) {
     if (!pass || pass.length < 8) return false;
     const hasUpper = /[A-Z]/.test(pass);
