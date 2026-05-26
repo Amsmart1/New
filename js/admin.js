@@ -64,6 +64,7 @@ async function renderDashboard() {
           <option value="all">All Users</option>
           <option value="student">Students</option>
           <option value="teacher">Teachers</option>
+          <option value="admin">Admins</option>
         </select>
       </div>
       <div class="grid-2 mt-10">
@@ -944,7 +945,13 @@ async function importBackup(event) {
                 const batch = records.slice(i, i + batchSize);
                 const proms = batch.map(async r => {
                     switch(table) {
-                        case 'users': return SupabaseDB.saveUser(r);
+                        case 'users':
+                            // When restoring users, ensure we use the secure path if password is present
+                            // or fallback to direct update if it's just metadata/status.
+                            // If it's a new user (no created_at in record), saveUser will use RPC.
+                            // We explicitly pass password_hash as 'password' if it exists in the backup record
+                            if (r.password_hash && !r.password) r.password = r.password_hash;
+                            return SupabaseDB.saveUser(r);
                         case 'courses': return SupabaseDB.saveCourse(r);
                         case 'assignments': return SupabaseDB.saveAssignment(r);
                         case 'quizzes': return SupabaseDB.saveQuiz(r);

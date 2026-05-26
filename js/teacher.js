@@ -231,6 +231,8 @@ function showLessonForm(courseId, lesson = null) {
       <form id="lessonForm" class="mt-20">
         <label>Lesson Title</label>
         <input type="text" id="lessonTitle" placeholder="Lesson Title" value="${isEdit ? escapeHtml(lesson.title) : ''}" required>
+        <label>Video URL (Optional)</label>
+        <input type="url" id="lessonVideoUrl" placeholder="https://youtube.com/..." value="${isEdit ? escapeHtml(lesson.video_url || '') : ''}">
         <label>Content</label>
         <textarea id="lessonContent" placeholder="Lesson content..." rows="10">${isEdit ? escapeHtml(lesson.content) : ''}</textarea>
         <label>Order Index</label>
@@ -255,6 +257,7 @@ function showLessonForm(courseId, lesson = null) {
           id: isEdit ? lesson.id : crypto.randomUUID(),
           course_id: courseId,
           title: document.getElementById('lessonTitle').value,
+          video_url: document.getElementById('lessonVideoUrl').value || null,
           content: document.getElementById('lessonContent').value,
           order_index: parseInt(document.getElementById('lessonOrder').value) || 0
       };
@@ -620,6 +623,26 @@ async function showAssignmentForm(assignment = null, courseId = null) {
           <input type="hidden" id="antiCheatConfigData" value='${JSON.stringify(assignment?.anti_cheat_config || {})}'>
         </div>
         <div class="mt-20">
+          <h3 class="m-0">Supporting Materials (Attachments)</h3>
+          <p class="small text-muted mt-5">Upload files or add links that students can use for this assignment.</p>
+          <div id="attachmentsContainer" class="mt-10">
+            ${isEdit && assignment.attachments ? assignment.attachments.map((att, idx) => `
+                <div class="flex-between list-item mb-5" data-idx="${idx}">
+                    <span class="small">${escapeHtml(att.name || att.url)}</span>
+                    <button type="button" class="button danger tiny w-auto" onclick="this.parentElement.remove()">Remove</button>
+                    <input type="hidden" class="att-data" value='${JSON.stringify(att)}'>
+                </div>
+            `).join('') : ''}
+          </div>
+          <div id="assignAttachmentUploader" class="mt-10"></div>
+          <div class="flex gap-10 mt-10">
+              <input type="text" id="attLinkLabel" placeholder="Link Label" class="small m-0" style="width:150px">
+              <input type="url" id="attLinkUrl" placeholder="https://..." class="small m-0">
+              <button type="button" class="button secondary small w-auto" onclick="addAssignmentLink()">Add Link</button>
+          </div>
+        </div>
+
+        <div class="mt-20">
           <h3 class="m-0">Questions</h3>
           <div id="questionsContainer" class="mt-15"></div>
           <button type="button" class="button w-auto secondary small" onclick="addQuestionField()">+ Add Question</button>
@@ -680,6 +703,39 @@ async function showAssignmentForm(assignment = null, courseId = null) {
   };
   if (isEdit && assignment.questions) { assignment.questions.forEach(q => window.addQuestionField(q)); }
   updateACPreview();
+
+  UI.createFileUploader('assignAttachmentUploader', {
+      bucket: 'assignments',
+      pathPrefix: 'templates',
+      onUploadSuccess: (url, name) => {
+          const container = document.getElementById('attachmentsContainer');
+          const div = document.createElement('div');
+          div.className = 'flex-between list-item mb-5';
+          div.innerHTML = `
+            <span class="small">${escapeHtml(name)}</span>
+            <button type="button" class="button danger tiny w-auto" onclick="this.parentElement.remove()">Remove</button>
+            <input type="hidden" class="att-data" value='${JSON.stringify({ name, url, type: 'file' })}'>
+          `;
+          container.appendChild(div);
+      }
+  });
+
+  window.addAssignmentLink = () => {
+      const label = document.getElementById('attLinkLabel').value.trim();
+      const url = document.getElementById('attLinkUrl').value.trim();
+      if (!url) return UI.showNotification('URL required', 'warn');
+      const container = document.getElementById('attachmentsContainer');
+      const div = document.createElement('div');
+      div.className = 'flex-between list-item mb-5';
+      div.innerHTML = `
+        <span class="small">${escapeHtml(label || url)}</span>
+        <button type="button" class="button danger tiny w-auto" onclick="this.parentElement.remove()">Remove</button>
+        <input type="hidden" class="att-data" value='${JSON.stringify({ name: label || url, url, type: 'link' })}'>
+      `;
+      container.appendChild(div);
+      document.getElementById('attLinkLabel').value = '';
+      document.getElementById('attLinkUrl').value = '';
+  };
   document.getElementById('assignmentForm').addEventListener('submit', async (e) => {
     e.preventDefault();
     const btn = e.target.querySelector('button[type="submit"]');
@@ -704,6 +760,11 @@ async function showAssignmentForm(assignment = null, courseId = null) {
       const selCourseId = document.getElementById('assignmentCourseId').value;
       const acConfig = JSON.parse(document.getElementById('antiCheatConfigData').value || '{}');
 
+      const attachments = [];
+      document.querySelectorAll('#attachmentsContainer .att-data').forEach(input => {
+          try { attachments.push(JSON.parse(input.value)); } catch(e) {}
+      });
+
       const assignmentData = {
         ...assignment,
         id: isEdit ? assignment.id : crypto.randomUUID(),
@@ -720,7 +781,7 @@ async function showAssignmentForm(assignment = null, courseId = null) {
         teacher_email: user.email,
         questions: questions,
         allowed_extensions: allowedExt,
-        attachments: isEdit ? assignment.attachments : []
+        attachments: attachments
       };
       const result = await SupabaseDB.saveAssignment(assignmentData);
       if (result) {
@@ -1414,7 +1475,10 @@ async function renderLiveClasses() {
                     <div class="live-sch-countdown" data-target="${startAt}" data-start="${liveClass.created_at ? new Date(liveClass.created_at).getTime() : now}" data-label="Starts In:"></div>
                   ` : isLive ? `
                     <div class="live-sch-countdown" data-target="${endAt}" data-start="${startAt}" data-label="Ends In:"></div>
-                  ` : '<div class="tiny text-muted">Session Finished</div>'}
+                  ` : `
+                    <div class="tiny text-muted">Session Finished</div>
+                    ${liveClass.recording_url ? `<div class="mt-5"><a href="${escapeAttr(liveClass.recording_url)}" target="_blank" class="button secondary tiny w-auto">View Recording</a></div>` : ''}
+                  `}
               </div>
               <div class="flex gap-10 mt-15">
                 <button class="button w-auto small" onclick="handleStartLiveClass('${liveClass.id}', '${liveClass.room_name}', '${escapeAttr(liveClass.meeting_url || '')}')">
@@ -1503,6 +1567,10 @@ async function showLiveClassForm(liveClass = null) {
               <div id="urlHintArea"></div>
             </div>
           </div>
+          <div class="mt-10">
+            <label class="small">Recording URL (Post-session)</label>
+            <input type="url" id="liveClassRecordingUrl" placeholder="https://..." value="${isEdit ? escapeHtml(liveClass.recording_url || '') : ''}">
+          </div>
           <div class="flex gap-10 mt-15">
             <button type="submit" class="button w-auto px-40">${isEdit ? 'Update Class' : 'Schedule Class'}</button>
             <button type="button" class="button secondary w-auto px-40" onclick="document.getElementById('liveFormArea').classList.add('hidden')">Cancel</button>
@@ -1557,6 +1625,7 @@ async function showLiveClassForm(liveClass = null) {
         end_at: new Date(document.getElementById('liveClassEnd').value).toISOString(),
         room_name: roomName,
         meeting_url: selUrl,
+        recording_url: document.getElementById('liveClassRecordingUrl').value || null,
         status: isEdit ? liveClass.status : 'scheduled',
         recurring_config: {
             pattern: selPattern
@@ -2620,6 +2689,8 @@ async function showMaterialForm() {
         <select id="matCourseId">${courses.map(c => `<option value="${c.id}">${escapeHtml(c.title)}</option>`).join('')}</select>
         <label>Material Title</label>
         <input type="text" id="matTitle" placeholder="e.g. Syllabus, Week 1 Slides">
+        <label>Description (Optional)</label>
+        <textarea id="matDesc" placeholder="Briefly describe this material..." rows="2"></textarea>
         <div id="materialUploaderContainer" class="mt-10"></div>
         <input type="hidden" id="matFileUrl">
         <div class="flex gap-10 mt-20">
@@ -2644,6 +2715,7 @@ async function saveMaterial() {
   const user = await SessionManager.getCurrentUser();
   const courseId = document.getElementById('matCourseId').value;
   const title = document.getElementById('matTitle').value;
+  const description = document.getElementById('matDesc').value;
   const url = document.getElementById('matFileUrl').value;
   if (!title || !url) {
       UI.showNotification('Title and file required', 'warn');
@@ -2662,6 +2734,7 @@ async function saveMaterial() {
       course_id: courseId,
       teacher_email: user.email,
       title: title,
+      description: description,
       file_url: url
     });
     UI.showNotification('Material saved successfully', 'success');
