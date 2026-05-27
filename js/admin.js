@@ -1,6 +1,4 @@
 async function renderDashboard() {
-
-  NotificationManager.initPolling();
   SupabaseDB.deleteExpiredBroadcasts().catch(e => console.warn('Cleanup error:', e));
 
   const content = document.getElementById('pageContent');
@@ -60,7 +58,7 @@ async function renderDashboard() {
 
     content.innerHTML = `
     <div class="card">
-      <h3>System Broadcast</h3>
+      <h3 class="m-0 mb-15">Quick Broadcast</h3>
       <div class="grid-2">
         <input type="text" id="bcTitle" placeholder="Title" class="no-margin">
         <select id="bcRole" class="no-margin">
@@ -80,14 +78,25 @@ async function renderDashboard() {
       <button class="button mt-10" onclick="broadcastNotif()">Send Broadcast</button>
     </div>
 
+    <h3 class="mb-15 mt-30">Academic Management & Support</h3>
     <div class="stats-grid">
-      <div class="stat-card"><h4>Total Users</h4><div class="value">${escapeHtml(stats.totalUsers)}</div></div>
-      <div class="stat-card"><h4>Courses</h4><div class="value">${escapeHtml(stats.courses)}</div></div>
+      <div class="stat-card" style="border-left-color: var(--p)">
+        <h4>Students / Teachers</h4>
+        <div class="value">${escapeHtml(stats.students)} / ${escapeHtml(stats.teachers)}</div>
+      </div>
+      <div class="stat-card"><h4>Active Courses</h4><div class="value">${escapeHtml(stats.courses)}</div></div>
       <div class="stat-card"><h4>Enrollments</h4><div class="value">${escapeHtml(stats.enrollments)}</div></div>
-      <div class="stat-card" style="border-left-color: var(--p)"><h4>Open Tickets</h4><div class="value">${escapeHtml(stats.openTickets)}</div></div>
+      <div class="stat-card" style="border-left-color: var(--warn)"><h4>Support Tickets</h4><div class="value">${escapeHtml(stats.openTickets)}</div></div>
     </div>
 
-    <h3 class="mb-15">User Security & Integrity</h3>
+    <div class="stats-grid">
+      <div class="stat-card"><h4>Assignments</h4><div class="value">${escapeHtml(stats.assignments)}</div></div>
+      <div class="stat-card"><h4>Submissions</h4><div class="value">${escapeHtml(stats.submissions)}</div></div>
+      <div class="stat-card" style="border-left-color: var(--warn)"><h4>Pending Grading</h4><div class="value">${escapeHtml(stats.pendingGrading)}</div></div>
+      <div class="stat-card"><h4>Quizzes</h4><div class="value">${escapeHtml(stats.quizzes)}</div></div>
+    </div>
+
+    <h3 class="mb-15 mt-30">User Security & Integrity</h3>
     <div class="stats-grid">
       <div class="stat-card" style="border-left-color: var(--danger)"><h4>Locked Accounts</h4><div class="value">${escapeHtml(stats.locked)}</div></div>
       <div class="stat-card" style="border-left-color: var(--danger)"><h4>Flagged Accounts</h4><div class="value">${escapeHtml(stats.flagged)}</div></div>
@@ -95,18 +104,12 @@ async function renderDashboard() {
       <div class="stat-card" style="border-left-color: var(--danger)"><h4>Violations</h4><div class="value">${escapeHtml(stats.violations)}</div></div>
     </div>
 
-    <h3 class="mb-15">Academic Activity</h3>
-    <div class="stats-grid">
-      <div class="stat-card"><h4>Assignments</h4><div class="value">${escapeHtml(stats.assignments)}</div></div>
-      <div class="stat-card"><h4>Submissions</h4><div class="value">${escapeHtml(stats.submissions)}</div></div>
-      <div class="stat-card"><h4>Pending Grading</h4><div class="value">${escapeHtml(stats.pendingGrading)}</div></div>
-      <div class="stat-card"><h4>Quizzes</h4><div class="value">${escapeHtml(stats.quizzes)}</div></div>
-    </div>
-
+    <h3 class="mb-15 mt-30">System Status</h3>
     <div class="stats-grid">
       <div class="stat-card" style="border-left-color: ${stats.maintStatus === 'Active' ? 'var(--warn)' : 'var(--ok)'}">
-        <h4>System Maintenance</h4><div class="value">${escapeHtml(stats.maintStatus)}</div>
+        <h4>Maintenance Mode</h4><div class="value">${escapeHtml(stats.maintStatus)}</div>
       </div>
+      <div class="stat-card"><h4>API Success Rate</h4><div class="value">${escapeHtml(SupabaseDB.getStats().successRate)}%</div></div>
     </div>
     `;
   } catch (error) {
@@ -125,6 +128,62 @@ let allUsers = [];
 let allTickets = [];
 let filteredUsers = [];
 
+async function renderCourses() {
+  const content = document.getElementById('pageContent');
+  if (!content) return;
+
+  try {
+    const { data: courses, total } = await SupabaseDB.getCourses();
+
+    content.innerHTML = `
+    <section>
+      <div class="flex-between mb-20">
+        <h3 class="m-0">Global Course Management</h3>
+        <div class="small text-muted">${total} Total Courses</div>
+      </div>
+      <div id="coursesTable"></div>
+    </section>
+    `;
+
+    UI.renderTable('coursesTable', ['Title', 'Instructor', 'Status', 'Created At', 'Action'], courses, (c) => {
+        let statusClass = 'badge-active';
+        if (c.status === 'draft') statusClass = 'badge-warn';
+        else if (c.status === 'archived') statusClass = 'badge-inactive';
+
+        return `
+            <tr>
+              <td><div class="bold small">${escapeHtml(c.title)}</div></td>
+              <td>
+                <div class="small">${escapeHtml(c.created_by || 'N/A')}</div>
+                <div class="tiny text-muted">${escapeHtml(c.teacher_email || 'No email')}</div>
+              </td>
+              <td><span class="badge ${statusClass}">${c.status.toUpperCase()}</span></td>
+              <td>${c.created_at ? new Date(c.created_at).toLocaleDateString() : 'N/A'}</td>
+              <td>
+                <button class="button danger small w-auto" onclick="deleteCourse('${escapeAttr(c.id)}')">Delete</button>
+              </td>
+            </tr>
+        `;
+    });
+  } catch (error) {
+    console.error('Courses error:', error);
+    content.innerHTML = `<div class="card danger-border"><h3>Error Loading Courses</h3><p class="small">${escapeHtml(error.message)}</p></div>`;
+  }
+}
+
+async function deleteCourse(id) {
+    if (!await UI.confirm('Are you sure you want to delete this course and all its content? This cannot be undone.', 'Delete Course')) return;
+    try {
+        await SupabaseDB.deleteCourse(id);
+        UI.showNotification('Course deleted successfully.', 'success');
+        renderCourses();
+    } catch (e) {
+        UI.showNotification('Failed to delete course: ' + e.message, 'error');
+    }
+}
+window.renderCourses = renderCourses;
+window.deleteCourse = deleteCourse;
+
 async function renderUsers() {
 
   const content = document.getElementById('pageContent');
@@ -132,6 +191,7 @@ async function renderUsers() {
 
   const searchTerm = document.getElementById('userSearch')?.value || '';
   const roleFilter = document.getElementById('roleFilter')?.value || 'all';
+  const statusFilter = document.getElementById('statusFilter')?.value || 'all';
 
   try {
     const { data: users } = await SupabaseDB.getUsers({
@@ -139,17 +199,33 @@ async function renderUsers() {
         role: roleFilter === 'all' ? null : roleFilter
     });
 
-    allUsers = users; // For legacy compatibility in some handlers
+    allUsers = users;
+
+    // Client-side status filtering
+    const filtered = users.filter(u => {
+        if (statusFilter === 'active') return u.active;
+        if (statusFilter === 'inactive') return !u.active;
+        if (statusFilter === 'flagged') return u.flagged;
+        if (statusFilter === 'locked') return isAccountLocked(u);
+        return true;
+    });
 
     content.innerHTML = `
     <section>
       <div class="controls-row">
-        <input type="text" id="userSearch" class="search-input no-margin" placeholder="Search by name or email" value="${escapeAttr(searchTerm)}" oninput="renderUsers()">
+        <input type="text" id="userSearch" class="search-input no-margin" placeholder="Search name/email..." value="${escapeAttr(searchTerm)}" oninput="renderUsers()">
         <select id="roleFilter" class="filter-select no-margin" onchange="renderUsers()">
           <option value="all" ${roleFilter === 'all' ? 'selected' : ''}>All Roles</option>
           <option value="student" ${roleFilter === 'student' ? 'selected' : ''}>Student</option>
           <option value="teacher" ${roleFilter === 'teacher' ? 'selected' : ''}>Teacher</option>
           <option value="admin" ${roleFilter === 'admin' ? 'selected' : ''}>Admin</option>
+        </select>
+        <select id="statusFilter" class="filter-select no-margin" onchange="renderUsers()">
+          <option value="all" ${statusFilter === 'all' ? 'selected' : ''}>All Statuses</option>
+          <option value="active" ${statusFilter === 'active' ? 'selected' : ''}>Active Only</option>
+          <option value="inactive" ${statusFilter === 'inactive' ? 'selected' : ''}>Inactive Only</option>
+          <option value="flagged" ${statusFilter === 'flagged' ? 'selected' : ''}>Flagged Only</option>
+          <option value="locked" ${statusFilter === 'locked' ? 'selected' : ''}>Locked Only</option>
         </select>
         <button class="button secondary" style="width:auto;" onclick="exportUsersCSV()">Export CSV</button>
       </div>
@@ -161,7 +237,7 @@ async function renderUsers() {
       <div id="usersList" class="grid"></div>
     </section>
     `;
-    displayUsers(users);
+    displayUsers(filtered);
   } catch (error) {
     console.error('Users error:', error);
     content.innerHTML = `
@@ -1175,11 +1251,11 @@ async function exportBackup() {
   UI.showNotification('Preparing full system backup...', 'info');
   try {
     const tables = [
-        'users', 'courses', 'lessons', 'assignments', 'submissions',
-        'quizzes', 'quiz_submissions', 'materials', 'enrollments',
-        'violations', 'invites', 'maintenance', 'discussions',
-        'notifications', 'broadcasts', 'planner', 'certificates',
-        'study_sessions', 'attendance', 'live_classes'
+        'users', 'courses', 'lessons', 'materials', 'assignments', 'quizzes',
+        'live_classes', 'submissions', 'quiz_submissions', 'attendance',
+        'enrollments', 'discussions', 'notifications', 'broadcasts',
+        'planner', 'certificates', 'study_sessions', 'violations',
+        'invites', 'support_tickets', 'maintenance'
     ];
     const backupData = {
         exportedAt: new Date().toISOString(),
@@ -1223,31 +1299,23 @@ async function importBackup(event) {
       if (await UI.confirm(`Restore data from ${tableList.length} tables? This may overwrite existing records.`, 'System Restore')) {
         UI.showLoading('mgt-area', 'Restoring system data...');
 
-        // Custom restoration logic for each table based on its save method (Batch processing)
-        const batchSize = 10;
+        // High-fidelity restoration logic
+        const batchSize = 25;
         for (const table of tableList) {
             const records = tables[table] || [];
             if (records.length === 0) continue;
 
             for (let i = 0; i < records.length; i += batchSize) {
                 const batch = records.slice(i, i + batchSize);
-                const proms = batch.map(async r => {
-                    switch(table) {
-                        case 'users':
-                            // When restoring users, ensure we use the secure path if password is present
-                            // or fallback to direct update if it's just metadata/status.
-                            // If it's a new user (no created_at in record), saveUser will use RPC.
-                            // We explicitly pass password_hash as 'password' if it exists in the backup record
-                            if (r.password_hash && !r.password) r.password = r.password_hash;
-                            return SupabaseDB.saveUser(r);
-                        case 'courses': return SupabaseDB.saveCourse(r);
-                        case 'assignments': return SupabaseDB.saveAssignment(r);
-                        case 'quizzes': return SupabaseDB.saveQuiz(r);
-                        case 'maintenance': return SupabaseDB.saveMaintenance(r);
-                        default: return supabaseClient.from(table).upsert(r);
-                    }
-                });
-                await Promise.all(proms);
+                if (table === 'users') {
+                    // Users require special handling to sync to secrets if password_hash exists
+                    await Promise.all(batch.map(r => {
+                        if (r.password_hash && !r.password) r.password = r.password_hash;
+                        return SupabaseDB.saveUser(r);
+                    }));
+                } else {
+                    await supabaseClient.from(table).upsert(batch);
+                }
             }
         }
 
@@ -1596,11 +1664,12 @@ function initNav() {
         button.classList.add('active');
         const page = button.dataset.page;
         if(page === 'dashboard') renderDashboard();
+        else if(page === 'users') renderUsers();
+        else if(page === 'courses') renderCourses();
         else if(page === 'support') renderSupportTickets();
         else if(page === 'invites') renderInvites();
         else if(page === 'broadcasts') renderBroadcasts();
         else if(page === 'resets') renderResets();
-        else if(page === 'users') renderUsers();
         else if(page === 'analytics') renderAnalytics();
         else if(page === 'maintenance') renderMaintenance();
         else if(page === 'health') renderHealth();
@@ -1630,6 +1699,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   const user = await initDashboard('admin');
   if (user) {
     initNav();
+    NotificationManager.initPolling();
     NotificationManager.initRealtimeSubscriptions(user.email, 'admin', () => {
         const activeEl = document.activeElement;
         const isTyping = activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA' || activeEl.tagName === 'SELECT');

@@ -1391,7 +1391,10 @@ END $$;
 -- RLS POLICIES
 
 -- 0. User Secrets (Strictly restricted)
+-- 0. User Secrets
+-- 0. User Secrets (Strictly restricted)
 DROP POLICY IF EXISTS "Secrets: No Public Access" ON user_secrets;
+DROP POLICY IF EXISTS "Secrets: Admin Manage" ON user_secrets;
 CREATE POLICY "Secrets: No Public Access" ON user_secrets FOR ALL USING (false);
 
 -- 1. Users Table
@@ -1400,9 +1403,9 @@ CREATE POLICY "Users: Select" ON users FOR SELECT USING (true);
 DROP POLICY IF EXISTS "Users: Update" ON users;
 CREATE POLICY "Users: Update" ON users FOR UPDATE USING (email = get_auth_email() OR is_admin());
 DROP POLICY IF EXISTS "Users: No Direct Insert" ON users;
-CREATE POLICY "Users: No Direct Insert" ON users FOR INSERT WITH CHECK (false); -- Force use of create_user_secure RPC
+DROP POLICY IF EXISTS "Users: Admin Manage" ON users;
+CREATE POLICY "Users: Admin Manage" ON users FOR ALL USING (is_admin());
 DROP POLICY IF EXISTS "Users: Admin Delete" ON users;
-CREATE POLICY "Users: Admin Delete" ON users FOR DELETE USING (is_admin());
 
 -- 2. Courses Table
 DROP POLICY IF EXISTS "Courses: Select" ON courses;
