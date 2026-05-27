@@ -635,6 +635,44 @@ CREATE TRIGGER tr_users_teacher_name_sync
 AFTER UPDATE OF full_name ON users
 FOR EACH ROW EXECUTE PROCEDURE tr_update_courses_teacher_name();
 
+CREATE OR REPLACE FUNCTION tr_sync_course_children_owner() RETURNS TRIGGER AS $$
+BEGIN
+  IF (TG_OP = 'UPDATE' AND OLD.teacher_email IS DISTINCT FROM NEW.teacher_email) THEN
+    UPDATE assignments SET teacher_email = NEW.teacher_email WHERE course_id = NEW.id;
+    UPDATE quizzes SET teacher_email = NEW.teacher_email WHERE course_id = NEW.id;
+    UPDATE live_classes SET teacher_email = NEW.teacher_email WHERE course_id = NEW.id;
+    UPDATE materials SET teacher_email = NEW.teacher_email WHERE course_id = NEW.id;
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS tr_course_owner_sync_children ON courses;
+CREATE TRIGGER tr_course_owner_sync_children
+AFTER UPDATE OF teacher_email ON courses
+FOR EACH ROW EXECUTE PROCEDURE tr_sync_course_children_owner();
+
+CREATE OR REPLACE FUNCTION tr_inherit_course_owner() RETURNS TRIGGER AS $$
+BEGIN
+  IF NEW.teacher_email IS NULL THEN
+    SELECT teacher_email INTO NEW.teacher_email FROM courses WHERE id = NEW.course_id;
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS tr_assignment_owner_inherit ON assignments;
+CREATE TRIGGER tr_assignment_owner_inherit BEFORE INSERT ON assignments FOR EACH ROW EXECUTE PROCEDURE tr_inherit_course_owner();
+
+DROP TRIGGER IF EXISTS tr_quiz_owner_inherit ON quizzes;
+CREATE TRIGGER tr_quiz_owner_inherit BEFORE INSERT ON quizzes FOR EACH ROW EXECUTE PROCEDURE tr_inherit_course_owner();
+
+DROP TRIGGER IF EXISTS tr_live_class_owner_inherit ON live_classes;
+CREATE TRIGGER tr_live_class_owner_inherit BEFORE INSERT ON live_classes FOR EACH ROW EXECUTE PROCEDURE tr_inherit_course_owner();
+
+DROP TRIGGER IF EXISTS tr_material_owner_inherit ON materials;
+CREATE TRIGGER tr_material_owner_inherit BEFORE INSERT ON materials FOR EACH ROW EXECUTE PROCEDURE tr_inherit_course_owner();
+
 -- 5. Validation Triggers
 
 CREATE OR REPLACE FUNCTION validate_submission_time()
@@ -1423,14 +1461,14 @@ CREATE POLICY "Lessons: Select" ON lessons FOR SELECT USING (
 );
 DROP POLICY IF EXISTS "Lessons: Teachers Manage" ON lessons;
 CREATE POLICY "Lessons: Teachers Manage" ON lessons FOR ALL USING (
-  EXISTS (SELECT 1 FROM courses WHERE id = lessons.course_id AND (teacher_email = get_auth_email() OR is_admin()))
+  is_admin() OR EXISTS (SELECT 1 FROM courses WHERE id = lessons.course_id AND teacher_email = get_auth_email())
 );
 
 -- 4. Enrollments Table
 DROP POLICY IF EXISTS "Enrollments: User Access" ON enrollments;
 CREATE POLICY "Enrollments: User Access" ON enrollments FOR SELECT USING (
-  student_email = get_auth_email() OR
   is_admin() OR
+  student_email = get_auth_email() OR
   (is_teacher() AND EXISTS (SELECT 1 FROM courses WHERE id = enrollments.course_id AND teacher_email = get_auth_email()))
 );
 DROP POLICY IF EXISTS "Enrollments: Self Enroll" ON enrollments;
@@ -1443,41 +1481,49 @@ CREATE POLICY "Enrollments: Student Update Progress" ON enrollments FOR UPDATE U
 -- 5. Assignments Table
 DROP POLICY IF EXISTS "Assignments: Select" ON assignments;
 CREATE POLICY "Assignments: Select" ON assignments FOR SELECT USING (
+  is_admin() OR
   (EXISTS (SELECT 1 FROM enrollments WHERE course_id = assignments.course_id AND student_email = get_auth_email()) AND status = 'published') OR
-  teacher_email = get_auth_email() OR is_admin()
+  EXISTS (SELECT 1 FROM courses WHERE id = assignments.course_id AND teacher_email = get_auth_email())
 );
 DROP POLICY IF EXISTS "Assignments: Teachers Manage" ON assignments;
-CREATE POLICY "Assignments: Teachers Manage" ON assignments FOR ALL USING (teacher_email = get_auth_email() OR is_admin());
+CREATE POLICY "Assignments: Teachers Manage" ON assignments FOR ALL USING (
+  is_admin() OR EXISTS (SELECT 1 FROM courses WHERE id = assignments.course_id AND teacher_email = get_auth_email())
+);
 
 -- 6. Submissions Table
 DROP POLICY IF EXISTS "Submissions: Select" ON submissions;
 CREATE POLICY "Submissions: Select" ON submissions FOR SELECT USING (
+  is_admin() OR
   student_email = get_auth_email() OR
-  EXISTS (SELECT 1 FROM assignments WHERE id = submissions.assignment_id AND (teacher_email = get_auth_email() OR is_admin()))
+  EXISTS (SELECT 1 FROM assignments WHERE id = submissions.assignment_id AND EXISTS (SELECT 1 FROM courses WHERE id = assignments.course_id AND teacher_email = get_auth_email()))
 );
 DROP POLICY IF EXISTS "Submissions: Insert" ON submissions;
 CREATE POLICY "Submissions: Insert" ON submissions FOR INSERT WITH CHECK (student_email = get_auth_email());
 DROP POLICY IF EXISTS "Submissions: Update" ON submissions;
 CREATE POLICY "Submissions: Update" ON submissions FOR UPDATE USING (
+  is_admin() OR
   student_email = get_auth_email() OR
-  EXISTS (SELECT 1 FROM assignments WHERE id = submissions.assignment_id AND (teacher_email = get_auth_email() OR is_admin()))
+  EXISTS (SELECT 1 FROM assignments WHERE id = submissions.assignment_id AND EXISTS (SELECT 1 FROM courses WHERE id = assignments.course_id AND teacher_email = get_auth_email()))
 );
 
 -- 7. Live Classes Table
 DROP POLICY IF EXISTS "Live Classes: Select" ON live_classes;
 CREATE POLICY "Live Classes: Select" ON live_classes FOR SELECT USING (
+  is_admin() OR
   EXISTS (SELECT 1 FROM enrollments WHERE course_id = live_classes.course_id AND student_email = get_auth_email()) OR
-  teacher_email = get_auth_email() OR is_admin()
+  EXISTS (SELECT 1 FROM courses WHERE id = live_classes.course_id AND teacher_email = get_auth_email())
 );
 DROP POLICY IF EXISTS "Live Classes: Teachers Manage" ON live_classes;
-CREATE POLICY "Live Classes: Teachers Manage" ON live_classes FOR ALL USING (teacher_email = get_auth_email() OR is_admin());
+CREATE POLICY "Live Classes: Teachers Manage" ON live_classes FOR ALL USING (
+  is_admin() OR EXISTS (SELECT 1 FROM courses WHERE id = live_classes.course_id AND teacher_email = get_auth_email())
+);
 
 -- 8. Attendance Table
 DROP POLICY IF EXISTS "Attendance: Access" ON attendance;
 CREATE POLICY "Attendance: Access" ON attendance FOR SELECT USING (
-  student_email = get_auth_email() OR
   is_admin() OR
-  (is_teacher() AND EXISTS (SELECT 1 FROM live_classes WHERE id = attendance.live_class_id AND teacher_email = get_auth_email()))
+  student_email = get_auth_email() OR
+  (is_teacher() AND EXISTS (SELECT 1 FROM live_classes WHERE id = attendance.live_class_id AND EXISTS (SELECT 1 FROM courses WHERE id = live_classes.course_id AND teacher_email = get_auth_email())))
 );
 DROP POLICY IF EXISTS "Attendance: Insert" ON attendance;
 CREATE POLICY "Attendance: Insert" ON attendance FOR INSERT WITH CHECK (student_email = get_auth_email());
@@ -1485,17 +1531,21 @@ CREATE POLICY "Attendance: Insert" ON attendance FOR INSERT WITH CHECK (student_
 -- 9. Quizzes Table
 DROP POLICY IF EXISTS "Quizzes: Select" ON quizzes;
 CREATE POLICY "Quizzes: Select" ON quizzes FOR SELECT USING (
+  is_admin() OR
   (EXISTS (SELECT 1 FROM enrollments WHERE course_id = quizzes.course_id AND student_email = get_auth_email()) AND status = 'published') OR
-  teacher_email = get_auth_email() OR is_admin()
+  EXISTS (SELECT 1 FROM courses WHERE id = quizzes.course_id AND teacher_email = get_auth_email())
 );
 DROP POLICY IF EXISTS "Quizzes: Teachers Manage" ON quizzes;
-CREATE POLICY "Quizzes: Teachers Manage" ON quizzes FOR ALL USING (teacher_email = get_auth_email() OR is_admin());
+CREATE POLICY "Quizzes: Teachers Manage" ON quizzes FOR ALL USING (
+  is_admin() OR EXISTS (SELECT 1 FROM courses WHERE id = quizzes.course_id AND teacher_email = get_auth_email())
+);
 
 -- 10. Quiz Submissions Table
 DROP POLICY IF EXISTS "Quiz Submissions: Access" ON quiz_submissions;
 CREATE POLICY "Quiz Submissions: Access" ON quiz_submissions FOR SELECT USING (
+  is_admin() OR
   student_email = get_auth_email() OR
-  EXISTS (SELECT 1 FROM quizzes WHERE id = quiz_submissions.quiz_id AND (teacher_email = get_auth_email() OR is_admin()))
+  EXISTS (SELECT 1 FROM quizzes WHERE id = quiz_submissions.quiz_id AND EXISTS (SELECT 1 FROM courses WHERE id = quizzes.course_id AND teacher_email = get_auth_email()))
 );
 DROP POLICY IF EXISTS "Quiz Submissions: Insert" ON quiz_submissions;
 CREATE POLICY "Quiz Submissions: Insert" ON quiz_submissions FOR INSERT WITH CHECK (student_email = get_auth_email());
@@ -1505,17 +1555,21 @@ CREATE POLICY "Quiz Submissions: Update" ON quiz_submissions FOR UPDATE USING (s
 -- 11. Materials Table
 DROP POLICY IF EXISTS "Materials: Select" ON materials;
 CREATE POLICY "Materials: Select" ON materials FOR SELECT USING (
+  is_admin() OR
   EXISTS (SELECT 1 FROM enrollments WHERE course_id = materials.course_id AND student_email = get_auth_email()) OR
-  teacher_email = get_auth_email() OR is_admin()
+  EXISTS (SELECT 1 FROM courses WHERE id = materials.course_id AND teacher_email = get_auth_email())
 );
 DROP POLICY IF EXISTS "Materials: Teachers Manage" ON materials;
-CREATE POLICY "Materials: Teachers Manage" ON materials FOR ALL USING (teacher_email = get_auth_email() OR is_admin());
+CREATE POLICY "Materials: Teachers Manage" ON materials FOR ALL USING (
+  is_admin() OR EXISTS (SELECT 1 FROM courses WHERE id = materials.course_id AND teacher_email = get_auth_email())
+);
 
 -- 12. Discussions Table
 DROP POLICY IF EXISTS "Discussions: Access" ON discussions;
 CREATE POLICY "Discussions: Access" ON discussions FOR ALL USING (
+  is_admin() OR
   EXISTS (SELECT 1 FROM enrollments WHERE course_id = discussions.course_id AND student_email = get_auth_email()) OR
-  EXISTS (SELECT 1 FROM courses WHERE id = discussions.course_id AND (teacher_email = get_auth_email() OR is_admin()))
+  EXISTS (SELECT 1 FROM courses WHERE id = discussions.course_id AND teacher_email = get_auth_email())
 );
 
 -- 13. Notifications Table
@@ -1551,11 +1605,11 @@ CREATE POLICY "Maintenance: Manage for Admins" ON maintenance FOR ALL USING (is_
 -- 17. Violations Table
 DROP POLICY IF EXISTS "Violations: User Access" ON violations;
 CREATE POLICY "Violations: User Access" ON violations FOR SELECT USING (
-  user_email = get_auth_email() OR
   is_admin() OR
+  user_email = get_auth_email() OR
   (is_teacher() AND (
-    EXISTS (SELECT 1 FROM assignments WHERE id = violations.assessment_id AND violations.assessment_type = 'assignment' AND teacher_email = get_auth_email()) OR
-    EXISTS (SELECT 1 FROM quizzes WHERE id = violations.assessment_id AND violations.assessment_type = 'quiz' AND teacher_email = get_auth_email())
+    EXISTS (SELECT 1 FROM assignments WHERE id = violations.assessment_id AND violations.assessment_type = 'assignment' AND EXISTS (SELECT 1 FROM courses WHERE id = assignments.course_id AND teacher_email = get_auth_email())) OR
+    EXISTS (SELECT 1 FROM quizzes WHERE id = violations.assessment_id AND violations.assessment_type = 'quiz' AND EXISTS (SELECT 1 FROM courses WHERE id = quizzes.course_id AND teacher_email = get_auth_email()))
   ))
 );
 DROP POLICY IF EXISTS "Violations: Insert" ON violations;
@@ -1564,8 +1618,8 @@ DROP POLICY IF EXISTS "Violations: Delete" ON violations;
 CREATE POLICY "Violations: Delete" ON violations FOR DELETE USING (
   is_admin() OR
   (is_teacher() AND (
-    EXISTS (SELECT 1 FROM assignments WHERE id = violations.assessment_id AND violations.assessment_type = 'assignment' AND teacher_email = get_auth_email()) OR
-    EXISTS (SELECT 1 FROM quizzes WHERE id = violations.assessment_id AND violations.assessment_type = 'quiz' AND teacher_email = get_auth_email())
+    EXISTS (SELECT 1 FROM assignments WHERE id = violations.assessment_id AND violations.assessment_type = 'assignment' AND EXISTS (SELECT 1 FROM courses WHERE id = assignments.course_id AND teacher_email = get_auth_email())) OR
+    EXISTS (SELECT 1 FROM quizzes WHERE id = violations.assessment_id AND violations.assessment_type = 'quiz' AND EXISTS (SELECT 1 FROM courses WHERE id = quizzes.course_id AND teacher_email = get_auth_email()))
   ))
 );
 
@@ -1580,8 +1634,8 @@ CREATE POLICY "Study Sessions: User Access" ON study_sessions FOR ALL USING (use
 -- 20. Certificates Table
 DROP POLICY IF EXISTS "Certificates: User Access" ON certificates;
 CREATE POLICY "Certificates: User Access" ON certificates FOR SELECT USING (
-  student_email = get_auth_email() OR
   is_admin() OR
+  student_email = get_auth_email() OR
   (is_teacher() AND EXISTS (SELECT 1 FROM courses WHERE id = certificates.course_id AND teacher_email = get_auth_email()))
 );
 
