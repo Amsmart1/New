@@ -464,6 +464,17 @@ class SupabaseDB {
         _cache.invalidate('support_tickets');
     }
 
+    static async updateSupportTicket(id, updates) {
+        const { data, error } = await supabaseClient
+            .from('support_tickets')
+            .update(updates)
+            .eq('id', id)
+            .select();
+        if (error) throw error;
+        _cache.invalidate('support_tickets');
+        return data?.[0];
+    }
+
     // Submission operations
     static async getSubmissions(assignmentId = null, studentEmail = null, teacherEmail = null, options = {}) {
         const { status = null, pendingGradingOnly = false } = options;

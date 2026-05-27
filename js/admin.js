@@ -224,11 +224,12 @@ async function showChangeOwnerModal(courseId) {
         const newEmail = document.getElementById('newTeacherSelect').value;
         if (!newEmail) return UI.showNotification('Please select a teacher.', 'warn');
 
-        const newTeacher = teachers.find(t => t.email === newEmail);
         try {
-            course.teacher_email = newEmail;
-            course.created_by = newTeacher.full_name;
-            await SupabaseDB.saveCourse(course);
+            // Only update teacher_email; created_by is handled by database trigger tr_course_teacher_name_sync
+            await SupabaseDB.saveCourse({
+                ...course,
+                teacher_email: newEmail
+            });
             UI.showNotification('Course owner updated successfully.', 'success');
             backdrop.remove();
             renderCourses();
@@ -668,14 +669,10 @@ window.viewTicketDetails = viewTicketDetails;
 
 async function updateTicketStatus(id, newStatus) {
     try {
-        const t = allTickets.find(x => x.id === id);
-        if (t) {
-            t.status = newStatus;
-            await SupabaseDB.saveSupportTicket(t);
-            UI.showNotification('Ticket status updated.', 'success');
-            updateSidebarBadges();
-            renderSupportTickets();
-        }
+        await SupabaseDB.updateSupportTicket(id, { status: newStatus });
+        UI.showNotification('Ticket status updated.', 'success');
+        updateSidebarBadges();
+        renderSupportTickets();
     } catch (e) {
         UI.showNotification('Failed to update status: ' + e.message, 'error');
     }
@@ -684,13 +681,9 @@ async function updateTicketStatus(id, newStatus) {
 async function saveTicketNotes(id) {
     const notes = document.getElementById(`resNotes-${id}`).value;
     try {
-        const t = allTickets.find(x => x.id === id);
-        if (t) {
-            t.resolution_notes = notes;
-            await SupabaseDB.saveSupportTicket(t);
-            UI.showNotification('Resolution notes saved.', 'success');
-            renderSupportTickets();
-        }
+        await SupabaseDB.updateSupportTicket(id, { resolution_notes: notes });
+        UI.showNotification('Resolution notes saved.', 'success');
+        renderSupportTickets();
     } catch (e) {
         UI.showNotification('Failed to save notes: ' + e.message, 'error');
     }
