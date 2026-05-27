@@ -2,12 +2,8 @@ let activeCountdowns = [];
 
 
 function clearActiveCountdowns() {
-    activeCountdowns.forEach(c => c.destroy());
-    activeCountdowns = [];
-    if (liveClassTimer instanceof Countdown) {
-        liveClassTimer.destroy();
-        liveClassTimer = null;
-    }
+    UI.clearCountdowns(activeCountdowns, liveClassTimer);
+    liveClassTimer = null;
 }
 
 async function renderDashboard() {
@@ -387,42 +383,27 @@ async function renderGrading() {
       SupabaseDB.getAssignments(user.email, null, null)
     ]);
 
-    let gradingHtml = `
+    content.innerHTML = `
       <div class="flex-between mb-20">
         <h2 class="m-0">Grading Queue</h2>
         <div class="small text-muted">${total} Submissions Pending</div>
       </div>
-      <div class="card p-0" style="overflow-x:auto">
-        <table class="m-0">
-          <thead>
+      <div id="gradingQueueTable"></div>
+    `;
+
+    UI.renderTable('gradingQueueTable', ['Assignment', 'Student', 'Submitted', 'Status', 'Action'], submittedSubs, (s) => {
+        const assignment = assignments.find(a => a.id === s.assignment_id);
+        const isRegrade = !!s.regrade_request;
+        return `
             <tr>
-              <th>Assignment</th>
-              <th>Student</th>
-              <th>Submitted</th>
-              <th>Status</th>
-              <th>Action</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${submittedSubs.map(s => {
-              const assignment = assignments.find(a => a.id === s.assignment_id);
-              const isRegrade = !!s.regrade_request;
-              return `
-              <tr>
                 <td><strong>${escapeHtml(assignment?.title || 'Unknown')}</strong></td>
                 <td>${escapeHtml(s.student_email)}</td>
                 <td>${new Date(s.submitted_at).toLocaleString()}</td>
                 <td>${isRegrade ? '<span class="badge badge-warn">REGRADE REQ</span>' : '<span class="badge badge-active">NEW SUB</span>'}</td>
                 <td><button class="button small w-auto" onclick="gradeSubmission('${escapeAttr(s.assignment_id)}', '${escapeAttr(s.student_email)}')">Review</button></td>
-              </tr>
-            `;}).join('')}
-          </tbody>
-        </table>
-      </div>
-    `;
-
-    let hasPending = submittedSubs.length > 0;
-    content.innerHTML = hasPending ? gradingHtml : '<div class="empty"><h3>All caught up!</h3><p class="small">No pending submissions to grade.</p></div>';
+            </tr>
+        `;
+    }, { emptyMessage: '<h3>All caught up!</h3><p class="small">No pending submissions to grade.</p>' });
   } catch (error) {
     console.error('Grading error:', error);
     content.innerHTML = `<div class="card danger-border">
@@ -1058,74 +1039,19 @@ async function viewCourseDiscussions(courseId) {
   container.innerHTML = `<button class="button secondary w-auto mb-10" onclick="renderDiscussions()">← Back</button><div id="discussionArea"></div>`;
 
   UI.renderDiscussion('discussionArea', disc, user.email, {
-      onPost: (content, parentId) => postTeacherDiscussion(courseId, parentId, content),
-      onEdit: (id) => editDiscussion(id, courseId),
-      onDelete: (id) => deleteDiscussion(id, courseId)
+      onPost: async (content, parentId) => {
+          if (await DiscussionManager.post(courseId, content, parentId)) viewCourseDiscussions(courseId);
+      },
+      onEdit: (id) => DiscussionManager.edit(id, async (id, content) => {
+          const { data: disc } = await SupabaseDB.getDiscussions(courseId);
+          const existing = disc.find(d => d.id === id);
+          await SupabaseDB.saveDiscussion({ ...existing, content });
+          viewCourseDiscussions(courseId);
+          return true;
+      }),
+      onDelete: (id) => DiscussionManager.delete(id, () => viewCourseDiscussions(courseId))
   });
 }
-
-async function postTeacherDiscussion(courseId, parentId = null, content = null) {
-  const user = await SessionManager.getCurrentUser();
-  if (!content) {
-      const inputId = parentId ? `replyInput-${parentId}` : 'discInputMain';
-      content = document.getElementById(inputId)?.value;
-  }
-  if (!content) return;
-  try {
-    await SupabaseDB.saveDiscussion({
-        id: crypto.randomUUID(),
-        course_id: courseId,
-        user_email: user.email,
-        content,
-        parent_id: parentId,
-        created_at: new Date().toISOString()
-    });
-    viewCourseDiscussions(courseId, 0);
-  } catch (e) {
-    UI.showNotification('Error posting message: ' + e.message, 'error');
-  }
-}
-
-async function editDiscussion(id, courseId) {
-  const div = document.getElementById(`disc-${id}`);
-  const contentDiv = div.querySelector('.disc-content');
-  const current = contentDiv.innerText;
-  contentDiv.innerHTML = `
-    <textarea class="input" style="margin-top:10px">${escapeHtml(current)}</textarea>
-    <div style="margin-top:8px; display:flex; gap:8px">
-      <button class="button" style="padding:4px 8px; font-size:11px" onclick="saveDiscussionEdit('${id}', '${courseId}')">Save</button>
-      <button class="button secondary" style="padding:4px 8px; font-size:11px" onclick="viewCourseDiscussions('${courseId}')">Cancel</button>
-    </div>
-  `;
-}
-
-async function saveDiscussionEdit(id, courseId) {
-  const div = document.getElementById(`disc-${id}`);
-  const content = div.querySelector('textarea').value;
-  if (!content) return;
-  try {
-    const { data: disc } = await SupabaseDB.getDiscussions(courseId);
-    const existing = disc.find(d => d.id === id);
-    await SupabaseDB.saveDiscussion({ ...existing, content });
-    viewCourseDiscussions(courseId);
-  } catch (e) {
-    UI.showNotification('Error updating: ' + e.message, 'error');
-  }
-}
-
-async function deleteDiscussion(id, courseId) {
-  if (!confirm('Delete this message?')) return;
-  try {
-    await SupabaseDB.deleteDiscussion(id);
-    viewCourseDiscussions(courseId);
-  } catch (e) {
-    UI.showNotification('Error deleting: ' + e.message, 'error');
-  }
-}
-
-window.editDiscussion = editDiscussion;
-window.saveDiscussionEdit = saveDiscussionEdit;
-window.deleteDiscussion = deleteDiscussion;
 window.showCourseForm = showCourseForm;
 window.editCourse = editCourse;
 window.deleteCourseById = deleteCourseById;
@@ -1137,7 +1063,6 @@ window.editAssignment = editAssignment;
 window.deleteAssignmentById = deleteAssignmentById;
 window.gradeSubmission = gradeSubmission;
 window.viewCourseDiscussions = viewCourseDiscussions;
-window.postTeacherDiscussion = postTeacherDiscussion;
 window.showQuizForm = showQuizForm;
 window.editQuiz = editQuiz;
 window.deleteQuizById = deleteQuizById;

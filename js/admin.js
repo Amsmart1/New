@@ -213,6 +213,9 @@ function displayUsers(users) {
 
 // Ensure all handlers are global
 window.renderDashboard = renderDashboard;
+window.renderSupportTickets = renderSupportTickets;
+window.renderInvites = renderInvites;
+window.renderBroadcasts = renderBroadcasts;
 window.renderUsers = renderUsers;
 window.renderResets = renderResets;
 window.renderAnalytics = renderAnalytics;
@@ -232,6 +235,8 @@ window.showInviteForm = showInviteForm;
 window.exportUsersCSV = exportUsersCSV;
 window.approveReset = approveReset;
 window.denyReset = denyReset;
+window.revokeInvite = revokeInvite;
+window.deleteBroadcast = deleteBroadcast;
 window.broadcastNotif = broadcastNotif;
 window.showAddScheduleForm = showAddScheduleForm;
 window.removeSchedule = removeSchedule;
@@ -420,6 +425,225 @@ async function removeSchedule(idx) {
 }
 
 
+async function renderSupportTickets() {
+  const content = document.getElementById('pageContent');
+  if (!content) return;
+
+  try {
+    const { data: tickets, total } = await SupabaseDB.getSupportTickets();
+
+    content.innerHTML = `
+    <section>
+      <div class="flex-between mb-20">
+        <h3 class="m-0">Support Tickets</h3>
+        <div class="small text-muted">${total} Tickets</div>
+      </div>
+      ${tickets.length === 0 ? '<p class="empty">No support tickets found.</p>' : `
+        <div class="card" style="padding:0; overflow-x:auto">
+          <table>
+            <thead><tr><th>User</th><th>Subject</th><th>Status</th><th>Date</th><th>Action</th></tr></thead>
+            <tbody>
+              ${tickets.map(t => `
+                <tr>
+                  <td>
+                    <div class="bold small">${escapeHtml(t.user_email)}</div>
+                    <div class="tiny text-muted">${escapeHtml(t.role || 'Unknown')}</div>
+                  </td>
+                  <td>
+                    <div class="bold small">${escapeHtml(t.subject)}</div>
+                    <div class="tiny text-muted">${escapeHtml(t.message.substring(0, 50))}${t.message.length > 50 ? '...' : ''}</div>
+                  </td>
+                  <td><span class="badge-${t.status === 'open' ? 'warn' : (t.status === 'pending' ? 'warn' : 'active')}">${t.status.toUpperCase()}</span></td>
+                  <td>${new Date(t.created_at).toLocaleDateString()}</td>
+                  <td>
+                    <div class="flex gap-5">
+                        <button class="button small w-auto" onclick="viewTicketDetails('${escapeAttr(t.id)}')">View</button>
+                        <select class="small w-auto m-0" onchange="updateTicketStatus('${escapeAttr(t.id)}', this.value)">
+                            <option value="open" ${t.status === 'open' ? 'selected' : ''}>Open</option>
+                            <option value="pending" ${t.status === 'pending' ? 'selected' : ''}>Pending</option>
+                            <option value="resolved" ${t.status === 'resolved' ? 'selected' : ''}>Resolved</option>
+                            <option value="closed" ${t.status === 'closed' ? 'selected' : ''}>Closed</option>
+                        </select>
+                    </div>
+                  </td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </div>
+      `}
+    </section>
+    `;
+
+    window.viewTicketDetails = (id) => {
+        const t = tickets.find(x => x.id === id);
+        if (!t) return;
+        const backdrop = document.createElement('div');
+        backdrop.className = 'modal-backdrop';
+        backdrop.style.display = 'flex';
+        backdrop.innerHTML = `
+            <div class="modal" style="max-width:600px">
+                <div class="flex-between mb-20">
+                    <h3 class="m-0">Ticket Details</h3>
+                    <button class="button secondary tiny w-auto" onclick="this.closest('.modal-backdrop').remove()">✕</button>
+                </div>
+                <div class="mb-15">
+                    <strong>From:</strong> ${escapeHtml(t.user_email)} (${escapeHtml(t.role)})
+                </div>
+                <div class="mb-15">
+                    <strong>Subject:</strong> ${escapeHtml(t.subject)}
+                </div>
+                <div class="mb-15">
+                    <strong>Status:</strong> <span class="badge-${t.status === 'open' ? 'warn' : 'active'}">${t.status.toUpperCase()}</span>
+                </div>
+                <div class="card bg-light p-15" style="white-space: pre-wrap">
+                    ${escapeHtml(t.message)}
+                </div>
+                <div class="mt-20 flex-end">
+                    <button class="button px-40" onclick="this.closest('.modal-backdrop').remove()">Close</button>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(backdrop);
+    };
+
+  } catch (error) {
+    console.error('Tickets error:', error);
+    content.innerHTML = `<div class="card danger-border"><h3>Error Loading Tickets</h3><p class="small">${escapeHtml(error.message)}</p></div>`;
+  }
+}
+
+async function updateTicketStatus(id, newStatus) {
+    try {
+        await SupabaseDB.updateSupportTicketStatus(id, newStatus);
+        UI.showNotification('Ticket status updated.', 'success');
+        renderSupportTickets();
+    } catch (e) {
+        UI.showNotification('Failed to update status: ' + e.message, 'error');
+    }
+}
+window.updateTicketStatus = updateTicketStatus;
+
+async function renderInvites() {
+  const content = document.getElementById('pageContent');
+  if (!content) return;
+
+  try {
+    const invites = await SupabaseDB.getAllTableData('invites');
+    const now = new Date();
+
+    content.innerHTML = `
+    <section>
+      <div class="flex-between mb-20">
+        <h3 class="m-0">Invitations</h3>
+        <button class="button w-auto" onclick="showInviteForm()">+ Generate Invite</button>
+      </div>
+      ${invites.length === 0 ? '<p class="empty">No invitations generated yet.</p>' : `
+        <div class="card" style="padding:0; overflow-x:auto">
+          <table>
+            <thead><tr><th>Recipient / Role</th><th>Token</th><th>Status</th><th>Expires</th><th>Action</th></tr></thead>
+            <tbody>
+              ${invites.map(i => {
+                const isExpired = new Date(i.expires_at) < now;
+                const isUsed = !!i.used_at;
+                let statusHtml = '<span class="badge badge-active">ACTIVE</span>';
+                if (isUsed) statusHtml = '<span class="badge" style="background:#edf2f7; color:#4a5568">USED</span>';
+                else if (isExpired) statusHtml = '<span class="badge badge-inactive">EXPIRED</span>';
+
+                return `
+                <tr>
+                  <td>
+                    <div class="bold small">${escapeHtml(i.email || 'Open Invite')}</div>
+                    <div class="tiny text-muted">Role: ${escapeHtml(i.role)}</div>
+                  </td>
+                  <td><code class="tiny">${escapeHtml(i.token)}</code></td>
+                  <td>${statusHtml}</td>
+                  <td><div class="tiny">${new Date(i.expires_at).toLocaleString()}</div></td>
+                  <td>
+                    ${!isUsed ? `<button class="button danger tiny w-auto" onclick="revokeInvite('${escapeAttr(i.token)}')">Revoke</button>` : '-'}
+                  </td>
+                </tr>
+              `}).join('')}
+            </tbody>
+          </table>
+        </div>
+      `}
+    </section>
+    `;
+  } catch (error) {
+    console.error('Invites error:', error);
+    content.innerHTML = `<div class="card danger-border"><h3>Error Loading Invites</h3><p class="small">${escapeHtml(error.message)}</p></div>`;
+  }
+}
+
+async function revokeInvite(token) {
+    if (!await UI.confirm('Revoke this invitation? The link will no longer work.', 'Revoke Invite')) return;
+    try {
+        await SupabaseDB.deleteInvite(token);
+        UI.showNotification('Invitation revoked.', 'info');
+        renderInvites();
+    } catch (e) {
+        UI.showNotification('Failed to revoke: ' + e.message, 'error');
+    }
+}
+window.revokeInvite = revokeInvite;
+
+async function renderBroadcasts() {
+  const content = document.getElementById('pageContent');
+  if (!content) return;
+
+  try {
+    const { data: broadcasts, total } = await SupabaseDB.getBroadcasts();
+
+    content.innerHTML = `
+    <section>
+      <div class="flex-between mb-20">
+        <h3 class="m-0">Active Broadcasts</h3>
+        <button class="button w-auto" onclick="renderDashboard()">+ New Broadcast</button>
+      </div>
+      ${broadcasts.length === 0 ? '<p class="empty">No active broadcasts found.</p>' : `
+        <div class="card" style="padding:0; overflow-x:auto">
+          <table>
+            <thead><tr><th>Message</th><th>Target</th><th>Sent At</th><th>Expires</th><th>Action</th></tr></thead>
+            <tbody>
+              ${broadcasts.map(b => `
+                <tr>
+                  <td>
+                    <div class="bold small">${escapeHtml(b.title)}</div>
+                    <div class="tiny text-muted">${escapeHtml(b.message.substring(0, 50))}${b.message.length > 50 ? '...' : ''}</div>
+                  </td>
+                  <td><span class="badge" style="background:#edf2f7; color:#4a5568">${(b.target_role || 'ALL').toUpperCase()}</span></td>
+                  <td><div class="tiny">${new Date(b.created_at).toLocaleString()}</div></td>
+                  <td><div class="tiny">${new Date(b.expires_at).toLocaleString()}</div></td>
+                  <td>
+                    <button class="button danger tiny w-auto" onclick="deleteBroadcast('${escapeAttr(b.id)}')">Delete</button>
+                  </td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </div>
+      `}
+    </section>
+    `;
+  } catch (error) {
+    console.error('Broadcasts error:', error);
+    content.innerHTML = `<div class="card danger-border"><h3>Error Loading Broadcasts</h3><p class="small">${escapeHtml(error.message)}</p></div>`;
+  }
+}
+
+async function deleteBroadcast(id) {
+    if (!await UI.confirm('Delete this broadcast? It will be removed for all users.', 'Delete Broadcast')) return;
+    try {
+        await SupabaseDB.deleteBroadcast(id);
+        UI.showNotification('Broadcast deleted.', 'info');
+        renderBroadcasts();
+    } catch (e) {
+        UI.showNotification('Failed to delete: ' + e.message, 'error');
+    }
+}
+window.deleteBroadcast = deleteBroadcast;
+
 async function renderResets() {
   const content = document.getElementById('pageContent');
   if (!content) return;
@@ -436,42 +660,36 @@ async function renderResets() {
         <h3 class="m-0">Password Reset Requests</h3>
         <div class="small text-muted">${total} Pending</div>
       </div>
-      ${pendingResets.length === 0 ? '<p class="empty">No pending reset requests.</p>' : `
-        <div class="card" style="padding:0; overflow-x:auto">
-          <table>
-            <thead><tr><th>Name</th><th>Email</th><th>Category</th><th>Level</th><th>Requested At</th><th>Actions</th></tr></thead>
-            <tbody>
-              ${pendingResets.map(user => {
-                const req = user.reset_request || {};
-                const level = req.security_level || 'N/A';
-                let levelClass = 'badge-lock';
-                if (level === 'Critical') levelClass = 'badge-inactive';
-                else if (level === 'High') levelClass = 'badge-warn';
-                else if (level === 'Low') levelClass = 'badge-active';
+      <div id="resetsTable"></div>
+    </section>
+    `;
 
-                return `
-                <tr>
-                  <td>${escapeHtml(user.full_name)}</td>
-                  <td>${escapeHtml(user.email)}</td>
-                  <td>
+    UI.renderTable('resetsTable', ['Name', 'Email', 'Category', 'Level', 'Requested At', 'Actions'], pendingResets, (user) => {
+        const req = user.reset_request || {};
+        const level = req.security_level || 'N/A';
+        let levelClass = 'badge-lock';
+        if (level === 'Critical') levelClass = 'badge-inactive';
+        else if (level === 'High') levelClass = 'badge-warn';
+        else if (level === 'Low') levelClass = 'badge-active';
+
+        return `
+            <tr>
+                <td>${escapeHtml(user.full_name)}</td>
+                <td>${escapeHtml(user.email)}</td>
+                <td>
                     <div class="small bold">${escapeHtml(req.category || 'N/A')}</div>
                     <div class="tiny text-muted">${escapeHtml(req.reason || '')}</div>
                     ${req.custom_reason ? `<div class="tiny mt-5 p-5" style="background:var(--bg); border-radius:4px; max-width:200px"><strong>Note:</strong> ${escapeHtml(req.custom_reason)}</div>` : ''}
-                  </td>
-                  <td><span class="badge ${levelClass}">${escapeHtml(level)}</span></td>
-                  <td>${escapeHtml(new Date(req.created_at).toLocaleString())}</td>
-                  <td>
+                </td>
+                <td><span class="badge ${levelClass}">${escapeHtml(level)}</span></td>
+                <td>${escapeHtml(new Date(req.created_at).toLocaleString())}</td>
+                <td>
                     <button class="button" style="width:auto; padding:4px 8px; font-size:12px" onclick="approveReset('${escapeAttr(user.email)}')">Approve</button>
                     <button class="button danger" style="width:auto; padding:4px 8px; font-size:12px" onclick="denyReset('${escapeAttr(user.email)}')">Deny</button>
-                  </td>
-                </tr>
-              `}).join('')}
-            </tbody>
-          </table>
-        </div>
-      `}
-    </section>
-    `;
+                </td>
+            </tr>
+        `;
+    }, { emptyMessage: 'No pending reset requests.' });
   } catch (error) {
     console.error('Resets error:', error);
     content.innerHTML = `
@@ -1340,6 +1558,9 @@ function initNav() {
         button.classList.add('active');
         const page = button.dataset.page;
         if(page === 'dashboard') renderDashboard();
+        else if(page === 'support') renderSupportTickets();
+        else if(page === 'invites') renderInvites();
+        else if(page === 'broadcasts') renderBroadcasts();
         else if(page === 'resets') renderResets();
         else if(page === 'users') renderUsers();
         else if(page === 'analytics') renderAnalytics();

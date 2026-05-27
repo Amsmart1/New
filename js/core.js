@@ -218,6 +218,33 @@ const UI = {
         if (container) container.innerHTML = '';
     },
 
+    renderTable(containerId, headers, data, renderRowFn, options = {}) {
+        const container = document.getElementById(containerId);
+        if (!container) return;
+
+        const { emptyMessage = 'No records found.', tableClass = 'm-0' } = options;
+
+        if (!data || data.length === 0) {
+            container.innerHTML = `<div class="empty">${emptyMessage}</div>`;
+            return;
+        }
+
+        container.innerHTML = `
+            <div class="card p-0" style="overflow-x:auto">
+                <table class="${tableClass}">
+                    <thead>
+                        <tr>
+                            ${headers.map(h => `<th>${escapeHtml(h)}</th>`).join('')}
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${data.map(item => renderRowFn(item)).join('')}
+                    </tbody>
+                </table>
+            </div>
+        `;
+    },
+
     confirm(message, title = 'Confirm Action') {
         return new Promise((resolve) => {
             const backdrop = document.createElement('div');
@@ -265,6 +292,18 @@ const UI = {
             };
             document.getElementById('promptCancel').onclick = () => { backdrop.remove(); resolve(null); };
         });
+    },
+
+    clearCountdowns(activeCountdownsArray, specialTimer = null) {
+        if (Array.isArray(activeCountdownsArray)) {
+            activeCountdownsArray.forEach(c => {
+                if (c && typeof c.destroy === 'function') c.destroy();
+            });
+            activeCountdownsArray.length = 0;
+        }
+        if (specialTimer && typeof specialTimer.destroy === 'function') {
+            specialTimer.destroy();
+        }
     },
 
     viewFile(url, title) {
@@ -1780,6 +1819,74 @@ const HelpSystem = {
 };
 
 window.HelpSystem = HelpSystem;
+
+const DiscussionManager = {
+    async post(courseId, content, parentId = null) {
+        if (!content) return;
+        const user = await SessionManager.getCurrentUser();
+        try {
+            await SupabaseDB.saveDiscussion({
+                id: crypto.randomUUID(),
+                course_id: courseId,
+                user_email: user.email,
+                content: content,
+                parent_id: parentId,
+                created_at: new Date().toISOString()
+            });
+            return true;
+        } catch (e) {
+            UI.showNotification('Error posting message: ' + e.message, 'error');
+            return false;
+        }
+    },
+
+    async edit(id, onSave) {
+        const div = document.getElementById(`disc-${id}`);
+        if (!div) return;
+        const contentDiv = div.querySelector('.disc-content');
+        const current = contentDiv.innerText;
+        contentDiv.innerHTML = `
+            <textarea class="input" style="margin-top:10px">${escapeHtml(current)}</textarea>
+            <div style="margin-top:8px; display:flex; gap:8px">
+                <button class="button" style="padding:4px 8px; font-size:11px" id="save-disc-${id}">Save</button>
+                <button class="button secondary" style="padding:4px 8px; font-size:11px" id="cancel-disc-${id}">Cancel</button>
+            </div>
+        `;
+
+        document.getElementById(`save-disc-${id}`).onclick = async () => {
+            const content = contentDiv.querySelector('textarea').value;
+            if (!content) return;
+            try {
+                // Fetching individual record for consistency check if needed,
+                // but typically we just need the ID and new content for save.
+                // We'll trust the current UI flow which already has course info via closure in callers.
+                if (await onSave(id, content)) {
+                    // Success handled by caller re-rendering
+                }
+            } catch (e) {
+                UI.showNotification('Error updating: ' + e.message, 'error');
+            }
+        };
+
+        document.getElementById(`cancel-disc-${id}`).onclick = () => {
+            contentDiv.innerText = current;
+        };
+    },
+
+    async delete(id, onDelete) {
+        if (!confirm('Delete this message?')) return;
+        try {
+            await SupabaseDB.deleteDiscussion(id);
+            if (onDelete) onDelete();
+            return true;
+        } catch (e) {
+            UI.showNotification('Error deleting: ' + e.message, 'error');
+            return false;
+        }
+    }
+};
+
+window.DiscussionManager = DiscussionManager;
 
 const IdleManager = {
     idleLimit: 15 * 60 * 1000, // 15 minutes

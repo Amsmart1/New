@@ -4,12 +4,8 @@ let isStartingQuiz = false;
 
 
 function clearActiveCountdowns() {
-    activeCountdowns.forEach(c => c.destroy());
-    activeCountdowns = [];
-    if (quizTimer instanceof Countdown) {
-        quizTimer.destroy();
-        quizTimer = null;
-    }
+    UI.clearCountdowns(activeCountdowns, quizTimer);
+    quizTimer = null;
 }
 
 async function updateHeaderStats() {
@@ -1120,74 +1116,19 @@ async function viewStudentDiscussions(courseId) {
   container.innerHTML = `<button class="button secondary w-auto mb-10" onclick="renderDiscussions()">← Back</button><div id="discussionArea"></div>`;
 
   UI.renderDiscussion('discussionArea', disc, user.email, {
-      onPost: (content, parentId) => postDiscussion(courseId, parentId, content),
-      onEdit: (id) => editStudentDiscussion(id, courseId),
-      onDelete: (id) => deleteStudentDiscussion(id, courseId)
+      onPost: async (content, parentId) => {
+          if (await DiscussionManager.post(courseId, content, parentId)) viewStudentDiscussions(courseId);
+      },
+      onEdit: (id) => DiscussionManager.edit(id, async (id, content) => {
+          const { data: disc } = await SupabaseDB.getDiscussions(courseId);
+          const existing = disc.find(d => d.id === id);
+          await SupabaseDB.saveDiscussion({ ...existing, content });
+          viewStudentDiscussions(courseId);
+          return true;
+      }),
+      onDelete: (id) => DiscussionManager.delete(id, () => viewStudentDiscussions(courseId))
   });
 }
-
-async function postDiscussion(courseId, parentId = null, content = null) {
-  const user = await SessionManager.getCurrentUser();
-  if (!content) {
-      const inputId = parentId ? `replyInput-${parentId}` : 'discInputMain';
-      content = document.getElementById(inputId)?.value;
-  }
-  if (!content) return;
-  try {
-    await SupabaseDB.saveDiscussion({
-        id: crypto.randomUUID(),
-        course_id: courseId,
-        user_email: user.email,
-        content,
-        parent_id: parentId,
-        created_at: new Date().toISOString()
-    });
-    viewStudentDiscussions(courseId, 0);
-  } catch (e) {
-    UI.showNotification('Failed to post message: ' + e.message);
-  }
-}
-
-async function editStudentDiscussion(id, courseId) {
-  const div = document.getElementById(`disc-${id}`);
-  const contentDiv = div.querySelector('.disc-content');
-  const current = contentDiv.innerText;
-  contentDiv.innerHTML = `
-    <textarea class="input" style="margin-top:10px">${escapeHtml(current)}</textarea>
-    <div style="margin-top:8px; display:flex; gap:8px">
-      <button class="button" style="padding:4px 8px; font-size:11px" onclick="saveStudentDiscussionEdit('${id}', '${courseId}')">Save</button>
-      <button class="button secondary" style="padding:4px 8px; font-size:11px" onclick="viewStudentDiscussions('${courseId}')">Cancel</button>
-    </div>
-  `;
-}
-
-async function saveStudentDiscussionEdit(id, courseId) {
-  const div = document.getElementById(`disc-${id}`);
-  const content = div.querySelector('textarea').value;
-  if (!content) return;
-  try {
-    const { data: disc } = await SupabaseDB.getDiscussions(courseId);
-    const existing = disc.find(d => d.id === id);
-    await SupabaseDB.saveDiscussion({ ...existing, content });
-    viewStudentDiscussions(courseId);
-  } catch (e) {
-    UI.showNotification('Error updating: ' + e.message);
-  }
-}
-
-async function deleteStudentDiscussion(id, courseId) {
-  if (!confirm('Delete this message?')) return;
-  try {
-    await SupabaseDB.deleteDiscussion(id);
-    viewStudentDiscussions(courseId);
-  } catch (e) {
-    UI.showNotification('Error deleting: ' + e.message);
-  }
-}
-
-window.editStudentDiscussion = editStudentDiscussion;
-window.saveStudentDiscussionEdit = saveStudentDiscussionEdit;
-window.deleteStudentDiscussion = deleteStudentDiscussion;
 window.enroll = enroll;
 window.viewCourse = viewCourse;
 window.showLesson = showLesson;
@@ -1215,7 +1156,6 @@ window.startQuiz = startQuiz;
 window.viewQuizResults = viewQuizResults;
 window.autoSubmitQuiz = autoSubmitQuiz;
 window.submitQuiz = submitQuiz;
-window.postDiscussion = postDiscussion;
 window.addPlannerItem = addPlannerItem;
 window.deletePlannerItem = deletePlannerItem;
 function filterCatalog() { renderCourses(); }
@@ -2472,6 +2412,9 @@ async function submitAssignment(assignmentId, studentEmail, isDraft = false) {
           const path = `submissions/${assignmentId}/${studentEmail}/${idx}_${Date.now()}_${file.name}`;
           await SupabaseDB.uploadFile('assignments', path, file);
           answers[idx] = await SupabaseDB.getPublicUrl('assignments', path);
+      } else if (!isDraft && questions[idx].querySelector('.q-file') && !answers[idx]) {
+          // If it's a file question, not a draft, and no existing file URL or newly selected file
+          throw new Error(`Question ${idx + 1} requires a file upload.`);
       }
     }
 
