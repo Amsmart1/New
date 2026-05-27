@@ -122,6 +122,7 @@ async function renderDashboard() {
 }
 
 let allUsers = [];
+let allTickets = [];
 let filteredUsers = [];
 
 async function renderUsers() {
@@ -446,6 +447,7 @@ async function renderSupportTickets() {
 
   try {
     const { data: tickets, total } = await SupabaseDB.getSupportTickets();
+    allTickets = tickets;
 
     content.innerHTML = `
     <section>
@@ -486,43 +488,44 @@ async function renderSupportTickets() {
         `;
     });
 
-    window.viewTicketDetails = (id) => {
-        const t = tickets.find(x => x.id === id);
-        if (!t) return;
-        const backdrop = document.createElement('div');
-        backdrop.className = 'modal-backdrop';
-        backdrop.style.display = 'flex';
-        backdrop.innerHTML = `
-            <div class="modal" style="max-width:600px">
-                <div class="flex-between mb-20">
-                    <h3 class="m-0">Ticket Details</h3>
-                    <button class="button secondary tiny w-auto" onclick="this.closest('.modal-backdrop').remove()">✕</button>
-                </div>
-                <div class="mb-15">
-                    <strong>From:</strong> ${escapeHtml(t.user_email)} (${escapeHtml(t.role)})
-                </div>
-                <div class="mb-15">
-                    <strong>Subject:</strong> ${escapeHtml(t.subject)}
-                </div>
-                <div class="mb-15">
-                    <strong>Status:</strong> <span class="badge-${t.status === 'open' ? 'warn' : 'active'}">${t.status.toUpperCase()}</span>
-                </div>
-                <div class="card bg-light p-15" style="white-space: pre-wrap">
-                    ${escapeHtml(t.message)}
-                </div>
-                <div class="mt-20 flex-end">
-                    <button class="button px-40" onclick="this.closest('.modal-backdrop').remove()">Close</button>
-                </div>
-            </div>
-        `;
-        document.body.appendChild(backdrop);
-    };
-
   } catch (error) {
     console.error('Tickets error:', error);
     content.innerHTML = `<div class="card danger-border"><h3>Error Loading Tickets</h3><p class="small">${escapeHtml(error.message)}</p></div>`;
   }
 }
+
+function viewTicketDetails(id) {
+    const t = allTickets.find(x => x.id === id);
+    if (!t) return;
+    const backdrop = document.createElement('div');
+    backdrop.className = 'modal-backdrop';
+    backdrop.style.display = 'flex';
+    backdrop.innerHTML = `
+        <div class="modal" style="max-width:600px">
+            <div class="flex-between mb-20">
+                <h3 class="m-0">Ticket Details</h3>
+                <button class="button secondary tiny w-auto" onclick="this.closest('.modal-backdrop').remove()">✕</button>
+            </div>
+            <div class="mb-15">
+                <strong>From:</strong> ${escapeHtml(t.user_email)} (${escapeHtml(t.role)})
+            </div>
+            <div class="mb-15">
+                <strong>Subject:</strong> ${escapeHtml(t.subject)}
+            </div>
+            <div class="mb-15">
+                <strong>Status:</strong> <span class="badge-${t.status === 'open' ? 'warn' : 'active'}">${t.status.toUpperCase()}</span>
+            </div>
+            <div class="card bg-light p-15" style="white-space: pre-wrap">
+                ${escapeHtml(t.message)}
+            </div>
+            <div class="mt-20 flex-end">
+                <button class="button px-40" onclick="this.closest('.modal-backdrop').remove()">Close</button>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(backdrop);
+}
+window.viewTicketDetails = viewTicketDetails;
 
 async function updateTicketStatus(id, newStatus) {
     try {
