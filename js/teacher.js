@@ -582,6 +582,46 @@ async function issueCert(studentEmail) {
     btn.disabled = false; btn.textContent = 'Issue & Generate PDF';
   }
 }
+window.updateAssignmentTotalPoints = () => {
+  const total = Array.from(document.querySelectorAll('#questionsContainer .q-points'))
+      .reduce((sum, input) => sum + (parseFloat(input.value) || 0), 0);
+  const pointsInput = document.getElementById('assignmentPoints');
+  if (pointsInput) pointsInput.value = total;
+};
+
+window.addQuestionField = (q = null) => {
+  const container = document.getElementById('questionsContainer');
+  if (!container) return;
+  const div = document.createElement('div');
+  div.className = 'question mb-20 card';
+  div.innerHTML = `
+    <div class="flex-between mb-15">
+      <h4 class="m-0">Assignment Question</h4>
+      <button type="button" class="button danger small w-auto" onclick="this.closest('.question').remove(); window.updateAssignmentTotalPoints();">Remove Question</button>
+    </div>
+    <div class="grid">
+      <div class="mb-10">
+        <label class="bold">Question Text:</label>
+        <input type="text" class="q-text" placeholder="Enter question description here..." value="${q ? escapeHtml(q.text) : ''}" required>
+      </div>
+      <div class="grid-2">
+        <div><label>Submission Type:</label><select class="q-type" onchange="toggleTeacherAssignmentType(this)"><option value="essay" ${q?.type === 'essay' ? 'selected' : ''}>Essay Text</option><option value="file" ${q?.type === 'file' ? 'selected' : ''}>File Upload (PDF, Docx, etc.)</option><option value="link" ${q?.type === 'link' ? 'selected' : ''}>Link Submission</option></select></div>
+        <div><label>Question Points:</label><input type="number" class="q-points" value="${q ? q.points : 10}" min="0"></div>
+      </div>
+      <div class="q-type-ext mt-10">
+        ${q?.type === 'file' ? `<label>Allowed Extensions (comma-separated):</label><input type="text" class="q-ext" placeholder=".pdf, .docx, .csv, .jpg" value="${q.extensions || ''}">` : ''}
+      </div>
+    </div>
+  `;
+  container.appendChild(div);
+
+  // Auto-update total points when individual question points change
+  div.querySelector('.q-points').addEventListener('input', window.updateAssignmentTotalPoints);
+  div.querySelector('.q-points').addEventListener('change', window.updateAssignmentTotalPoints);
+
+  window.updateAssignmentTotalPoints();
+};
+
 async function showAssignmentForm(assignment = null, courseId = null) {
   const content = document.getElementById('pageContent');
   if (!content) return;
@@ -684,45 +724,6 @@ async function showAssignmentForm(assignment = null, courseId = null) {
       container.innerHTML = '';
     }
   };
-  window.addQuestionField = (q = null) => {
-    const container = document.getElementById('questionsContainer');
-    if (!container) return;
-    const div = document.createElement('div');
-    div.className = 'question mb-20 card';
-    div.innerHTML = `
-      <div class="flex-between mb-15">
-        <h4 class="m-0">Assignment Question</h4>
-        <button type="button" class="button danger small w-auto" onclick="this.closest('.question').remove(); window.updateAssignmentTotalPoints();">Remove Question</button>
-      </div>
-      <div class="grid">
-        <div class="mb-10">
-          <label class="bold">Question Text:</label>
-          <input type="text" class="q-text" placeholder="Enter question description here..." value="${q ? escapeHtml(q.text) : ''}" required>
-        </div>
-        <div class="grid-2">
-          <div><label>Submission Type:</label><select class="q-type" onchange="toggleTeacherAssignmentType(this)"><option value="essay" ${q?.type === 'essay' ? 'selected' : ''}>Essay Text</option><option value="file" ${q?.type === 'file' ? 'selected' : ''}>File Upload (PDF, Docx, etc.)</option><option value="link" ${q?.type === 'link' ? 'selected' : ''}>Link Submission</option></select></div>
-          <div><label>Question Points:</label><input type="number" class="q-points" value="${q ? q.points : 10}" min="0"></div>
-        </div>
-        <div class="q-type-ext mt-10">
-          ${q?.type === 'file' ? `<label>Allowed Extensions (comma-separated):</label><input type="text" class="q-ext" placeholder=".pdf, .docx, .csv, .jpg" value="${q.extensions || ''}">` : ''}
-        </div>
-      </div>
-    `;
-    container.appendChild(div);
-
-    // Auto-update total points when individual question points change
-    div.querySelector('.q-points').addEventListener('input', window.updateAssignmentTotalPoints);
-    div.querySelector('.q-points').addEventListener('change', window.updateAssignmentTotalPoints);
-
-    window.updateAssignmentTotalPoints();
-  };
-
-  window.updateAssignmentTotalPoints = () => {
-    const total = Array.from(document.querySelectorAll('#questionsContainer .q-points'))
-        .reduce((sum, input) => sum + (parseFloat(input.value) || 0), 0);
-    const pointsInput = document.getElementById('assignmentPoints');
-    if (pointsInput) pointsInput.value = total;
-  };
   if (isEdit && assignment.questions) { assignment.questions.forEach(q => window.addQuestionField(q)); }
   updateACPreview();
 
@@ -789,6 +790,19 @@ async function showAssignmentForm(assignment = null, courseId = null) {
           try { attachments.push(JSON.parse(input.value)); } catch(e) {}
       });
 
+      const pointsPossible = parseInt(document.getElementById('assignmentPoints').value) || 100;
+      const totalQuestionPoints = questions.reduce((sum, q) => sum + (q.points || 0), 0);
+
+      if (questions.length > 0 && pointsPossible !== totalQuestionPoints) {
+          UI.showNotification(`Warning: Total points possible (${pointsPossible}) does not match the sum of question points (${totalQuestionPoints}). Please adjust your questions.`, 'warn');
+          // We allow saving but warn the teacher. Or we could block it.
+          // Requirement 2 says: "add validation to ensure the sum of question points equals points_possible before saving"
+          // Let's enforce it for better integrity.
+          btn.disabled = false;
+          btn.textContent = originalText;
+          return;
+      }
+
       const assignmentData = {
         ...assignment,
         id: isEdit ? assignment.id : crypto.randomUUID(),
@@ -797,7 +811,7 @@ async function showAssignmentForm(assignment = null, courseId = null) {
         description: document.getElementById('assignmentDescription').value,
         start_at: document.getElementById('assignmentStartAt').value ? new Date(document.getElementById('assignmentStartAt').value).toISOString() : null,
         due_date: new Date(document.getElementById('assignmentDueDate').value).toISOString(),
-        points_possible: parseInt(document.getElementById('assignmentPoints').value) || 100,
+        points_possible: pointsPossible,
         late_penalty_per_day: parseInt(document.getElementById('assignmentLatePenalty').value) || 0,
         allow_late_submissions: document.getElementById('assignmentAllowLate').value === 'true',
         status: document.getElementById('assignmentStatus').value,
@@ -885,7 +899,7 @@ async function gradeSubmission(assignmentId, studentEmail) {
           <div class="mt-15">
             ${(assignment.questions || []).map((q, idx) => {
               const answer = submissionAnswers[idx];
-              const score = submission?.question_scores?.[idx] || 0;
+              const score = submission?.question_scores?.[idx] ?? (submission?.status === 'graded' ? 0 : null);
               const isUrl = typeof answer === 'string' && (answer.startsWith('http://') || answer.startsWith('https://'));
               const displayAnswer = answer ? (isUrl ? `<button type="button" class="button secondary small w-auto" onclick="UI.viewFile('${escapeAttr(answer)}', 'Student Submission - Q${idx+1}')">View Submitted File/Link</button>` : `<div class="small p-10 mt-5" style="white-space: pre-wrap; background: #f7fafc; border-radius: 4px;">${escapeHtml(answer)}</div>`) : '<div class="small p-10 mt-5 text-muted italic">No answer provided.</div>';
               return `<div class="list-item mb-20 card border-light">
@@ -893,7 +907,7 @@ async function gradeSubmission(assignmentId, studentEmail) {
                 <div class="mt-5">${displayAnswer}</div>
                 <div class="mt-10 flex-center-y gap-10 p-10 bg-light border-radius-sm">
                     <label class="small m-0">Points Earned (max ${q.points}):</label>
-                    <input type="number" class="q-score-input small w-auto m-0" style="width:80px" data-q-idx="${idx}" data-max="${q.points}" value="${score}" min="0" max="${q.points}">
+                    <input type="number" class="q-score-input small w-auto m-0" style="width:80px" data-q-idx="${idx}" data-max="${q.points}" value="${score !== null ? score : ''}" min="0" max="${q.points}" placeholder="0">
                 </div>
                 <div class="mt-10">
                     <label class="small">Teacher Comment for Question ${idx + 1}:</label>
