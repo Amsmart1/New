@@ -423,6 +423,7 @@ class SupabaseDB {
             .upsert(payload, { onConflict: 'id' })
             .select();
         if (error) throw error;
+        _cache.invalidate('assignments');
         return data?.[0];
     }
 
@@ -451,6 +452,16 @@ class SupabaseDB {
             .delete()
             .eq('id', id);
         if (error) throw error;
+        _cache.invalidate('assignments');
+    }
+
+    static async deleteSupportTicket(id) {
+        const { error } = await supabaseClient
+            .from('support_tickets')
+            .delete()
+            .eq('id', id);
+        if (error) throw error;
+        _cache.invalidate('support_tickets');
     }
 
     // Submission operations
@@ -515,6 +526,7 @@ class SupabaseDB {
             .upsert(payload, { onConflict: 'assignment_id,student_email' })
             .select();
         if (error) throw error;
+        _cache.invalidate('submissions');
         return data?.[0];
     }
 
@@ -542,6 +554,7 @@ class SupabaseDB {
             .eq('assignment_id', assignmentId)
             .eq('student_email', studentEmail);
         if (error) throw error;
+        _cache.invalidate('submissions');
     }
 
     // Enrollment operations
@@ -840,6 +853,7 @@ class SupabaseDB {
             .delete()
             .eq('id', id);
         if (error) throw error;
+        _cache.invalidate('lessons');
     }
 
     // Discussion operations
@@ -872,6 +886,7 @@ class SupabaseDB {
             .upsert(payload, { onConflict: 'id' })
             .select();
         if (error) throw error;
+        _cache.invalidate('lessons');
         return data?.[0];
     }
 
@@ -919,6 +934,7 @@ class SupabaseDB {
             .upsert(payload, { onConflict: 'id' })
             .select();
         if (error) throw error;
+        _cache.invalidate('materials');
         return data?.[0];
     }
 
@@ -988,6 +1004,7 @@ class SupabaseDB {
             .delete()
             .eq('id', id);
         if (error) throw error;
+        _cache.invalidate('materials');
     }
 
     static async getQuizSubmissions(quizId = null, studentEmail = null, teacherEmail = null, options = {}) {
@@ -1145,6 +1162,7 @@ class SupabaseDB {
         const { error } = await query;
         if (error) throw error;
         _cache.invalidate(`notifications_${userEmail}`);
+        _cache.invalidate('notifications');
     }
 
     static async deleteNotifications(userEmail) {
@@ -1175,6 +1193,7 @@ class SupabaseDB {
             .upsert(payload, { onConflict: 'id' })
             .select();
         if (error) throw error;
+        _cache.invalidate('certificates');
         return data?.[0];
     }
 
@@ -1218,6 +1237,7 @@ class SupabaseDB {
             .upsert(payload, { onConflict: 'id' })
             .select();
         if (error) throw error;
+        _cache.invalidate('planner');
         return data?.[0];
     }
 
@@ -1227,6 +1247,7 @@ class SupabaseDB {
             .delete()
             .eq('id', id);
         if (error) throw error;
+        _cache.invalidate('planner');
     }
 
     // Backup helper
@@ -1256,6 +1277,7 @@ class SupabaseDB {
             .upsert(payload, { onConflict: 'id' })
             .select();
         if (error) throw error;
+        _cache.invalidate('study_sessions');
         return data?.[0];
     }
 
@@ -1321,6 +1343,7 @@ class SupabaseDB {
             .upsert(payload, { onConflict: 'id' })
             .select();
         if (error) throw error;
+        _cache.invalidate('live_classes');
         return data?.[0];
     }
 
@@ -1337,6 +1360,7 @@ class SupabaseDB {
             .delete()
             .eq('id', id);
         if (error) throw error;
+        _cache.invalidate('live_classes');
     }
 
     static async saveAttendance(attendance) {
@@ -1355,6 +1379,7 @@ class SupabaseDB {
             .upsert(payload, { onConflict: 'live_class_id,student_email' })
             .select();
         if (error) throw error;
+        _cache.invalidate('attendance');
         return data?.[0];
     }
 
@@ -1424,6 +1449,7 @@ class SupabaseDB {
             .upsert(payload, { onConflict: 'token' })
             .select();
         if (error) throw error;
+        _cache.invalidate('invites');
         return data?.[0];
     }
 
@@ -1443,6 +1469,16 @@ class SupabaseDB {
             .update({ used_at: new Date().toISOString() })
             .eq('token', token);
         if (error) throw error;
+        _cache.invalidate('invites');
+    }
+
+    static async deleteInvite(token) {
+        const { error } = await supabaseClient
+            .from('invites')
+            .delete()
+            .eq('token', token);
+        if (error) throw error;
+        _cache.invalidate('invites');
     }
 
     // Support Ticket operations
@@ -1462,7 +1498,17 @@ class SupabaseDB {
             .insert([payload])
             .select();
         if (error) throw error;
+        _cache.invalidate('support_tickets');
         return data?.[0];
+    }
+
+    static async updateSupportTicketStatus(id, newStatus) {
+        const { error } = await supabaseClient
+            .from('support_tickets')
+            .update({ status: newStatus })
+            .eq('id', id);
+        if (error) throw error;
+        _cache.invalidate('support_tickets');
     }
 
     static async getSupportTickets(userEmail = null) {
@@ -1499,6 +1545,7 @@ class SupabaseDB {
                 .insert([payload])
                 .select();
             if (error) throw error;
+            _cache.invalidate('violations');
             return data?.[0];
         });
     }
@@ -1547,6 +1594,7 @@ class SupabaseDB {
 
             const { error } = await query;
             if (error) throw error;
+            _cache.invalidate('violations');
         });
     }
 
