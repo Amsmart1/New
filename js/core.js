@@ -946,8 +946,8 @@ const SessionGuard = {
         }
     },
 
-    async logout(message) {
-        await SessionManager.clearCurrentUser();
+    async logout(message, reason = null) {
+        await SessionManager.clearCurrentUser(reason);
         if (!window.location.href.includes('index.html')) {
             window.location.href = 'index.html?reason=' + encodeURIComponent(message);
         } else {
@@ -1924,8 +1924,7 @@ const IdleManager = {
         }
 
         if (elapsed >= this.idleLimit) {
-            await SessionManager.clearCurrentUser('idle_timeout');
-            window.location.href = 'index.html';
+            await SessionGuard.logout('Your session has expired due to inactivity.', 'idle_timeout');
         } else if (elapsed >= (this.idleLimit - this.warningTime) && !this.warningShown) {
             this.warningShown = true;
             UI.showNotification('Your session will expire in 1 minute due to inactivity. Move your mouse or press a key to stay logged in.', 'info');

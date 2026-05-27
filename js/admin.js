@@ -21,7 +21,8 @@ async function renderDashboard() {
       courses,
       quizzes,
       enrollments,
-      violations
+      violations,
+      openTickets
     ] = await Promise.all([
       SupabaseDB.getCount('users'),
       SupabaseDB.getCount('users', q => q.eq('role', 'student')),
@@ -36,7 +37,8 @@ async function renderDashboard() {
       SupabaseDB.getCount('courses'),
       SupabaseDB.getCount('quizzes'),
       SupabaseDB.getCount('enrollments'),
-      SupabaseDB.getCount('violations')
+      SupabaseDB.getCount('violations'),
+      SupabaseDB.getCount('support_tickets', q => q.or('status.eq.open,status.eq.pending'))
     ]);
     const stats = {
       totalUsers,
@@ -52,12 +54,13 @@ async function renderDashboard() {
       quizzes,
       enrollments,
       violations,
+      openTickets,
       maintStatus: isActiveMaintenance(maintenance) ? 'Active' : 'Off'
     };
 
     content.innerHTML = `
     <div class="card">
-      <h3>Broadcast Notification</h3>
+      <h3>System Broadcast</h3>
       <div class="grid-2">
         <input type="text" id="bcTitle" placeholder="Title" class="no-margin">
         <select id="bcRole" class="no-margin">
@@ -79,18 +82,30 @@ async function renderDashboard() {
 
     <div class="stats-grid">
       <div class="stat-card"><h4>Total Users</h4><div class="value">${escapeHtml(stats.totalUsers)}</div></div>
+      <div class="stat-card"><h4>Courses</h4><div class="value">${escapeHtml(stats.courses)}</div></div>
+      <div class="stat-card"><h4>Enrollments</h4><div class="value">${escapeHtml(stats.enrollments)}</div></div>
+      <div class="stat-card" style="border-left-color: var(--p)"><h4>Open Tickets</h4><div class="value">${escapeHtml(stats.openTickets)}</div></div>
+    </div>
+
+    <h3 class="mb-15">User Security & Integrity</h3>
+    <div class="stats-grid">
       <div class="stat-card" style="border-left-color: var(--danger)"><h4>Locked Accounts</h4><div class="value">${escapeHtml(stats.locked)}</div></div>
-      <div class="stat-card" style="border-left-color: var(--warn)"><h4>Flagged Accounts</h4><div class="value">${escapeHtml(stats.flagged)}</div></div>
-      <div class="stat-card"><h4>Pending Resets</h4><div class="value">${escapeHtml(stats.pendingResets)}</div></div>
+      <div class="stat-card" style="border-left-color: var(--danger)"><h4>Flagged Accounts</h4><div class="value">${escapeHtml(stats.flagged)}</div></div>
+      <div class="stat-card" style="border-left-color: var(--danger)"><h4>Security Resets</h4><div class="value">${escapeHtml(stats.pendingResets)}</div></div>
+      <div class="stat-card" style="border-left-color: var(--danger)"><h4>Violations</h4><div class="value">${escapeHtml(stats.violations)}</div></div>
+    </div>
+
+    <h3 class="mb-15">Academic Activity</h3>
+    <div class="stats-grid">
       <div class="stat-card"><h4>Assignments</h4><div class="value">${escapeHtml(stats.assignments)}</div></div>
       <div class="stat-card"><h4>Submissions</h4><div class="value">${escapeHtml(stats.submissions)}</div></div>
       <div class="stat-card"><h4>Pending Grading</h4><div class="value">${escapeHtml(stats.pendingGrading)}</div></div>
-      <div class="stat-card"><h4>Courses</h4><div class="value">${escapeHtml(stats.courses)}</div></div>
       <div class="stat-card"><h4>Quizzes</h4><div class="value">${escapeHtml(stats.quizzes)}</div></div>
-      <div class="stat-card"><h4>Enrollments</h4><div class="value">${escapeHtml(stats.enrollments)}</div></div>
-      <div class="stat-card" style="border-left-color: var(--danger)"><h4>Violations</h4><div class="value">${escapeHtml(stats.violations)}</div></div>
+    </div>
+
+    <div class="stats-grid">
       <div class="stat-card" style="border-left-color: ${stats.maintStatus === 'Active' ? 'var(--warn)' : 'var(--ok)'}">
-        <h4>Maintenance</h4><div class="value">${escapeHtml(stats.maintStatus)}</div>
+        <h4>System Maintenance</h4><div class="value">${escapeHtml(stats.maintStatus)}</div>
       </div>
     </div>
     `;
@@ -435,45 +450,41 @@ async function renderSupportTickets() {
     content.innerHTML = `
     <section>
       <div class="flex-between mb-20">
-        <h3 class="m-0">Support Tickets</h3>
+        <h3 class="m-0">User Concerns: Support Tickets</h3>
         <div class="small text-muted">${total} Tickets</div>
       </div>
-      ${tickets.length === 0 ? '<p class="empty">No support tickets found.</p>' : `
-        <div class="card" style="padding:0; overflow-x:auto">
-          <table>
-            <thead><tr><th>User</th><th>Subject</th><th>Status</th><th>Date</th><th>Action</th></tr></thead>
-            <tbody>
-              ${tickets.map(t => `
-                <tr>
-                  <td>
-                    <div class="bold small">${escapeHtml(t.user_email)}</div>
-                    <div class="tiny text-muted">${escapeHtml(t.role || 'Unknown')}</div>
-                  </td>
-                  <td>
-                    <div class="bold small">${escapeHtml(t.subject)}</div>
-                    <div class="tiny text-muted">${escapeHtml(t.message.substring(0, 50))}${t.message.length > 50 ? '...' : ''}</div>
-                  </td>
-                  <td><span class="badge-${t.status === 'open' ? 'warn' : (t.status === 'pending' ? 'warn' : 'active')}">${t.status.toUpperCase()}</span></td>
-                  <td>${new Date(t.created_at).toLocaleDateString()}</td>
-                  <td>
-                    <div class="flex gap-5">
-                        <button class="button small w-auto" onclick="viewTicketDetails('${escapeAttr(t.id)}')">View</button>
-                        <select class="small w-auto m-0" onchange="updateTicketStatus('${escapeAttr(t.id)}', this.value)">
-                            <option value="open" ${t.status === 'open' ? 'selected' : ''}>Open</option>
-                            <option value="pending" ${t.status === 'pending' ? 'selected' : ''}>Pending</option>
-                            <option value="resolved" ${t.status === 'resolved' ? 'selected' : ''}>Resolved</option>
-                            <option value="closed" ${t.status === 'closed' ? 'selected' : ''}>Closed</option>
-                        </select>
-                    </div>
-                  </td>
-                </tr>
-              `).join('')}
-            </tbody>
-          </table>
-        </div>
-      `}
+      <div id="ticketsTable"></div>
     </section>
     `;
+
+    UI.renderTable('ticketsTable', ['User', 'Subject', 'Status', 'Date', 'Action'], tickets, (t) => {
+        return `
+            <tr>
+              <td>
+                <div class="bold small">${escapeHtml(t.user_email)}</div>
+                <div class="tiny text-muted">${escapeHtml(t.role || 'Unknown')}</div>
+              </td>
+              <td>
+                <div class="bold small">${escapeHtml(t.subject)}</div>
+                <div class="tiny text-muted">${escapeHtml(t.message.substring(0, 50))}${t.message.length > 50 ? '...' : ''}</div>
+              </td>
+              <td><span class="badge-${t.status === 'open' ? 'warn' : (t.status === 'pending' ? 'warn' : 'active')}">${t.status.toUpperCase()}</span></td>
+              <td>${new Date(t.created_at).toLocaleDateString()}</td>
+              <td>
+                <div class="flex gap-5">
+                    <button class="button small w-auto" onclick="viewTicketDetails('${escapeAttr(t.id)}')">View</button>
+                    <select class="small w-auto m-0" onchange="updateTicketStatus('${escapeAttr(t.id)}', this.value)">
+                        <option value="open" ${t.status === 'open' ? 'selected' : ''}>Open</option>
+                        <option value="pending" ${t.status === 'pending' ? 'selected' : ''}>Pending</option>
+                        <option value="resolved" ${t.status === 'resolved' ? 'selected' : ''}>Resolved</option>
+                        <option value="closed" ${t.status === 'closed' ? 'selected' : ''}>Closed</option>
+                    </select>
+                    <button class="button danger small w-auto" onclick="deleteSupportTicket('${escapeAttr(t.id)}')">Delete</button>
+                </div>
+              </td>
+            </tr>
+        `;
+    });
 
     window.viewTicketDetails = (id) => {
         const t = tickets.find(x => x.id === id);
@@ -517,12 +528,26 @@ async function updateTicketStatus(id, newStatus) {
     try {
         await SupabaseDB.updateSupportTicketStatus(id, newStatus);
         UI.showNotification('Ticket status updated.', 'success');
+        updateSidebarBadges();
         renderSupportTickets();
     } catch (e) {
         UI.showNotification('Failed to update status: ' + e.message, 'error');
     }
 }
 window.updateTicketStatus = updateTicketStatus;
+
+async function deleteSupportTicket(id) {
+    if (!await UI.confirm('Are you sure you want to delete this ticket?', 'Delete Ticket')) return;
+    try {
+        await SupabaseDB.deleteSupportTicket(id);
+        UI.showNotification('Ticket deleted.', 'success');
+        updateSidebarBadges();
+        renderSupportTickets();
+    } catch (e) {
+        UI.showNotification('Failed to delete ticket: ' + e.message, 'error');
+    }
+}
+window.deleteSupportTicket = deleteSupportTicket;
 
 async function renderInvites() {
   const content = document.getElementById('pageContent');
@@ -657,7 +682,7 @@ async function renderResets() {
     content.innerHTML = `
     <section>
       <div class="flex-between mb-20">
-        <h3 class="m-0">Password Reset Requests</h3>
+        <h3 class="m-0">Security: Password Resets</h3>
         <div class="small text-muted">${total} Pending</div>
       </div>
       <div id="resetsTable"></div>
@@ -702,11 +727,21 @@ async function renderResets() {
 }
 
 async function updateSidebarBadges() {
-  const pendingResets = await SupabaseDB.getCount('users', q => q.eq('reset_request->>status', 'pending'));
-  const badge = document.getElementById('resetBadge');
-  if (badge) {
-    badge.textContent = pendingResets;
-    badge.style.display = pendingResets > 0 ? 'inline-block' : 'none';
+  const [pendingResets, openTickets] = await Promise.all([
+    SupabaseDB.getCount('users', q => q.eq('reset_request->>status', 'pending')),
+    SupabaseDB.getCount('support_tickets', q => q.or('status.eq.open,status.eq.pending'))
+  ]);
+
+  const resetBadge = document.getElementById('resetBadge');
+  if (resetBadge) {
+    resetBadge.textContent = pendingResets;
+    resetBadge.style.display = pendingResets > 0 ? 'inline-block' : 'none';
+  }
+
+  const supportBadge = document.getElementById('supportBadge');
+  if (supportBadge) {
+    supportBadge.textContent = openTickets;
+    supportBadge.style.display = openTickets > 0 ? 'inline-block' : 'none';
   }
 }
 

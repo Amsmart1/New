@@ -1401,6 +1401,8 @@ DROP POLICY IF EXISTS "Users: Update" ON users;
 CREATE POLICY "Users: Update" ON users FOR UPDATE USING (email = get_auth_email() OR is_admin());
 DROP POLICY IF EXISTS "Users: No Direct Insert" ON users;
 CREATE POLICY "Users: No Direct Insert" ON users FOR INSERT WITH CHECK (false); -- Force use of create_user_secure RPC
+DROP POLICY IF EXISTS "Users: Admin Delete" ON users;
+CREATE POLICY "Users: Admin Delete" ON users FOR DELETE USING (is_admin());
 
 -- 2. Courses Table
 DROP POLICY IF EXISTS "Courses: Select" ON courses;
@@ -1591,6 +1593,8 @@ DROP POLICY IF EXISTS "Support Tickets: User/Admin Select" ON support_tickets;
 CREATE POLICY "Support Tickets: User/Admin Select" ON support_tickets FOR SELECT USING (user_email = get_auth_email() OR is_admin());
 DROP POLICY IF EXISTS "Support Tickets: Admin Update" ON support_tickets;
 CREATE POLICY "Support Tickets: Admin Update" ON support_tickets FOR UPDATE USING (is_admin());
+DROP POLICY IF EXISTS "Support Tickets: Admin Delete" ON support_tickets;
+CREATE POLICY "Support Tickets: Admin Delete" ON support_tickets FOR DELETE USING (is_admin());
 
 GRANT ALL ON ALL TABLES IN SCHEMA public TO anon, authenticated, postgres, service_role;
 GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO anon, authenticated, postgres, service_role;
