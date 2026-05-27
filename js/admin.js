@@ -160,7 +160,10 @@ async function renderCourses() {
               <td><span class="badge ${statusClass}">${c.status.toUpperCase()}</span></td>
               <td>${c.created_at ? new Date(c.created_at).toLocaleDateString() : 'N/A'}</td>
               <td>
-                <button class="button danger small w-auto" onclick="deleteCourse('${escapeAttr(c.id)}')">Delete</button>
+                <div class="flex gap-5">
+                    <button class="button small w-auto" onclick="showChangeOwnerModal('${escapeAttr(c.id)}')">Change Owner</button>
+                    <button class="button danger small w-auto" onclick="deleteCourse('${escapeAttr(c.id)}')">Delete</button>
+                </div>
               </td>
             </tr>
         `;
@@ -181,8 +184,63 @@ async function deleteCourse(id) {
         UI.showNotification('Failed to delete course: ' + e.message, 'error');
     }
 }
+
+async function showChangeOwnerModal(courseId) {
+    const course = await SupabaseDB.getCourse(courseId);
+    if (!course) return;
+
+    const { data: teachers } = await SupabaseDB.getUsersByRole('teacher');
+
+    const backdrop = document.createElement('div');
+    backdrop.className = 'modal-backdrop';
+    backdrop.style.display = 'flex';
+    backdrop.innerHTML = `
+        <div class="modal" style="max-width:500px">
+            <div class="flex-between mb-20">
+                <h3 class="m-0">Change Course Owner</h3>
+                <button class="button secondary tiny w-auto" onclick="this.closest('.modal-backdrop').remove()">✕</button>
+            </div>
+            <p class="small mb-15">Select a new instructor for <strong>${escapeHtml(course.title)}</strong>.</p>
+            <div class="mb-20">
+                <label class="tiny">Current Instructor:</label>
+                <div class="card bg-light p-10 small">${escapeHtml(course.created_by)} (${escapeHtml(course.teacher_email)})</div>
+            </div>
+            <div class="mb-20">
+                <label>Select New Instructor:</label>
+                <select id="newTeacherSelect" class="w-100">
+                    <option value="">-- Choose Teacher --</option>
+                    ${teachers.map(t => `<option value="${escapeAttr(t.email)}" ${t.email === course.teacher_email ? 'disabled' : ''}>${escapeHtml(t.full_name)} (${escapeHtml(t.email)})</option>`).join('')}
+                </select>
+            </div>
+            <div class="flex-end gap-10">
+                <button class="button secondary w-auto" onclick="this.closest('.modal-backdrop').remove()">Cancel</button>
+                <button class="button w-auto px-30" id="confirmChangeOwner">Update Owner</button>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(backdrop);
+
+    document.getElementById('confirmChangeOwner').onclick = async () => {
+        const newEmail = document.getElementById('newTeacherSelect').value;
+        if (!newEmail) return UI.showNotification('Please select a teacher.', 'warn');
+
+        const newTeacher = teachers.find(t => t.email === newEmail);
+        try {
+            course.teacher_email = newEmail;
+            course.created_by = newTeacher.full_name;
+            await SupabaseDB.saveCourse(course);
+            UI.showNotification('Course owner updated successfully.', 'success');
+            backdrop.remove();
+            renderCourses();
+        } catch (e) {
+            UI.showNotification('Failed to update owner: ' + e.message, 'error');
+        }
+    };
+}
+
 window.renderCourses = renderCourses;
 window.deleteCourse = deleteCourse;
+window.showChangeOwnerModal = showChangeOwnerModal;
 
 async function renderUsers() {
 
@@ -594,8 +652,13 @@ function viewTicketDetails(id) {
             <div class="card bg-light p-15" style="white-space: pre-wrap">
                 ${escapeHtml(t.message)}
             </div>
-            <div class="mt-20 flex-end">
-                <button class="button px-40" onclick="this.closest('.modal-backdrop').remove()">Close</button>
+            <div class="mt-20">
+                <label>Resolution Notes:</label>
+                <textarea id="resNotes-${escapeAttr(t.id)}" rows="3" placeholder="Enter resolution details...">${escapeHtml(t.resolution_notes || '')}</textarea>
+            </div>
+            <div class="mt-20 flex-end gap-10">
+                <button class="button w-auto px-20" onclick="saveTicketNotes('${escapeAttr(t.id)}')">Save Notes</button>
+                <button class="button secondary px-40" onclick="this.closest('.modal-backdrop').remove()">Close</button>
             </div>
         </div>
     `;
@@ -605,15 +668,36 @@ window.viewTicketDetails = viewTicketDetails;
 
 async function updateTicketStatus(id, newStatus) {
     try {
-        await SupabaseDB.updateSupportTicketStatus(id, newStatus);
-        UI.showNotification('Ticket status updated.', 'success');
-        updateSidebarBadges();
-        renderSupportTickets();
+        const t = allTickets.find(x => x.id === id);
+        if (t) {
+            t.status = newStatus;
+            await SupabaseDB.saveSupportTicket(t);
+            UI.showNotification('Ticket status updated.', 'success');
+            updateSidebarBadges();
+            renderSupportTickets();
+        }
     } catch (e) {
         UI.showNotification('Failed to update status: ' + e.message, 'error');
     }
 }
+
+async function saveTicketNotes(id) {
+    const notes = document.getElementById(`resNotes-${id}`).value;
+    try {
+        const t = allTickets.find(x => x.id === id);
+        if (t) {
+            t.resolution_notes = notes;
+            await SupabaseDB.saveSupportTicket(t);
+            UI.showNotification('Resolution notes saved.', 'success');
+            renderSupportTickets();
+        }
+    } catch (e) {
+        UI.showNotification('Failed to save notes: ' + e.message, 'error');
+    }
+}
+
 window.updateTicketStatus = updateTicketStatus;
+window.saveTicketNotes = saveTicketNotes;
 
 async function deleteSupportTicket(id) {
     if (!await UI.confirm('Are you sure you want to delete this ticket?', 'Delete Ticket')) return;

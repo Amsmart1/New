@@ -319,6 +319,7 @@ CREATE TABLE IF NOT EXISTS support_tickets (
   subject VARCHAR(255) NOT NULL,
   message TEXT NOT NULL,
   status VARCHAR(50) DEFAULT 'open' CHECK (status IN ('open', 'pending', 'resolved', 'closed')),
+  resolution_notes TEXT,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
@@ -326,6 +327,7 @@ CREATE TABLE IF NOT EXISTS support_tickets (
 -- 2. Migrations for existing tables (Idempotent)
 
 -- Separate top-level ALTER statements to ensure columns exist for subsequent script parsing
+ALTER TABLE support_tickets ADD COLUMN IF NOT EXISTS resolution_notes TEXT;
 ALTER TABLE broadcasts ADD COLUMN IF NOT EXISTS expires_at TIMESTAMP WITH TIME ZONE DEFAULT (NOW() + INTERVAL '30 days');
 ALTER TABLE notifications ADD COLUMN IF NOT EXISTS expires_at TIMESTAMP WITH TIME ZONE DEFAULT (NOW() + INTERVAL '90 days');
 ALTER TABLE quiz_submissions ADD COLUMN IF NOT EXISTS attempt_number INTEGER;

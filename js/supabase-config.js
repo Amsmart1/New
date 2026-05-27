@@ -1488,28 +1488,21 @@ class SupabaseDB {
             role: ticket.role,
             subject: ticket.subject,
             message: ticket.message,
-            status: ticket.status || 'open'
+            status: ticket.status || 'open',
+            resolution_notes: ticket.resolution_notes || null
         };
         if (ticket.id) payload.id = ticket.id;
 
-        // Use insert instead of upsert to avoid unauthorized 401 error on SELECT/ON CONFLICT check
+        // Use upsert which handles both insert and update
         const { data, error } = await supabaseClient
             .from('support_tickets')
-            .insert([payload])
+            .upsert(payload, { onConflict: 'id' })
             .select();
         if (error) throw error;
         _cache.invalidate('support_tickets');
         return data?.[0];
     }
 
-    static async updateSupportTicketStatus(id, newStatus) {
-        const { error } = await supabaseClient
-            .from('support_tickets')
-            .update({ status: newStatus })
-            .eq('id', id);
-        if (error) throw error;
-        _cache.invalidate('support_tickets');
-    }
 
     static async getSupportTickets(userEmail = null) {
         return this._request(async () => {
