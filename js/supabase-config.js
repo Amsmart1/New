@@ -138,6 +138,9 @@ class SupabaseDB {
         });
     }
 
+    /**
+     * Retrieves all users with a specific role.
+     */
     static async getUsersByRole(role) {
         return this._request(async () => {
             const { data, count, error } = await supabaseClient
@@ -352,6 +355,9 @@ class SupabaseDB {
         });
     }
 
+    /**
+     * Retrieves a single course by its ID.
+     */
     static async getCourse(id) {
         return this._request(async () => {
             const { data, error } = await supabaseClient
@@ -462,6 +468,17 @@ class SupabaseDB {
             .eq('id', id);
         if (error) throw error;
         _cache.invalidate('support_tickets');
+    }
+
+    static async updateSupportTicket(id, updates) {
+        const { data, error } = await supabaseClient
+            .from('support_tickets')
+            .update(updates)
+            .eq('id', id)
+            .select();
+        if (error) throw error;
+        _cache.invalidate('support_tickets');
+        return data?.[0];
     }
 
     // Submission operations
@@ -754,6 +771,9 @@ class SupabaseDB {
         });
     }
 
+    /**
+     * Creates or updates a course record.
+     */
     static async saveCourse(course) {
         // Sanitize payload to avoid 400 error from extra fields
         const payload = {
@@ -1488,28 +1508,33 @@ class SupabaseDB {
             role: ticket.role,
             subject: ticket.subject,
             message: ticket.message,
-            status: ticket.status || 'open'
+            status: ticket.status || 'open',
+            resolution_notes: ticket.resolution_notes || null
         };
-        if (ticket.id) payload.id = ticket.id;
 
-        // Use insert instead of upsert to avoid unauthorized 401 error on SELECT/ON CONFLICT check
-        const { data, error } = await supabaseClient
-            .from('support_tickets')
-            .insert([payload])
-            .select();
-        if (error) throw error;
-        _cache.invalidate('support_tickets');
-        return data?.[0];
+        if (ticket.id) {
+            // Update existing ticket (Admin action)
+            const { data, error } = await supabaseClient
+                .from('support_tickets')
+                .update(payload)
+                .eq('id', ticket.id)
+                .select();
+            if (error) throw error;
+            _cache.invalidate('support_tickets');
+            return data?.[0];
+        } else {
+            // Create new ticket (Student/Teacher action)
+            // Use insert instead of upsert to avoid unauthorized 401 error on SELECT/ON CONFLICT check caused by strict RLS
+            const { data, error } = await supabaseClient
+                .from('support_tickets')
+                .insert([payload])
+                .select();
+            if (error) throw error;
+            _cache.invalidate('support_tickets');
+            return data?.[0];
+        }
     }
 
-    static async updateSupportTicketStatus(id, newStatus) {
-        const { error } = await supabaseClient
-            .from('support_tickets')
-            .update({ status: newStatus })
-            .eq('id', id);
-        if (error) throw error;
-        _cache.invalidate('support_tickets');
-    }
 
     static async getSupportTickets(userEmail = null) {
         return this._request(async () => {

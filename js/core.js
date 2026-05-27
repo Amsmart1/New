@@ -1747,12 +1747,21 @@ const HelpSystem = {
             list.style.textAlign = 'left';
             list.style.padding = '15px';
             list.innerHTML = tickets.map(t => `
-                <div style="border-bottom: 1px solid #eee; padding: 10px 0; display: flex; justify-content: space-between; align-items: center;">
-                    <div>
-                        <div class="bold" style="font-size: 0.9rem;">${escapeHtml(t.subject)}</div>
-                        <div class="tiny text-muted">${new Date(t.created_at).toLocaleDateString()}</div>
+                <div style="border-bottom: 1px solid #eee; padding: 15px 0;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px;">
+                        <div>
+                            <div class="bold" style="font-size: 0.9rem;">${escapeHtml(t.subject)}</div>
+                            <div class="tiny text-muted">${new Date(t.created_at).toLocaleDateString()}</div>
+                        </div>
+                        <span class="badge-${t.status === 'open' ? 'warn' : (t.status === 'pending' ? 'warn' : 'active')}" style="font-size: 0.7rem; padding: 2px 8px;">${t.status.toUpperCase()}</span>
                     </div>
-                    <span class="badge-${t.status === 'open' ? 'warn' : 'active'}" style="font-size: 0.7rem; padding: 2px 8px;">${t.status.toUpperCase()}</span>
+                    <div class="small text-muted mb-5">${escapeHtml(t.message.substring(0, 100))}${t.message.length > 100 ? '...' : ''}</div>
+                    ${t.resolution_notes ? `
+                        <div class="mt-10 p-10 border-radius-sm" style="background: #f0fdf4; border: 1px solid #bbf7d0;">
+                            <div class="tiny bold text-success" style="text-transform: uppercase; margin-bottom: 4px;">Resolution Update:</div>
+                            <div class="small text-dark" style="white-space: pre-wrap;">${escapeHtml(t.resolution_notes)}</div>
+                        </div>
+                    ` : ''}
                 </div>
             `).join('');
         } catch (e) {
