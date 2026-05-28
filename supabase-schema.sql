@@ -62,6 +62,7 @@ CREATE TABLE IF NOT EXISTS courses (
 CREATE TABLE IF NOT EXISTS lessons (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   course_id UUID REFERENCES courses(id) ON DELETE CASCADE,
+  teacher_email VARCHAR(255) REFERENCES users(email) ON UPDATE CASCADE ON DELETE SET NULL,
   title VARCHAR(255) NOT NULL,
   content TEXT,
   video_url TEXT,
@@ -103,8 +104,10 @@ CREATE TABLE IF NOT EXISTS assignments (
 
 CREATE TABLE IF NOT EXISTS submissions (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  course_id UUID REFERENCES courses(id) ON DELETE CASCADE,
   assignment_id UUID REFERENCES assignments(id) ON DELETE CASCADE,
   student_email VARCHAR(255) REFERENCES users(email) ON UPDATE CASCADE ON DELETE CASCADE,
+  teacher_email VARCHAR(255) REFERENCES users(email) ON UPDATE CASCADE ON DELETE SET NULL,
   submitted_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   answers JSONB DEFAULT '{}'::jsonb,
@@ -142,8 +145,10 @@ CREATE TABLE IF NOT EXISTS live_classes (
 
 CREATE TABLE IF NOT EXISTS attendance (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  course_id UUID REFERENCES courses(id) ON DELETE CASCADE,
   live_class_id UUID REFERENCES live_classes(id) ON DELETE CASCADE,
   student_email VARCHAR(255) REFERENCES users(email) ON UPDATE CASCADE ON DELETE CASCADE,
+  teacher_email VARCHAR(255) REFERENCES users(email) ON UPDATE CASCADE ON DELETE SET NULL,
   join_time TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   leave_time TIMESTAMP WITH TIME ZONE,
   duration INTEGER DEFAULT 0,
@@ -174,8 +179,10 @@ CREATE TABLE IF NOT EXISTS quizzes (
 
 CREATE TABLE IF NOT EXISTS quiz_submissions (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  course_id UUID REFERENCES courses(id) ON DELETE CASCADE,
   quiz_id UUID REFERENCES quizzes(id) ON DELETE CASCADE,
   student_email VARCHAR(255) REFERENCES users(email) ON UPDATE CASCADE ON DELETE CASCADE,
+  teacher_email VARCHAR(255) REFERENCES users(email) ON UPDATE CASCADE ON DELETE SET NULL,
   attempt_number INTEGER,
   score INTEGER CHECK (score >= 0),
   total_points INTEGER CHECK (total_points >= 0),
@@ -205,6 +212,7 @@ CREATE TABLE IF NOT EXISTS discussions (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   course_id UUID REFERENCES courses(id) ON DELETE CASCADE,
   user_email VARCHAR(255) REFERENCES users(email) ON UPDATE CASCADE ON DELETE CASCADE,
+  teacher_email VARCHAR(255) REFERENCES users(email) ON UPDATE CASCADE ON DELETE SET NULL,
   parent_id UUID REFERENCES discussions(id) ON DELETE CASCADE,
   title VARCHAR(255),
   content TEXT NOT NULL,
@@ -228,6 +236,7 @@ CREATE TABLE IF NOT EXISTS notifications (
 CREATE TABLE IF NOT EXISTS broadcasts (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   course_id UUID REFERENCES courses(id) ON DELETE CASCADE,
+  teacher_email VARCHAR(255) REFERENCES users(email) ON UPDATE CASCADE ON DELETE SET NULL,
   target_role VARCHAR(50) CHECK (target_role IS NULL OR target_role IN ('student', 'teacher', 'admin')),
   title VARCHAR(255) NOT NULL,
   message TEXT NOT NULL,
@@ -265,6 +274,7 @@ CREATE TABLE IF NOT EXISTS certificates (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   course_id UUID REFERENCES courses(id) ON DELETE CASCADE,
   student_email VARCHAR(255) REFERENCES users(email) ON UPDATE CASCADE ON DELETE CASCADE,
+  teacher_email VARCHAR(255) REFERENCES users(email) ON UPDATE CASCADE ON DELETE SET NULL,
   issued_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   certificate_url TEXT,
@@ -275,6 +285,7 @@ CREATE TABLE IF NOT EXISTS study_sessions (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   user_email VARCHAR(255) REFERENCES users(email) ON UPDATE CASCADE ON DELETE CASCADE,
   course_id UUID REFERENCES courses(id) ON DELETE CASCADE,
+  teacher_email VARCHAR(255) REFERENCES users(email) ON UPDATE CASCADE ON DELETE SET NULL,
   duration INTEGER NOT NULL CHECK (duration > 0),
   started_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   ended_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
@@ -295,7 +306,9 @@ CREATE TABLE IF NOT EXISTS invites (
 
 CREATE TABLE IF NOT EXISTS violations (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  course_id UUID REFERENCES courses(id) ON DELETE CASCADE,
   user_email VARCHAR(255) REFERENCES users(email) ON UPDATE CASCADE ON DELETE CASCADE,
+  teacher_email VARCHAR(255) REFERENCES users(email) ON UPDATE CASCADE ON DELETE SET NULL,
   assessment_id UUID NOT NULL,
   assessment_type VARCHAR(50) NOT NULL CHECK (assessment_type IN ('assignment', 'quiz')),
   type VARCHAR(100) NOT NULL,
@@ -384,6 +397,7 @@ BEGIN
 
     -- lessons
     ALTER TABLE lessons ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
+    ALTER TABLE lessons ADD COLUMN IF NOT EXISTS teacher_email VARCHAR(255) REFERENCES users(email) ON UPDATE CASCADE ON DELETE SET NULL;
 
     -- enrollments
     ALTER TABLE enrollments ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
@@ -396,6 +410,8 @@ BEGIN
 
     -- submissions
     ALTER TABLE submissions ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
+    ALTER TABLE submissions ADD COLUMN IF NOT EXISTS course_id UUID REFERENCES courses(id) ON DELETE CASCADE;
+    ALTER TABLE submissions ADD COLUMN IF NOT EXISTS teacher_email VARCHAR(255) REFERENCES users(email) ON UPDATE CASCADE ON DELETE SET NULL;
     ALTER TABLE submissions ADD COLUMN IF NOT EXISTS question_feedback JSONB DEFAULT '{}'::jsonb;
     ALTER TABLE submissions ADD COLUMN IF NOT EXISTS question_scores JSONB DEFAULT '{}'::jsonb;
     ALTER TABLE submissions ADD COLUMN IF NOT EXISTS late_penalty_applied INTEGER DEFAULT 0;
@@ -426,6 +442,8 @@ BEGIN
 
     -- attendance
     ALTER TABLE attendance ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
+    ALTER TABLE attendance ADD COLUMN IF NOT EXISTS course_id UUID REFERENCES courses(id) ON DELETE CASCADE;
+    ALTER TABLE attendance ADD COLUMN IF NOT EXISTS teacher_email VARCHAR(255) REFERENCES users(email) ON UPDATE CASCADE ON DELETE SET NULL;
 
     -- quizzes
     ALTER TABLE quizzes ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
@@ -439,6 +457,8 @@ BEGIN
 
     -- quiz_submissions
     ALTER TABLE quiz_submissions ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
+    ALTER TABLE quiz_submissions ADD COLUMN IF NOT EXISTS course_id UUID REFERENCES courses(id) ON DELETE CASCADE;
+    ALTER TABLE quiz_submissions ADD COLUMN IF NOT EXISTS teacher_email VARCHAR(255) REFERENCES users(email) ON UPDATE CASCADE ON DELETE SET NULL;
     ALTER TABLE quiz_submissions ADD COLUMN IF NOT EXISTS attempt_number INTEGER;
 
     -- Migrate quiz_submissions attempt numbers if needed
@@ -461,6 +481,9 @@ BEGIN
     ALTER TABLE materials ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
     ALTER TABLE materials ADD COLUMN IF NOT EXISTS teacher_email VARCHAR(255) REFERENCES users(email) ON UPDATE CASCADE ON DELETE SET NULL;
 
+    -- discussions
+    ALTER TABLE discussions ADD COLUMN IF NOT EXISTS teacher_email VARCHAR(255) REFERENCES users(email) ON UPDATE CASCADE ON DELETE SET NULL;
+
     -- notifications
     ALTER TABLE notifications ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
     BEGIN
@@ -470,6 +493,7 @@ BEGIN
 
     -- broadcasts
     ALTER TABLE broadcasts ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
+    ALTER TABLE broadcasts ADD COLUMN IF NOT EXISTS teacher_email VARCHAR(255) REFERENCES users(email) ON UPDATE CASCADE ON DELETE SET NULL;
 
     -- maintenance
     ALTER TABLE maintenance ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
@@ -480,10 +504,12 @@ BEGIN
 
     -- certificates
     ALTER TABLE certificates ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
+    ALTER TABLE certificates ADD COLUMN IF NOT EXISTS teacher_email VARCHAR(255) REFERENCES users(email) ON UPDATE CASCADE ON DELETE SET NULL;
 
     -- study_sessions
     ALTER TABLE study_sessions ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
     ALTER TABLE study_sessions ADD COLUMN IF NOT EXISTS duration INTEGER;
+    ALTER TABLE study_sessions ADD COLUMN IF NOT EXISTS teacher_email VARCHAR(255) REFERENCES users(email) ON UPDATE CASCADE ON DELETE SET NULL;
     BEGIN
         ALTER TABLE study_sessions ADD CONSTRAINT study_sessions_duration_check CHECK (duration > 0);
     EXCEPTION WHEN OTHERS THEN NULL; END;
@@ -494,6 +520,8 @@ BEGIN
     -- violations
     ALTER TABLE violations ADD COLUMN IF NOT EXISTS created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
     ALTER TABLE violations ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
+    ALTER TABLE violations ADD COLUMN IF NOT EXISTS course_id UUID REFERENCES courses(id) ON DELETE CASCADE;
+    ALTER TABLE violations ADD COLUMN IF NOT EXISTS teacher_email VARCHAR(255) REFERENCES users(email) ON UPDATE CASCADE ON DELETE SET NULL;
 END $$;
 
 -- Ensure composite unique constraints exist for idempotent upserts
@@ -642,6 +670,15 @@ BEGIN
     UPDATE quizzes SET teacher_email = NEW.teacher_email WHERE course_id = NEW.id;
     UPDATE live_classes SET teacher_email = NEW.teacher_email WHERE course_id = NEW.id;
     UPDATE materials SET teacher_email = NEW.teacher_email WHERE course_id = NEW.id;
+    UPDATE lessons SET teacher_email = NEW.teacher_email WHERE course_id = NEW.id;
+    UPDATE submissions SET teacher_email = NEW.teacher_email WHERE course_id = NEW.id;
+    UPDATE quiz_submissions SET teacher_email = NEW.teacher_email WHERE course_id = NEW.id;
+    UPDATE attendance SET teacher_email = NEW.teacher_email WHERE course_id = NEW.id;
+    UPDATE discussions SET teacher_email = NEW.teacher_email WHERE course_id = NEW.id;
+    UPDATE broadcasts SET teacher_email = NEW.teacher_email WHERE course_id = NEW.id;
+    UPDATE certificates SET teacher_email = NEW.teacher_email WHERE course_id = NEW.id;
+    UPDATE study_sessions SET teacher_email = NEW.teacher_email WHERE course_id = NEW.id;
+    UPDATE violations SET teacher_email = NEW.teacher_email WHERE course_id = NEW.id;
   END IF;
   RETURN NEW;
 END;
@@ -652,26 +689,72 @@ CREATE TRIGGER tr_course_owner_sync_children
 AFTER UPDATE OF teacher_email ON courses
 FOR EACH ROW EXECUTE PROCEDURE tr_sync_course_children_owner();
 
-CREATE OR REPLACE FUNCTION tr_inherit_course_owner() RETURNS TRIGGER AS $$
+CREATE OR REPLACE FUNCTION tr_inherit_course_data() RETURNS TRIGGER AS $$
 BEGIN
-  IF NEW.teacher_email IS NULL THEN
+  -- 1. Populate course_id from parent assessments/classes if missing
+  IF NEW.course_id IS NULL THEN
+    IF TG_TABLE_NAME = 'submissions' THEN
+      SELECT course_id INTO NEW.course_id FROM assignments WHERE id = NEW.assignment_id;
+    ELSIF TG_TABLE_NAME = 'quiz_submissions' THEN
+      SELECT course_id INTO NEW.course_id FROM quizzes WHERE id = NEW.quiz_id;
+    ELSIF TG_TABLE_NAME = 'attendance' THEN
+      SELECT course_id INTO NEW.course_id FROM live_classes WHERE id = NEW.live_class_id;
+    ELSIF TG_TABLE_NAME = 'violations' THEN
+      IF NEW.assessment_type = 'assignment' THEN
+        SELECT course_id INTO NEW.course_id FROM assignments WHERE id = NEW.assessment_id;
+      ELSIF NEW.assessment_type = 'quiz' THEN
+        SELECT course_id INTO NEW.course_id FROM quizzes WHERE id = NEW.assessment_id;
+      END IF;
+    END IF;
+  END IF;
+
+  -- 2. Populate teacher_email from course if missing
+  IF NEW.teacher_email IS NULL AND NEW.course_id IS NOT NULL THEN
     SELECT teacher_email INTO NEW.teacher_email FROM courses WHERE id = NEW.course_id;
   END IF;
+
   RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
 
-DROP TRIGGER IF EXISTS tr_assignment_owner_inherit ON assignments;
-CREATE TRIGGER tr_assignment_owner_inherit BEFORE INSERT ON assignments FOR EACH ROW EXECUTE PROCEDURE tr_inherit_course_owner();
+DROP TRIGGER IF EXISTS tr_lesson_data_inherit ON lessons;
+CREATE TRIGGER tr_lesson_data_inherit BEFORE INSERT ON lessons FOR EACH ROW EXECUTE PROCEDURE tr_inherit_course_data();
 
-DROP TRIGGER IF EXISTS tr_quiz_owner_inherit ON quizzes;
-CREATE TRIGGER tr_quiz_owner_inherit BEFORE INSERT ON quizzes FOR EACH ROW EXECUTE PROCEDURE tr_inherit_course_owner();
+DROP TRIGGER IF EXISTS tr_assignment_data_inherit ON assignments;
+CREATE TRIGGER tr_assignment_data_inherit BEFORE INSERT ON assignments FOR EACH ROW EXECUTE PROCEDURE tr_inherit_course_data();
 
-DROP TRIGGER IF EXISTS tr_live_class_owner_inherit ON live_classes;
-CREATE TRIGGER tr_live_class_owner_inherit BEFORE INSERT ON live_classes FOR EACH ROW EXECUTE PROCEDURE tr_inherit_course_owner();
+DROP TRIGGER IF EXISTS tr_submission_data_inherit ON submissions;
+CREATE TRIGGER tr_submission_data_inherit BEFORE INSERT ON submissions FOR EACH ROW EXECUTE PROCEDURE tr_inherit_course_data();
 
-DROP TRIGGER IF EXISTS tr_material_owner_inherit ON materials;
-CREATE TRIGGER tr_material_owner_inherit BEFORE INSERT ON materials FOR EACH ROW EXECUTE PROCEDURE tr_inherit_course_owner();
+DROP TRIGGER IF EXISTS tr_quiz_data_inherit ON quizzes;
+CREATE TRIGGER tr_quiz_data_inherit BEFORE INSERT ON quizzes FOR EACH ROW EXECUTE PROCEDURE tr_inherit_course_data();
+
+DROP TRIGGER IF EXISTS tr_quiz_submission_data_inherit ON quiz_submissions;
+CREATE TRIGGER tr_quiz_submission_data_inherit BEFORE INSERT ON quiz_submissions FOR EACH ROW EXECUTE PROCEDURE tr_inherit_course_data();
+
+DROP TRIGGER IF EXISTS tr_live_class_data_inherit ON live_classes;
+CREATE TRIGGER tr_live_class_data_inherit BEFORE INSERT ON live_classes FOR EACH ROW EXECUTE PROCEDURE tr_inherit_course_data();
+
+DROP TRIGGER IF EXISTS tr_attendance_data_inherit ON attendance;
+CREATE TRIGGER tr_attendance_data_inherit BEFORE INSERT ON attendance FOR EACH ROW EXECUTE PROCEDURE tr_inherit_course_data();
+
+DROP TRIGGER IF EXISTS tr_material_data_inherit ON materials;
+CREATE TRIGGER tr_material_data_inherit BEFORE INSERT ON materials FOR EACH ROW EXECUTE PROCEDURE tr_inherit_course_data();
+
+DROP TRIGGER IF EXISTS tr_discussion_data_inherit ON discussions;
+CREATE TRIGGER tr_discussion_data_inherit BEFORE INSERT ON discussions FOR EACH ROW EXECUTE PROCEDURE tr_inherit_course_data();
+
+DROP TRIGGER IF EXISTS tr_broadcast_data_inherit ON broadcasts;
+CREATE TRIGGER tr_broadcast_data_inherit BEFORE INSERT ON broadcasts FOR EACH ROW EXECUTE PROCEDURE tr_inherit_course_data();
+
+DROP TRIGGER IF EXISTS tr_certificate_data_inherit ON certificates;
+CREATE TRIGGER tr_certificate_data_inherit BEFORE INSERT ON certificates FOR EACH ROW EXECUTE PROCEDURE tr_inherit_course_data();
+
+DROP TRIGGER IF EXISTS tr_study_session_data_inherit ON study_sessions;
+CREATE TRIGGER tr_study_session_data_inherit BEFORE INSERT ON study_sessions FOR EACH ROW EXECUTE PROCEDURE tr_inherit_course_data();
+
+DROP TRIGGER IF EXISTS tr_violation_data_inherit ON violations;
+CREATE TRIGGER tr_violation_data_inherit BEFORE INSERT ON violations FOR EACH ROW EXECUTE PROCEDURE tr_inherit_course_data();
 
 -- 5. Validation Triggers
 
@@ -902,19 +985,32 @@ CREATE INDEX IF NOT EXISTS idx_violations_user ON violations(user_email);
 CREATE INDEX IF NOT EXISTS idx_violations_reporting ON violations(assessment_id, user_email);
 
 -- Missing Foreign-Key Indexes
+CREATE INDEX IF NOT EXISTS idx_lessons_teacher_email ON lessons(teacher_email);
 CREATE INDEX IF NOT EXISTS idx_assignments_teacher_email ON assignments(teacher_email);
+CREATE INDEX IF NOT EXISTS idx_submissions_course_id ON submissions(course_id);
+CREATE INDEX IF NOT EXISTS idx_submissions_teacher_email ON submissions(teacher_email);
 CREATE INDEX IF NOT EXISTS idx_live_classes_course_id ON live_classes(course_id);
 CREATE INDEX IF NOT EXISTS idx_live_classes_teacher_email ON live_classes(teacher_email);
+CREATE INDEX IF NOT EXISTS idx_attendance_course_id ON attendance(course_id);
+CREATE INDEX IF NOT EXISTS idx_attendance_teacher_email ON attendance(teacher_email);
 CREATE INDEX IF NOT EXISTS idx_attendance_student_email ON attendance(student_email);
 CREATE INDEX IF NOT EXISTS idx_quizzes_course_id ON quizzes(course_id);
 CREATE INDEX IF NOT EXISTS idx_quizzes_teacher_email ON quizzes(teacher_email);
+CREATE INDEX IF NOT EXISTS idx_quiz_submissions_course_id ON quiz_submissions(course_id);
+CREATE INDEX IF NOT EXISTS idx_quiz_submissions_teacher_email ON quiz_submissions(teacher_email);
 CREATE INDEX IF NOT EXISTS idx_materials_teacher_email ON materials(teacher_email);
 CREATE INDEX IF NOT EXISTS idx_discussions_course_id ON discussions(course_id);
 CREATE INDEX IF NOT EXISTS idx_discussions_user_email ON discussions(user_email);
+CREATE INDEX IF NOT EXISTS idx_discussions_teacher_email ON discussions(teacher_email);
 CREATE INDEX IF NOT EXISTS idx_broadcasts_course_id ON broadcasts(course_id);
+CREATE INDEX IF NOT EXISTS idx_broadcasts_teacher_email ON broadcasts(teacher_email);
 CREATE INDEX IF NOT EXISTS idx_certificates_course_id ON certificates(course_id);
 CREATE INDEX IF NOT EXISTS idx_certificates_student_email ON certificates(student_email);
+CREATE INDEX IF NOT EXISTS idx_certificates_teacher_email ON certificates(teacher_email);
 CREATE INDEX IF NOT EXISTS idx_study_sessions_course_id ON study_sessions(course_id);
+CREATE INDEX IF NOT EXISTS idx_study_sessions_teacher_email ON study_sessions(teacher_email);
+CREATE INDEX IF NOT EXISTS idx_violations_course_id ON violations(course_id);
+CREATE INDEX IF NOT EXISTS idx_violations_teacher_email ON violations(teacher_email);
 CREATE INDEX IF NOT EXISTS idx_invites_created_by ON invites(created_by);
 
 -- Index for performant RLS identity resolution
@@ -1456,12 +1552,13 @@ CREATE POLICY "Courses: Teachers Manage" ON courses FOR ALL USING (teacher_email
 -- 3. Lessons Table
 DROP POLICY IF EXISTS "Lessons: Select" ON lessons;
 CREATE POLICY "Lessons: Select" ON lessons FOR SELECT USING (
-  EXISTS (SELECT 1 FROM enrollments WHERE course_id = lessons.course_id AND student_email = get_auth_email()) OR
-  EXISTS (SELECT 1 FROM courses WHERE id = lessons.course_id AND (teacher_email = get_auth_email() OR is_admin()))
+  is_admin() OR
+  teacher_email = get_auth_email() OR
+  EXISTS (SELECT 1 FROM enrollments WHERE course_id = lessons.course_id AND student_email = get_auth_email())
 );
 DROP POLICY IF EXISTS "Lessons: Teachers Manage" ON lessons;
 CREATE POLICY "Lessons: Teachers Manage" ON lessons FOR ALL USING (
-  is_admin() OR EXISTS (SELECT 1 FROM courses WHERE id = lessons.course_id AND teacher_email = get_auth_email())
+  is_admin() OR teacher_email = get_auth_email()
 );
 
 -- 4. Enrollments Table
@@ -1482,12 +1579,12 @@ CREATE POLICY "Enrollments: Student Update Progress" ON enrollments FOR UPDATE U
 DROP POLICY IF EXISTS "Assignments: Select" ON assignments;
 CREATE POLICY "Assignments: Select" ON assignments FOR SELECT USING (
   is_admin() OR
-  (EXISTS (SELECT 1 FROM enrollments WHERE course_id = assignments.course_id AND student_email = get_auth_email()) AND status = 'published') OR
-  EXISTS (SELECT 1 FROM courses WHERE id = assignments.course_id AND teacher_email = get_auth_email())
+  teacher_email = get_auth_email() OR
+  (status = 'published' AND EXISTS (SELECT 1 FROM enrollments WHERE course_id = assignments.course_id AND student_email = get_auth_email()))
 );
 DROP POLICY IF EXISTS "Assignments: Teachers Manage" ON assignments;
 CREATE POLICY "Assignments: Teachers Manage" ON assignments FOR ALL USING (
-  is_admin() OR EXISTS (SELECT 1 FROM courses WHERE id = assignments.course_id AND teacher_email = get_auth_email())
+  is_admin() OR teacher_email = get_auth_email()
 );
 
 -- 6. Submissions Table
@@ -1495,27 +1592,30 @@ DROP POLICY IF EXISTS "Submissions: Select" ON submissions;
 CREATE POLICY "Submissions: Select" ON submissions FOR SELECT USING (
   is_admin() OR
   student_email = get_auth_email() OR
-  EXISTS (SELECT 1 FROM assignments WHERE id = submissions.assignment_id AND EXISTS (SELECT 1 FROM courses WHERE id = assignments.course_id AND teacher_email = get_auth_email()))
+  teacher_email = get_auth_email()
 );
 DROP POLICY IF EXISTS "Submissions: Insert" ON submissions;
-CREATE POLICY "Submissions: Insert" ON submissions FOR INSERT WITH CHECK (student_email = get_auth_email());
+CREATE POLICY "Submissions: Insert" ON submissions FOR INSERT WITH CHECK (
+  student_email = get_auth_email() AND
+  EXISTS (SELECT 1 FROM enrollments WHERE course_id = submissions.course_id AND student_email = get_auth_email())
+);
 DROP POLICY IF EXISTS "Submissions: Update" ON submissions;
 CREATE POLICY "Submissions: Update" ON submissions FOR UPDATE USING (
   is_admin() OR
   student_email = get_auth_email() OR
-  EXISTS (SELECT 1 FROM assignments WHERE id = submissions.assignment_id AND EXISTS (SELECT 1 FROM courses WHERE id = assignments.course_id AND teacher_email = get_auth_email()))
+  teacher_email = get_auth_email()
 );
 
 -- 7. Live Classes Table
 DROP POLICY IF EXISTS "Live Classes: Select" ON live_classes;
 CREATE POLICY "Live Classes: Select" ON live_classes FOR SELECT USING (
   is_admin() OR
-  EXISTS (SELECT 1 FROM enrollments WHERE course_id = live_classes.course_id AND student_email = get_auth_email()) OR
-  EXISTS (SELECT 1 FROM courses WHERE id = live_classes.course_id AND teacher_email = get_auth_email())
+  teacher_email = get_auth_email() OR
+  EXISTS (SELECT 1 FROM enrollments WHERE course_id = live_classes.course_id AND student_email = get_auth_email())
 );
 DROP POLICY IF EXISTS "Live Classes: Teachers Manage" ON live_classes;
 CREATE POLICY "Live Classes: Teachers Manage" ON live_classes FOR ALL USING (
-  is_admin() OR EXISTS (SELECT 1 FROM courses WHERE id = live_classes.course_id AND teacher_email = get_auth_email())
+  is_admin() OR teacher_email = get_auth_email()
 );
 
 -- 8. Attendance Table
@@ -1523,21 +1623,24 @@ DROP POLICY IF EXISTS "Attendance: Access" ON attendance;
 CREATE POLICY "Attendance: Access" ON attendance FOR SELECT USING (
   is_admin() OR
   student_email = get_auth_email() OR
-  (is_teacher() AND EXISTS (SELECT 1 FROM live_classes WHERE id = attendance.live_class_id AND EXISTS (SELECT 1 FROM courses WHERE id = live_classes.course_id AND teacher_email = get_auth_email())))
+  teacher_email = get_auth_email()
 );
 DROP POLICY IF EXISTS "Attendance: Insert" ON attendance;
-CREATE POLICY "Attendance: Insert" ON attendance FOR INSERT WITH CHECK (student_email = get_auth_email());
+CREATE POLICY "Attendance: Insert" ON attendance FOR INSERT WITH CHECK (
+  student_email = get_auth_email() AND
+  EXISTS (SELECT 1 FROM enrollments WHERE course_id = attendance.course_id AND student_email = get_auth_email())
+);
 
 -- 9. Quizzes Table
 DROP POLICY IF EXISTS "Quizzes: Select" ON quizzes;
 CREATE POLICY "Quizzes: Select" ON quizzes FOR SELECT USING (
   is_admin() OR
-  (EXISTS (SELECT 1 FROM enrollments WHERE course_id = quizzes.course_id AND student_email = get_auth_email()) AND status = 'published') OR
-  EXISTS (SELECT 1 FROM courses WHERE id = quizzes.course_id AND teacher_email = get_auth_email())
+  teacher_email = get_auth_email() OR
+  (status = 'published' AND EXISTS (SELECT 1 FROM enrollments WHERE course_id = quizzes.course_id AND student_email = get_auth_email()))
 );
 DROP POLICY IF EXISTS "Quizzes: Teachers Manage" ON quizzes;
 CREATE POLICY "Quizzes: Teachers Manage" ON quizzes FOR ALL USING (
-  is_admin() OR EXISTS (SELECT 1 FROM courses WHERE id = quizzes.course_id AND teacher_email = get_auth_email())
+  is_admin() OR teacher_email = get_auth_email()
 );
 
 -- 10. Quiz Submissions Table
@@ -1545,31 +1648,56 @@ DROP POLICY IF EXISTS "Quiz Submissions: Access" ON quiz_submissions;
 CREATE POLICY "Quiz Submissions: Access" ON quiz_submissions FOR SELECT USING (
   is_admin() OR
   student_email = get_auth_email() OR
-  EXISTS (SELECT 1 FROM quizzes WHERE id = quiz_submissions.quiz_id AND EXISTS (SELECT 1 FROM courses WHERE id = quizzes.course_id AND teacher_email = get_auth_email()))
+  teacher_email = get_auth_email()
 );
 DROP POLICY IF EXISTS "Quiz Submissions: Insert" ON quiz_submissions;
-CREATE POLICY "Quiz Submissions: Insert" ON quiz_submissions FOR INSERT WITH CHECK (student_email = get_auth_email());
+CREATE POLICY "Quiz Submissions: Insert" ON quiz_submissions FOR INSERT WITH CHECK (
+  student_email = get_auth_email() AND
+  EXISTS (SELECT 1 FROM enrollments WHERE course_id = quiz_submissions.course_id AND student_email = get_auth_email())
+);
 DROP POLICY IF EXISTS "Quiz Submissions: Update" ON quiz_submissions;
-CREATE POLICY "Quiz Submissions: Update" ON quiz_submissions FOR UPDATE USING (student_email = get_auth_email());
+CREATE POLICY "Quiz Submissions: Update" ON quiz_submissions FOR UPDATE USING (
+  is_admin() OR
+  student_email = get_auth_email() OR
+  teacher_email = get_auth_email()
+);
 
 -- 11. Materials Table
 DROP POLICY IF EXISTS "Materials: Select" ON materials;
 CREATE POLICY "Materials: Select" ON materials FOR SELECT USING (
   is_admin() OR
-  EXISTS (SELECT 1 FROM enrollments WHERE course_id = materials.course_id AND student_email = get_auth_email()) OR
-  EXISTS (SELECT 1 FROM courses WHERE id = materials.course_id AND teacher_email = get_auth_email())
+  teacher_email = get_auth_email() OR
+  EXISTS (SELECT 1 FROM enrollments WHERE course_id = materials.course_id AND student_email = get_auth_email())
 );
 DROP POLICY IF EXISTS "Materials: Teachers Manage" ON materials;
 CREATE POLICY "Materials: Teachers Manage" ON materials FOR ALL USING (
-  is_admin() OR EXISTS (SELECT 1 FROM courses WHERE id = materials.course_id AND teacher_email = get_auth_email())
+  is_admin() OR teacher_email = get_auth_email()
 );
 
 -- 12. Discussions Table
-DROP POLICY IF EXISTS "Discussions: Access" ON discussions;
-CREATE POLICY "Discussions: Access" ON discussions FOR ALL USING (
+DROP POLICY IF EXISTS "Discussions: Select" ON discussions;
+CREATE POLICY "Discussions: Select" ON discussions FOR SELECT USING (
   is_admin() OR
-  EXISTS (SELECT 1 FROM enrollments WHERE course_id = discussions.course_id AND student_email = get_auth_email()) OR
-  EXISTS (SELECT 1 FROM courses WHERE id = discussions.course_id AND teacher_email = get_auth_email())
+  teacher_email = get_auth_email() OR
+  EXISTS (SELECT 1 FROM enrollments WHERE course_id = discussions.course_id AND student_email = get_auth_email())
+);
+DROP POLICY IF EXISTS "Discussions: Insert" ON discussions;
+CREATE POLICY "Discussions: Insert" ON discussions FOR INSERT WITH CHECK (
+  is_admin() OR
+  teacher_email = get_auth_email() OR
+  (user_email = get_auth_email() AND EXISTS (SELECT 1 FROM enrollments WHERE course_id = discussions.course_id AND student_email = get_auth_email()))
+);
+DROP POLICY IF EXISTS "Discussions: Update" ON discussions;
+CREATE POLICY "Discussions: Update" ON discussions FOR UPDATE USING (
+  is_admin() OR
+  teacher_email = get_auth_email() OR
+  user_email = get_auth_email()
+);
+DROP POLICY IF EXISTS "Discussions: Delete" ON discussions;
+CREATE POLICY "Discussions: Delete" ON discussions FOR DELETE USING (
+  is_admin() OR
+  teacher_email = get_auth_email() OR
+  user_email = get_auth_email()
 );
 
 -- 13. Notifications Table
@@ -1580,19 +1708,18 @@ CREATE POLICY "Notifications: User Access" ON notifications FOR ALL USING (user_
 DROP POLICY IF EXISTS "Broadcasts: Access" ON broadcasts;
 CREATE POLICY "Broadcasts: Access" ON broadcasts FOR SELECT USING (
   is_admin() OR
+  teacher_email = get_auth_email() OR
   (
     (target_role IS NULL OR target_role = get_auth_role()) AND (
       course_id IS NULL OR
-      EXISTS (SELECT 1 FROM enrollments WHERE course_id = broadcasts.course_id AND student_email = get_auth_email()) OR
-      (
-        target_role IS DISTINCT FROM 'student' AND
-        EXISTS (SELECT 1 FROM courses WHERE id = broadcasts.course_id AND teacher_email = get_auth_email())
-      )
+      EXISTS (SELECT 1 FROM enrollments WHERE course_id = broadcasts.course_id AND student_email = get_auth_email())
     )
   )
 );
 DROP POLICY IF EXISTS "Broadcasts: Manage" ON broadcasts;
-CREATE POLICY "Broadcasts: Manage" ON broadcasts FOR ALL USING (is_teacher() OR is_admin());
+CREATE POLICY "Broadcasts: Manage" ON broadcasts FOR ALL USING (
+  is_admin() OR teacher_email = get_auth_email()
+);
 
 -- 15. Maintenance Table
 DROP POLICY IF EXISTS "Maintenance: Select" ON maintenance;
@@ -1607,20 +1734,16 @@ DROP POLICY IF EXISTS "Violations: User Access" ON violations;
 CREATE POLICY "Violations: User Access" ON violations FOR SELECT USING (
   is_admin() OR
   user_email = get_auth_email() OR
-  (is_teacher() AND (
-    EXISTS (SELECT 1 FROM assignments WHERE id = violations.assessment_id AND violations.assessment_type = 'assignment' AND EXISTS (SELECT 1 FROM courses WHERE id = assignments.course_id AND teacher_email = get_auth_email())) OR
-    EXISTS (SELECT 1 FROM quizzes WHERE id = violations.assessment_id AND violations.assessment_type = 'quiz' AND EXISTS (SELECT 1 FROM courses WHERE id = quizzes.course_id AND teacher_email = get_auth_email()))
-  ))
+  teacher_email = get_auth_email()
 );
 DROP POLICY IF EXISTS "Violations: Insert" ON violations;
-CREATE POLICY "Violations: Insert" ON violations FOR INSERT WITH CHECK (user_email = get_auth_email());
+CREATE POLICY "Violations: Insert" ON violations FOR INSERT WITH CHECK (
+  user_email = get_auth_email() AND
+  EXISTS (SELECT 1 FROM enrollments WHERE course_id = violations.course_id AND student_email = get_auth_email())
+);
 DROP POLICY IF EXISTS "Violations: Delete" ON violations;
 CREATE POLICY "Violations: Delete" ON violations FOR DELETE USING (
-  is_admin() OR
-  (is_teacher() AND (
-    EXISTS (SELECT 1 FROM assignments WHERE id = violations.assessment_id AND violations.assessment_type = 'assignment' AND EXISTS (SELECT 1 FROM courses WHERE id = assignments.course_id AND teacher_email = get_auth_email())) OR
-    EXISTS (SELECT 1 FROM quizzes WHERE id = violations.assessment_id AND violations.assessment_type = 'quiz' AND EXISTS (SELECT 1 FROM courses WHERE id = quizzes.course_id AND teacher_email = get_auth_email()))
-  ))
+  is_admin() OR teacher_email = get_auth_email()
 );
 
 -- 18. Planner Table
@@ -1629,14 +1752,20 @@ CREATE POLICY "Planner: User Access" ON planner FOR ALL USING (user_email = get_
 
 -- 19. Study Sessions Table
 DROP POLICY IF EXISTS "Study Sessions: User Access" ON study_sessions;
-CREATE POLICY "Study Sessions: User Access" ON study_sessions FOR ALL USING (user_email = get_auth_email() OR is_admin());
+CREATE POLICY "Study Sessions: User Access" ON study_sessions FOR SELECT USING (
+  is_admin() OR user_email = get_auth_email() OR teacher_email = get_auth_email()
+);
+CREATE POLICY "Study Sessions: Insert" ON study_sessions FOR INSERT WITH CHECK (
+  user_email = get_auth_email() AND
+  EXISTS (SELECT 1 FROM enrollments WHERE course_id = study_sessions.course_id AND student_email = get_auth_email())
+);
 
 -- 20. Certificates Table
 DROP POLICY IF EXISTS "Certificates: User Access" ON certificates;
 CREATE POLICY "Certificates: User Access" ON certificates FOR SELECT USING (
   is_admin() OR
   student_email = get_auth_email() OR
-  (is_teacher() AND EXISTS (SELECT 1 FROM courses WHERE id = certificates.course_id AND teacher_email = get_auth_email()))
+  teacher_email = get_auth_email()
 );
 
 -- 21. Invites Table
