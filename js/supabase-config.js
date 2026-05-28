@@ -835,6 +835,46 @@ class SupabaseDB {
         _cache.invalidate(); // Broad invalidation to be safe
     }
 
+    // Topic operations
+    static async getTopics(courseId) {
+        return this._request(async () => {
+            const { data, count, error } = await supabaseClient
+                .from('topics')
+                .select('*', { count: 'exact' })
+                .eq('course_id', courseId)
+                .order('order_index', { ascending: true });
+            if (error) throw error;
+            return { data: data || [], total: count || 0 };
+        });
+    }
+
+    static async saveTopic(topic) {
+        const payload = {
+            course_id: topic.course_id,
+            teacher_email: topic.teacher_email,
+            title: topic.title,
+            description: topic.description,
+            order_index: topic.order_index
+        };
+        if (topic.id) payload.id = topic.id;
+        const { data, error } = await supabaseClient
+            .from('topics')
+            .upsert(payload, { onConflict: 'id' })
+            .select();
+        if (error) throw error;
+        _cache.invalidate('lessons'); // Invalidate lessons cache as they are related to topics
+        return data?.[0];
+    }
+
+    static async deleteTopic(id) {
+        const { error } = await supabaseClient
+            .from('topics')
+            .delete()
+            .eq('id', id);
+        if (error) throw error;
+        _cache.invalidate('lessons');
+    }
+
     // Lesson operations
     static async getLessons(courseId) {
         return this._request(async () => {
@@ -851,6 +891,7 @@ class SupabaseDB {
     static async saveLesson(lesson) {
         const payload = {
             course_id: lesson.course_id,
+            topic_id: lesson.topic_id,
             title: lesson.title,
             content: lesson.content,
             video_url: lesson.video_url,

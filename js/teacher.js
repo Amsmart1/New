@@ -165,36 +165,85 @@ function showCourseForm(course = null) {
 }
 async function editCourse(id) {
   const user = await SessionManager.getCurrentUser();
-  const [{ data: courses }, lessonRes, { data: courseAssignments }] = await Promise.all([
+  const [{ data: courses }, topicRes, lessonRes, { data: courseAssignments }] = await Promise.all([
     SupabaseDB.getCourses(user.email, null),
+    SupabaseDB.getTopics(id),
     SupabaseDB.getLessons(id),
     SupabaseDB.getAssignments(user.email, id, null)
   ]);
+  const topics = topicRes.data || [];
   const lessons = lessonRes.data || [];
   const course = (courses || []).find(c => c.id === id);
   const content = document.getElementById('pageContent');
   if (!content) return;
+
+  const topicsWithLessons = topics.map(t => ({
+    ...t,
+    lessons: lessons.filter(l => l.topic_id === t.id)
+  })).sort((a, b) => a.order_index - b.order_index);
+
+  const uncategorizedLessons = lessons.filter(l => !l.topic_id);
+
   content.innerHTML = `
     <div class="card flex-between">
       <h2 class="m-0">Course: ${escapeHtml(course.title)}</h2>
-      <button class="button secondary w-auto" onclick="renderCourses()">← Back to Courses</button>
+      <div class="flex gap-10">
+        <button class="button secondary w-auto" onclick="renderCourses()">← Back to Courses</button>
+      </div>
     </div>
     <div class="grid-2 mt-20">
       <section class="card">
         <div class="flex-between">
-          <h3 class="m-0">Lessons</h3>
-          <button class="button w-auto small" onclick="showLessonForm('${id}')">+ Add Lesson</button>
+          <h3 class="m-0">Topics & Lessons</h3>
+          <div class="flex gap-5">
+            <button class="button secondary w-auto small" onclick="void showTopicForm('${id}')">+ Add Topic</button>
+            <button class="button w-auto small" onclick="void showLessonForm('${id}')">+ Add Lesson</button>
+          </div>
         </div>
         <div class="mt-15">
-          ${lessons.map(l => `
-            <div class="flex-between list-item">
-              <span>${escapeHtml(l.title)}</span>
-              <div class="flex gap-5">
-                <button class="button small w-auto" onclick="editLesson('${l.id}', '${id}')">Edit</button>
-                <button class="button danger small w-auto" onclick="deleteLessonById('${l.id}', '${id}')">Delete</button>
+          ${topicsWithLessons.map(t => `
+            <div class="mb-20">
+              <div class="flex-between p-10 bg-light border-radius-sm mb-5">
+                <strong class="small">${escapeHtml(t.title)}</strong>
+                <div class="flex gap-5">
+                  <button class="button tiny w-auto secondary" onclick="void showTopicForm('${id}', ${escapeAttr(JSON.stringify(t))})">Edit Topic</button>
+                  <button class="button tiny w-auto danger" onclick="deleteTopicById('${t.id}', '${id}')">Delete</button>
+                </div>
+              </div>
+              <div class="pl-15">
+                ${t.lessons.map(l => `
+                  <div class="flex-between list-item py-5">
+                    <span class="small">${escapeHtml(l.title)}</span>
+                    <div class="flex gap-5">
+                      <button class="button tiny w-auto" onclick="void editLesson('${l.id}', '${id}')">Edit</button>
+                      <button class="button tiny w-auto danger" onclick="deleteLessonById('${l.id}', '${id}')">Delete</button>
+                    </div>
+                  </div>
+                `).join('') || '<div class="tiny text-muted p-5">No lessons in this topic.</div>'}
               </div>
             </div>
-          `).join('') || '<div class="empty p-10">No lessons yet.</div>'}
+          `).join('')}
+
+          ${uncategorizedLessons.length > 0 ? `
+            <div class="mb-20">
+              <div class="p-10 bg-light border-radius-sm mb-5">
+                <strong class="small danger-text italic">Uncategorized Lessons (Please assign to a topic)</strong>
+              </div>
+              <div class="pl-15">
+                ${uncategorizedLessons.map(l => `
+                  <div class="flex-between list-item py-5">
+                    <span class="small">${escapeHtml(l.title)}</span>
+                    <div class="flex gap-5">
+                      <button class="button tiny w-auto" onclick="void editLesson('${l.id}', '${id}')">Edit</button>
+                      <button class="button tiny w-auto danger" onclick="deleteLessonById('${l.id}', '${id}')">Delete</button>
+                    </div>
+                  </div>
+                `).join('')}
+              </div>
+            </div>
+          ` : ''}
+
+          ${topics.length === 0 && uncategorizedLessons.length === 0 ? '<div class="empty p-10">No topics or lessons yet.</div>' : ''}
         </div>
       </section>
       <section class="card">
@@ -217,24 +266,35 @@ async function editCourse(id) {
     </div>
   `;
 }
-function showLessonForm(courseId, lesson = null) {
+async function showLessonForm(courseId, lesson = null) {
   const isEdit = !!lesson;
   const content = document.getElementById('pageContent');
   if (!content) return;
+
+  const { data: topics } = await SupabaseDB.getTopics(courseId);
+
   content.innerHTML = `
     <div class="card">
       <h2 class="m-0">${isEdit ? 'Edit Lesson' : 'Add Lesson'}</h2>
       <form id="lessonForm" class="mt-20">
         <label>Lesson Title</label>
         <input type="text" id="lessonTitle" placeholder="Lesson Title" value="${isEdit ? escapeHtml(lesson.title) : ''}" required>
-        <label>Video URL (Optional)</label>
+
+        <label>Topic</label>
+        <select id="lessonTopicId" required>
+          <option value="">-- Select Topic --</option>
+          ${topics.map(t => `<option value="${t.id}" ${lesson?.topic_id === t.id ? 'selected' : ''}>${escapeHtml(t.title)}</option>`).join('')}
+        </select>
+        ${topics.length === 0 ? '<p class="tiny danger-text mt-5">No topics found. Please create a topic first.</p>' : ''}
+
+        <label class="mt-10">Video URL (Optional)</label>
         <input type="url" id="lessonVideoUrl" placeholder="https://youtube.com/..." value="${isEdit ? escapeHtml(lesson.video_url || '') : ''}">
         <label>Content</label>
         <textarea id="lessonContent" placeholder="Lesson content..." rows="10">${isEdit ? escapeHtml(lesson.content) : ''}</textarea>
         <label>Order Index</label>
         <input type="number" id="lessonOrder" placeholder="Order Index" value="${isEdit ? lesson.order_index : 0}">
         <div class="flex gap-10 mt-20">
-          <button type="submit" class="button w-auto px-40">${isEdit ? 'Update Lesson' : 'Save Lesson'}</button>
+          <button type="submit" class="button w-auto px-40" ${topics.length === 0 ? 'disabled' : ''}>${isEdit ? 'Update Lesson' : 'Save Lesson'}</button>
           <button type="button" class="button secondary w-auto px-40" onclick="editCourse('${courseId}')">Cancel</button>
         </div>
       </form>
@@ -256,10 +316,19 @@ function showLessonForm(courseId, lesson = null) {
           return;
       }
 
+      const topicId = document.getElementById('lessonTopicId').value;
+      if (!topicId) {
+          UI.showNotification('Please select a topic for this lesson.', 'error');
+          btn.disabled = false;
+          btn.textContent = originalText;
+          return;
+      }
+
       const data = {
           ...lesson,
           id: isEdit ? lesson.id : crypto.randomUUID(),
           course_id: courseId,
+          topic_id: topicId,
           title: document.getElementById('lessonTitle').value,
           video_url: videoUrl,
           content: document.getElementById('lessonContent').value,
@@ -280,7 +349,7 @@ async function editLesson(lessonId, courseId) {
   const lessonRes = await SupabaseDB.getLessons(courseId);
   const lessons = lessonRes.data || [];
   const lesson = lessons.find(l => l.id === lessonId);
-  showLessonForm(courseId, lesson);
+  await showLessonForm(courseId, lesson);
 }
 async function deleteLessonById(id, courseId) {
   if (confirm('Are you sure you want to delete this lesson?')) {
@@ -293,6 +362,69 @@ async function deleteLessonById(id, courseId) {
     }
   }
 }
+function showTopicForm(courseId, topic = null) {
+  const isEdit = !!topic;
+  const content = document.getElementById('pageContent');
+  if (!content) return;
+  content.innerHTML = `
+    <div class="card">
+      <h2 class="m-0">${isEdit ? 'Edit Topic' : 'Add Topic'}</h2>
+      <form id="topicForm" class="mt-20">
+        <label>Topic Title</label>
+        <input type="text" id="topicTitle" placeholder="Topic Title" value="${isEdit ? escapeHtml(topic.title) : ''}" required>
+        <label>Description (Optional)</label>
+        <textarea id="topicDescription" placeholder="Briefly describe this topic..." rows="3">${isEdit ? escapeHtml(topic.description || '') : ''}</textarea>
+        <label>Order Index</label>
+        <input type="number" id="topicOrder" placeholder="Order Index" value="${isEdit ? topic.order_index : 0}">
+        <div class="flex gap-10 mt-20">
+          <button type="submit" class="button w-auto px-40">${isEdit ? 'Update Topic' : 'Save Topic'}</button>
+          <button type="button" class="button secondary w-auto px-40" onclick="editCourse('${courseId}')">Cancel</button>
+        </div>
+      </form>
+    </div>
+  `;
+  document.getElementById('topicForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const btn = e.target.querySelector('button[type="submit"]');
+    btn.disabled = true;
+    const originalText = btn.textContent;
+    btn.textContent = 'Saving...';
+
+    try {
+      const user = await SessionManager.getCurrentUser();
+      const data = {
+          ...topic,
+          id: isEdit ? topic.id : crypto.randomUUID(),
+          course_id: courseId,
+          teacher_email: user.email,
+          title: document.getElementById('topicTitle').value,
+          description: document.getElementById('topicDescription').value,
+          order_index: parseInt(document.getElementById('topicOrder').value) || 0
+      };
+      await SupabaseDB.saveTopic(data);
+      UI.showNotification('Topic saved successfully', 'success');
+      editCourse(courseId);
+    } catch (e) {
+      UI.showNotification('Error saving topic: ' + e.message, 'error');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = originalText;
+    }
+  });
+}
+
+async function deleteTopicById(id, courseId) {
+  if (confirm('Are you sure you want to delete this topic? All lessons inside this topic will also be deleted.')) {
+    try {
+      await SupabaseDB.deleteTopic(id);
+      UI.showNotification('Topic deleted', 'success');
+      editCourse(courseId);
+    } catch (e) {
+      UI.showNotification('Error deleting topic: ' + e.message, 'error');
+    }
+  }
+}
+
 async function deleteCourseById(id) {
   if (confirm('Are you sure you want to delete this course and all its content?')) {
     UI.showNotification('Deleting course...', 'info');

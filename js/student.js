@@ -217,10 +217,12 @@ async function viewCourse(courseId, fromMyCourses = false) {
 
   // Ensure any active study session is stopped if navigating to course view
   if (studyInterval) await stopStudySession();
-  const [lessonRes, { data: allCourseAssignments }] = await Promise.all([
+  const [topicRes, lessonRes, { data: allCourseAssignments }] = await Promise.all([
+      SupabaseDB.getTopics(courseId),
       SupabaseDB.getLessons(courseId),
       SupabaseDB.getAssignments(null, courseId, null)
   ]);
+  const topics = topicRes.data || [];
   const lessons = lessonRes.data || [];
   const courseAssignments = (allCourseAssignments || []).filter(a => a.status === 'published');
   const container = document.getElementById('pageContent');
@@ -229,17 +231,51 @@ async function viewCourse(courseId, fromMyCourses = false) {
   const backAction = fromMyCourses ? 'renderMyCourses()' : 'renderCourses()';
   const backLabel = fromMyCourses ? '← Back to My Courses' : '← Back to Catalog';
 
+  const topicsWithLessons = topics.map(t => ({
+      ...t,
+      lessons: lessons.filter(l => l.topic_id === t.id).sort((a, b) => a.order_index - b.order_index)
+  })).sort((a, b) => a.order_index - b.order_index);
+
+  const uncategorizedLessons = lessons.filter(l => !l.topic_id).sort((a, b) => a.order_index - b.order_index);
+
   container.innerHTML = `
     <button class="button secondary w-auto mb-15" onclick="${backAction}">${backLabel}</button>
     <div class="grid-2 mt-20">
       <section class="card">
         <h3 class="m-0">Lessons</h3>
         <div class="mt-15">
-            ${lessons.map(l => `
-                <div class="question" style="cursor:pointer" onclick="showLesson('${escapeAttr(l.id)}', '${escapeAttr(courseId)}', ${fromMyCourses})">
-                    <strong class="bold">${escapeHtml(l.title)}</strong>
+            ${topicsWithLessons.map(t => `
+                <div class="mb-20">
+                    <div class="p-10 bg-light border-radius-sm mb-5">
+                        <strong class="small">${escapeHtml(t.title)}</strong>
+                        ${t.description ? `<p class="tiny text-muted m-0 mt-2">${escapeHtml(t.description)}</p>` : ''}
+                    </div>
+                    <div class="pl-15">
+                        ${t.lessons.map(l => `
+                            <div class="question py-10" style="cursor:pointer; border-bottom: 1px solid #eee" onclick="showLesson('${escapeAttr(l.id)}', '${escapeAttr(courseId)}', ${fromMyCourses})">
+                                <span class="small bold">${escapeHtml(l.title)}</span>
+                            </div>
+                        `).join('') || '<p class="tiny text-muted italic p-5">No lessons in this topic.</p>'}
+                    </div>
                 </div>
-            `).join('') || '<p class="small">No lessons yet.</p>'}
+            `).join('')}
+
+            ${uncategorizedLessons.length > 0 ? `
+                <div class="mb-20">
+                    <div class="p-10 bg-light border-radius-sm mb-5">
+                        <strong class="small italic">Other Lessons</strong>
+                    </div>
+                    <div class="pl-15">
+                        ${uncategorizedLessons.map(l => `
+                            <div class="question py-10" style="cursor:pointer; border-bottom: 1px solid #eee" onclick="showLesson('${escapeAttr(l.id)}', '${escapeAttr(courseId)}', ${fromMyCourses})">
+                                <span class="small bold">${escapeHtml(l.title)}</span>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+            ` : ''}
+
+            ${topics.length === 0 && uncategorizedLessons.length === 0 ? '<p class="small">No lessons yet.</p>' : ''}
         </div>
       </section>
       <section class="card">
