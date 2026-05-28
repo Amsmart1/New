@@ -59,9 +59,21 @@ CREATE TABLE IF NOT EXISTS courses (
   metadata JSONB DEFAULT '{}'::jsonb
 );
 
+CREATE TABLE IF NOT EXISTS topics (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  course_id UUID REFERENCES courses(id) ON DELETE CASCADE,
+  teacher_email VARCHAR(255) REFERENCES users(email) ON UPDATE CASCADE ON DELETE SET NULL,
+  title VARCHAR(255) NOT NULL,
+  description TEXT,
+  order_index INTEGER DEFAULT 0,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
 CREATE TABLE IF NOT EXISTS lessons (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   course_id UUID REFERENCES courses(id) ON DELETE CASCADE,
+  topic_id UUID REFERENCES topics(id) ON DELETE CASCADE,
   teacher_email VARCHAR(255) REFERENCES users(email) ON UPDATE CASCADE ON DELETE SET NULL,
   title VARCHAR(255) NOT NULL,
   content TEXT,
@@ -395,9 +407,14 @@ BEGIN
     ALTER TABLE courses ADD COLUMN IF NOT EXISTS enrollment_id VARCHAR(255);
     ALTER TABLE courses ADD COLUMN IF NOT EXISTS metadata JSONB DEFAULT '{}'::jsonb;
 
+    -- topics
+    ALTER TABLE topics ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
+    ALTER TABLE topics ADD COLUMN IF NOT EXISTS teacher_email VARCHAR(255) REFERENCES users(email) ON UPDATE CASCADE ON DELETE SET NULL;
+
     -- lessons
     ALTER TABLE lessons ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
     ALTER TABLE lessons ADD COLUMN IF NOT EXISTS teacher_email VARCHAR(255) REFERENCES users(email) ON UPDATE CASCADE ON DELETE SET NULL;
+    ALTER TABLE lessons ADD COLUMN IF NOT EXISTS topic_id UUID REFERENCES topics(id) ON DELETE CASCADE;
 
     -- enrollments
     ALTER TABLE enrollments ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
@@ -529,6 +546,7 @@ BEGIN
     UPDATE attendance a SET course_id = lc.course_id, teacher_email = lc.teacher_email FROM live_classes lc WHERE a.live_class_id = lc.id AND a.course_id IS NULL;
     UPDATE violations v SET course_id = a.course_id, teacher_email = a.teacher_email FROM assignments a WHERE v.assessment_id = a.id AND v.assessment_type = 'assignment' AND v.course_id IS NULL;
     UPDATE violations v SET course_id = q.course_id, teacher_email = q.teacher_email FROM quizzes q WHERE v.assessment_id = q.id AND v.assessment_type = 'quiz' AND v.course_id IS NULL;
+    UPDATE topics t SET teacher_email = c.teacher_email FROM courses c WHERE t.course_id = c.id AND t.teacher_email IS NULL;
     UPDATE lessons l SET teacher_email = c.teacher_email FROM courses c WHERE l.course_id = c.id AND l.teacher_email IS NULL;
     UPDATE discussions d SET teacher_email = c.teacher_email FROM courses c WHERE d.course_id = c.id AND d.teacher_email IS NULL;
     UPDATE broadcasts b SET teacher_email = c.teacher_email FROM courses c WHERE b.course_id = c.id AND b.teacher_email IS NULL;
@@ -565,7 +583,7 @@ BEGIN
         SELECT table_name
         FROM information_schema.tables
         WHERE table_schema = 'public'
-        AND table_name IN ('users', 'user_secrets', 'courses', 'lessons', 'enrollments', 'assignments', 'submissions', 'live_classes', 'attendance', 'quizzes', 'quiz_submissions', 'materials', 'discussions', 'notifications', 'broadcasts', 'maintenance', 'planner', 'certificates', 'study_sessions', 'invites', 'violations', 'support_tickets')
+        AND table_name IN ('users', 'user_secrets', 'courses', 'topics', 'lessons', 'enrollments', 'assignments', 'submissions', 'live_classes', 'attendance', 'quizzes', 'quiz_submissions', 'materials', 'discussions', 'notifications', 'broadcasts', 'maintenance', 'planner', 'certificates', 'study_sessions', 'invites', 'violations', 'support_tickets')
     LOOP
         EXECUTE format('DROP TRIGGER IF EXISTS update_%I_updated_at ON %I', t, t);
         EXECUTE format('CREATE TRIGGER update_%I_updated_at BEFORE UPDATE ON %I FOR EACH ROW EXECUTE PROCEDURE update_updated_at_column()', t, t);
@@ -682,6 +700,7 @@ BEGIN
     UPDATE quizzes SET teacher_email = NEW.teacher_email WHERE course_id = NEW.id;
     UPDATE live_classes SET teacher_email = NEW.teacher_email WHERE course_id = NEW.id;
     UPDATE materials SET teacher_email = NEW.teacher_email WHERE course_id = NEW.id;
+    UPDATE topics SET teacher_email = NEW.teacher_email WHERE course_id = NEW.id;
     UPDATE lessons SET teacher_email = NEW.teacher_email WHERE course_id = NEW.id;
     UPDATE submissions SET teacher_email = NEW.teacher_email WHERE course_id = NEW.id;
     UPDATE quiz_submissions SET teacher_email = NEW.teacher_email WHERE course_id = NEW.id;
@@ -728,6 +747,9 @@ BEGIN
   RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS tr_topic_data_inherit ON topics;
+CREATE TRIGGER tr_topic_data_inherit BEFORE INSERT ON topics FOR EACH ROW EXECUTE PROCEDURE tr_inherit_course_data();
 
 DROP TRIGGER IF EXISTS tr_lesson_data_inherit ON lessons;
 CREATE TRIGGER tr_lesson_data_inherit BEFORE INSERT ON lessons FOR EACH ROW EXECUTE PROCEDURE tr_inherit_course_data();
@@ -970,7 +992,9 @@ CREATE INDEX IF NOT EXISTS idx_users_role ON users(role);
 CREATE INDEX IF NOT EXISTS idx_users_active ON users(active);
 CREATE INDEX IF NOT EXISTS idx_users_auth_lookup ON users(active, flagged, locked_until);
 CREATE INDEX IF NOT EXISTS idx_courses_teacher ON courses(teacher_email);
+CREATE INDEX IF NOT EXISTS idx_topics_course ON topics(course_id);
 CREATE INDEX IF NOT EXISTS idx_lessons_course ON lessons(course_id);
+CREATE INDEX IF NOT EXISTS idx_lessons_topic ON lessons(topic_id);
 CREATE INDEX IF NOT EXISTS idx_enrollments_student ON enrollments(student_email);
 CREATE INDEX IF NOT EXISTS idx_assignments_course ON assignments(course_id);
 CREATE INDEX IF NOT EXISTS idx_submissions_student ON submissions(student_email);
@@ -997,6 +1021,7 @@ CREATE INDEX IF NOT EXISTS idx_violations_user ON violations(user_email);
 CREATE INDEX IF NOT EXISTS idx_violations_reporting ON violations(assessment_id, user_email);
 
 -- Missing Foreign-Key Indexes
+CREATE INDEX IF NOT EXISTS idx_topics_teacher_email ON topics(teacher_email);
 CREATE INDEX IF NOT EXISTS idx_lessons_teacher_email ON lessons(teacher_email);
 CREATE INDEX IF NOT EXISTS idx_assignments_teacher_email ON assignments(teacher_email);
 CREATE INDEX IF NOT EXISTS idx_submissions_course_id ON submissions(course_id);
@@ -1561,7 +1586,19 @@ CREATE POLICY "Courses: Select" ON courses FOR SELECT USING (status = 'published
 DROP POLICY IF EXISTS "Courses: Teachers Manage" ON courses;
 CREATE POLICY "Courses: Teachers Manage" ON courses FOR ALL USING (teacher_email = get_auth_email() OR is_admin());
 
--- 3. Lessons Table
+-- 3. Topics Table
+DROP POLICY IF EXISTS "Topics: Select" ON topics;
+CREATE POLICY "Topics: Select" ON topics FOR SELECT USING (
+  is_admin() OR
+  teacher_email = get_auth_email() OR
+  EXISTS (SELECT 1 FROM enrollments WHERE course_id = topics.course_id AND student_email = get_auth_email())
+);
+DROP POLICY IF EXISTS "Topics: Teachers Manage" ON topics;
+CREATE POLICY "Topics: Teachers Manage" ON topics FOR ALL USING (
+  is_admin() OR teacher_email = get_auth_email()
+);
+
+-- 4. Lessons Table
 DROP POLICY IF EXISTS "Lessons: Select" ON lessons;
 CREATE POLICY "Lessons: Select" ON lessons FOR SELECT USING (
   is_admin() OR
