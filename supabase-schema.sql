@@ -522,6 +522,18 @@ BEGIN
     ALTER TABLE violations ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
     ALTER TABLE violations ADD COLUMN IF NOT EXISTS course_id UUID REFERENCES courses(id) ON DELETE CASCADE;
     ALTER TABLE violations ADD COLUMN IF NOT EXISTS teacher_email VARCHAR(255) REFERENCES users(email) ON UPDATE CASCADE ON DELETE SET NULL;
+
+    -- Backfill course_id and teacher_email for existing records
+    UPDATE submissions s SET course_id = a.course_id, teacher_email = a.teacher_email FROM assignments a WHERE s.assignment_id = a.id AND s.course_id IS NULL;
+    UPDATE quiz_submissions s SET course_id = q.course_id, teacher_email = q.teacher_email FROM quizzes q WHERE s.quiz_id = q.id AND s.course_id IS NULL;
+    UPDATE attendance a SET course_id = lc.course_id, teacher_email = lc.teacher_email FROM live_classes lc WHERE a.live_class_id = lc.id AND a.course_id IS NULL;
+    UPDATE violations v SET course_id = a.course_id, teacher_email = a.teacher_email FROM assignments a WHERE v.assessment_id = a.id AND v.assessment_type = 'assignment' AND v.course_id IS NULL;
+    UPDATE violations v SET course_id = q.course_id, teacher_email = q.teacher_email FROM quizzes q WHERE v.assessment_id = q.id AND v.assessment_type = 'quiz' AND v.course_id IS NULL;
+    UPDATE lessons l SET teacher_email = c.teacher_email FROM courses c WHERE l.course_id = c.id AND l.teacher_email IS NULL;
+    UPDATE discussions d SET teacher_email = c.teacher_email FROM courses c WHERE d.course_id = c.id AND d.teacher_email IS NULL;
+    UPDATE broadcasts b SET teacher_email = c.teacher_email FROM courses c WHERE b.course_id = c.id AND b.teacher_email IS NULL;
+    UPDATE certificates ct SET teacher_email = c.teacher_email FROM courses c WHERE ct.course_id = c.id AND ct.teacher_email IS NULL;
+    UPDATE study_sessions ss SET teacher_email = c.teacher_email FROM courses c WHERE ss.course_id = c.id AND ss.teacher_email IS NULL;
 END $$;
 
 -- Ensure composite unique constraints exist for idempotent upserts
@@ -1755,6 +1767,7 @@ DROP POLICY IF EXISTS "Study Sessions: User Access" ON study_sessions;
 CREATE POLICY "Study Sessions: User Access" ON study_sessions FOR SELECT USING (
   is_admin() OR user_email = get_auth_email() OR teacher_email = get_auth_email()
 );
+DROP POLICY IF EXISTS "Study Sessions: Insert" ON study_sessions;
 CREATE POLICY "Study Sessions: Insert" ON study_sessions FOR INSERT WITH CHECK (
   user_email = get_auth_email() AND
   EXISTS (SELECT 1 FROM enrollments WHERE course_id = study_sessions.course_id AND student_email = get_auth_email())
