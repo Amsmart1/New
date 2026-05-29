@@ -196,8 +196,8 @@ async function editCourse(id) {
         <div class="flex-between">
           <h3 class="m-0">Topics & Lessons</h3>
           <div class="flex gap-5">
-            <button class="button secondary w-auto small" onclick="showTopicForm('${id}')">+ Add Topic</button>
-            <button class="button w-auto small" onclick="showLessonForm('${id}')">+ Add Lesson</button>
+            <button class="button secondary w-auto small" onclick="void showTopicForm('${id}')">+ Add Topic</button>
+            <button class="button w-auto small" onclick="void showLessonForm('${id}')">+ Add Lesson</button>
           </div>
         </div>
         <div class="mt-15">
@@ -206,7 +206,7 @@ async function editCourse(id) {
               <div class="flex-between p-10 bg-light border-radius-sm mb-5">
                 <strong class="small">${escapeHtml(t.title)}</strong>
                 <div class="flex gap-5">
-                  <button class="button tiny w-auto secondary" onclick="showTopicForm('${id}', ${escapeAttr(JSON.stringify(t))})">Edit Topic</button>
+                  <button class="button tiny w-auto secondary" onclick="void showTopicForm('${id}', ${escapeAttr(JSON.stringify(t))})">Edit Topic</button>
                   <button class="button tiny w-auto danger" onclick="deleteTopicById('${t.id}', '${id}')">Delete</button>
                 </div>
               </div>
@@ -215,7 +215,7 @@ async function editCourse(id) {
                   <div class="flex-between list-item py-5">
                     <span class="small">${escapeHtml(l.title)}</span>
                     <div class="flex gap-5">
-                      <button class="button tiny w-auto" onclick="editLesson('${l.id}', '${id}')">Edit</button>
+                      <button class="button tiny w-auto" onclick="void editLesson('${l.id}', '${id}')">Edit</button>
                       <button class="button tiny w-auto danger" onclick="deleteLessonById('${l.id}', '${id}')">Delete</button>
                     </div>
                   </div>
@@ -234,7 +234,7 @@ async function editCourse(id) {
                   <div class="flex-between list-item py-5">
                     <span class="small">${escapeHtml(l.title)}</span>
                     <div class="flex gap-5">
-                      <button class="button tiny w-auto" onclick="editLesson('${l.id}', '${id}')">Edit</button>
+                      <button class="button tiny w-auto" onclick="void editLesson('${l.id}', '${id}')">Edit</button>
                       <button class="button tiny w-auto danger" onclick="deleteLessonById('${l.id}', '${id}')">Delete</button>
                     </div>
                   </div>
@@ -349,7 +349,7 @@ async function editLesson(lessonId, courseId) {
   const lessonRes = await SupabaseDB.getLessons(courseId);
   const lessons = lessonRes.data || [];
   const lesson = lessons.find(l => l.id === lessonId);
-  showLessonForm(courseId, lesson);
+  await showLessonForm(courseId, lesson);
 }
 async function deleteLessonById(id, courseId) {
   if (confirm('Are you sure you want to delete this lesson?')) {
