@@ -1,6 +1,7 @@
 let activeCountdowns = [];
 let quizTimer = null;
 let isStartingQuiz = false;
+let isSubmittingQuiz = false;
 
 
 function clearActiveCountdowns() {
@@ -1976,15 +1977,30 @@ async function startQuiz(quizId) {
     // Authoritative start via RPC
     currentSubmission = await SupabaseDB.startQuizAttempt(quizId);
 
+    // Calculate deadline once to avoid redundancy
+    let actualDeadline = Infinity;
+    const startTs = new Date(currentSubmission.started_at).getTime();
+
+    if (quiz.time_limit > 0 || quiz.end_at) {
+        const limitEnd = quiz.time_limit > 0 ? startTs + (quiz.time_limit * 60 * 1000) : Infinity;
+        const quizEnd = quiz.end_at ? new Date(quiz.end_at).getTime() : Infinity;
+        actualDeadline = Math.min(limitEnd, quizEnd);
+
+        // Immediate check for expired resume
+        if (Date.now() >= actualDeadline) {
+            UI.showNotification('This attempt has already reached its time limit. Submitting...', 'warn');
+            await submitQuiz(true);
+            isStartingQuiz = false;
+            return;
+        }
+    }
+
     renderQuizQuestion(0);
     isStartingQuiz = false;
 
-    if (quiz.time_limit > 0) {
-      const startTs = new Date(currentSubmission.started_at).getTime();
-      const endTime = startTs + (quiz.time_limit * 60 * 1000);
-
+    if (actualDeadline !== Infinity) {
       quizTimer = Countdown.create('#quizTimerDisplay', {
-          targetDate: endTime,
+          targetDate: actualDeadline,
           startTime: startTs,
           showProgress: true,
           compact: true,
@@ -2190,7 +2206,10 @@ async function autoSubmitQuiz() {
 }
 
 async function submitQuiz(isAuto = false) {
+  if (isSubmittingQuiz) return;
   if (!isAuto && !confirm('Are you sure you want to submit your quiz?')) return;
+
+  isSubmittingQuiz = true;
 
   const btn = document.getElementById('finalSubmitBtn');
   if (btn) {
@@ -2228,6 +2247,7 @@ async function submitQuiz(isAuto = false) {
   } catch (err) {
       console.error('Quiz submission failed:', err);
       UI.showNotification('Quiz Submission Failed: ' + (err.message || 'Unknown error'));
+      isSubmittingQuiz = false; // Allow retry if it failed
       return;
   } finally {
       if (!currentSubmission || currentSubmission.status !== 'submitted') {
