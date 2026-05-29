@@ -1908,14 +1908,12 @@ async function startQuiz(quizId) {
         UI.showNotification('This quiz is not available yet.');
         if (listBtn) { listBtn.disabled = false; listBtn.textContent = 'Start New Attempt'; }
         if (quizArea) quizArea.style.display = 'none';
-        isStartingQuiz = false;
         return;
     }
     if (now > endAt) {
         UI.showNotification('This quiz has ended.');
         if (listBtn) { listBtn.disabled = true; listBtn.textContent = 'Quiz Ended'; }
         if (quizArea) quizArea.style.display = 'none';
-        isStartingQuiz = false;
         return;
     }
 
@@ -1998,13 +1996,11 @@ async function startQuiz(quizId) {
         if (Date.now() >= actualDeadline) {
             UI.showNotification('This attempt has already reached its time limit. Submitting...', 'warn');
             await submitQuiz(true);
-            isStartingQuiz = false;
             return;
         }
     }
 
     renderQuizQuestion(0);
-    isStartingQuiz = false;
 
     if (actualDeadline !== Infinity) {
       quizTimer = Countdown.create('#quizTimerDisplay', {
@@ -2025,13 +2021,14 @@ async function startQuiz(quizId) {
 
     quizArea.scrollIntoView({ behavior: 'smooth' });
   } catch (err) {
-      isStartingQuiz = false;
       console.error('Failed to start quiz:', err);
       UI.showNotification('Error starting quiz: ' + err.message);
       if (listBtn) {
           listBtn.disabled = false;
           listBtn.textContent = 'Start New Attempt';
       }
+  } finally {
+      isStartingQuiz = false;
   }
 }
 
@@ -2243,21 +2240,23 @@ async function submitQuiz(isAuto = false) {
     clearTimeout(quizDebounceTimer);
     quizDebounceTimer = null;
   }
-  const user = await SessionManager.getCurrentUser();
-  const answers = currentSubmission.answers;
-  const now = new Date();
-  const timeSpent = currentSubmission ? Math.round((now - new Date(currentSubmission.started_at)) / 1000) : 0;
 
+  let user;
   try {
+    user = await SessionManager.getCurrentUser();
+    const answers = currentSubmission?.answers || {};
+    const now = new Date();
+    const timeSpent = currentSubmission ? Math.round((now - new Date(currentSubmission.started_at)) / 1000) : 0;
+
     // Authoritative submission via RPC
     currentSubmission = await SupabaseDB.submitQuizAttempt(currentSubmission.id, answers, timeSpent);
 
   } catch (err) {
       console.error('Quiz submission failed:', err);
       UI.showNotification('Quiz Submission Failed: ' + (err.message || 'Unknown error'));
-      isSubmittingQuiz = false; // Allow retry if it failed
       return;
   } finally {
+      isSubmittingQuiz = false;
       if (!currentSubmission || currentSubmission.status !== 'submitted') {
           if (btn) {
               btn.disabled = false;
