@@ -2265,16 +2265,16 @@ async function showQuizForm(quiz = null) {
     const container = qItem.querySelector('.q-options');
     if (container) container.innerHTML = renderQuizOptions({ type: select.value });
   };
-window.shuffleQuizQuestions = () => {
-  const container = document.getElementById('quizQuestionsContainer');
-  const items = Array.from(container.children);
-  for (let i = items.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    container.appendChild(items[j]);
-  }
-};
-  if (isEdit && quiz.questions) { quiz.questions.forEach(q => window.addQuizQuestionField(q)); }
-  document.getElementById('quizForm').addEventListener('submit', async (e) => {
+  window.shuffleQuizQuestions = () => {
+    const container = document.getElementById('quizQuestionsContainer');
+    const items = Array.from(container.children);
+    for (let i = items.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      container.appendChild(items[j]);
+    }
+  };
+
+  async function handleQuizSave(e) {
     e.preventDefault();
     const btn = e.target.querySelector('button[type="submit"]');
     btn.disabled = true;
@@ -2360,7 +2360,10 @@ window.shuffleQuizQuestions = () => {
       btn.disabled = false;
       btn.textContent = originalText;
     }
-  });
+  }
+
+  if (isEdit && quiz.questions) { quiz.questions.forEach(q => window.addQuizQuestionField(q)); }
+  document.getElementById('quizForm').addEventListener('submit', handleQuizSave);
 }
 
 async function editQuiz(id) {
