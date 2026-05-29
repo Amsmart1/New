@@ -1981,10 +1981,9 @@ async function startQuiz(quizId) {
     let actualDeadline = Infinity;
     const startTs = new Date(currentSubmission.started_at).getTime();
 
-    if (quiz.time_limit > 0 || quiz.end_at) {
+    if (quiz.time_limit > 0 || endAt !== Infinity) {
         const limitEnd = quiz.time_limit > 0 ? startTs + (quiz.time_limit * 60 * 1000) : Infinity;
-        const quizEnd = quiz.end_at ? new Date(quiz.end_at).getTime() : Infinity;
-        actualDeadline = Math.min(limitEnd, quizEnd);
+        actualDeadline = Math.min(limitEnd, endAt);
 
         // Immediate check for expired resume
         if (Date.now() >= actualDeadline) {
