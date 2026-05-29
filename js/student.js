@@ -218,6 +218,14 @@ async function viewCourse(courseId, fromMyCourses = false) {
 
   // Ensure any active study session is stopped if navigating to course view
   if (studyInterval) await stopStudySession();
+
+  const course = await SupabaseDB.getCourse(courseId);
+  if (!course || course.status !== 'published') {
+      UI.showNotification('This course is not available.', 'warn');
+      if (fromMyCourses) renderMyCourses(); else renderCourses();
+      return;
+  }
+
   const [topicRes, lessonRes, { data: allCourseAssignments }] = await Promise.all([
       SupabaseDB.getTopics(courseId),
       SupabaseDB.getLessons(courseId),
@@ -1766,14 +1774,15 @@ async function renderQuizzes(openId = null) {
     // Only show submissions for quizzes that belong to enrolled courses
     const subs = (allSubs || []).filter(s => enrolledCourseIds.includes(s.quizzes?.course_id));
 
+    const activeQuizzes = (allQuizzes || []).filter(q => q.status === 'published');
     const now = Date.now();
     container.innerHTML = `
       <div class="flex-between mb-20">
         <h2 class="m-0">My Quizzes</h2>
-        <div class="small text-muted">${total} Total</div>
+        <div class="small text-muted">${activeQuizzes.length} Total</div>
       </div>
       <div class="grid">
-        ${(allQuizzes || []).map(q => {
+        ${activeQuizzes.map(q => {
           const mySubs = subs.filter(s => s.quiz_id === q.id && s.status === 'submitted').sort((a,b) => new Date(b.submitted_at) - new Date(a.submitted_at));
           const inProgress = subs.find(s => s.quiz_id === q.id && s.status === 'in-progress');
           const bestScore = mySubs.length ? Math.max(...mySubs.map(s => s.score || 0)) : '-';
