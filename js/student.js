@@ -1077,6 +1077,9 @@ async function renderMaterials() {
 
   try {
     const user = await SessionManager.getCurrentUser();
+    // Reconcile any abandoned attempts on load
+    try { await SupabaseDB.reconcileQuizAttempts(null, user.email); } catch(e) { console.warn('Reconciliation failed:', e); }
+
     const enrollRes = await SupabaseDB.getEnrollments(user.email);
     const enrollments = enrollRes.data || [];
     const enrolledIds = enrollments.map(e => e.course_id);
@@ -1372,6 +1375,9 @@ async function renderLiveClasses() {
 
   try {
     const user = await SessionManager.getCurrentUser();
+    // Reconcile any abandoned attempts on load
+    try { await SupabaseDB.reconcileQuizAttempts(null, user.email); } catch(e) { console.warn('Reconciliation failed:', e); }
+
     const enrollRes = await SupabaseDB.getEnrollments(user.email);
     const enrollments = enrollRes.data || [];
     const enrolledCourseIds = enrollments.map(e => e.course_id);
@@ -1744,6 +1750,9 @@ async function renderQuizzes(openId = null) {
 
   try {
     const user = await SessionManager.getCurrentUser();
+    // Reconcile any abandoned attempts on load
+    try { await SupabaseDB.reconcileQuizAttempts(null, user.email); } catch(e) { console.warn('Reconciliation failed:', e); }
+
     const enrollRes = await SupabaseDB.getEnrollments(user.email);
     const enrollments = enrollRes.data || [];
     const enrolledCourseIds = (enrollments || []).map(e => e.course_id);

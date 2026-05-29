@@ -381,6 +381,17 @@ class SupabaseDB {
         });
     }
 
+    static async reconcileQuizAttempts(quizId = null, studentEmail = null) {
+        return this._request(async () => {
+            const { error } = await supabaseClient.rpc('reconcile_quiz_attempts', {
+                p_quiz_id: quizId,
+                p_student_email: studentEmail
+            });
+            if (error) throw error;
+            return true;
+        });
+    }
+
     static async startQuizAttempt(quizId) {
         return this._request(async () => {
             const { data, error } = await supabaseClient.rpc('start_quiz_attempt', {

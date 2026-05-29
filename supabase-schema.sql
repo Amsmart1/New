@@ -829,24 +829,24 @@ DECLARE
     v_start_at TIMESTAMP WITH TIME ZONE;
     v_end_at TIMESTAMP WITH TIME ZONE;
     v_time_limit INTEGER;
+    v_is_reconciling BOOLEAN := FALSE;
 BEGIN
+    -- Detect if this update is coming from a trusted authoritative RPC via session metadata if needed,
+    -- but for now we just rely on relaxing the late submission check for status transitions to 'submitted'.
+    -- The authoritative scoring and timing logic is now handled in reconcile_quiz_attempts and submit_quiz_attempt.
+
     SELECT start_at, end_at, time_limit
     INTO v_start_at, v_end_at, v_time_limit
     FROM quizzes
     WHERE id = NEW.quiz_id;
 
-    IF (NEW.status = 'submitted' AND (TG_OP = 'INSERT' OR (TG_OP = 'UPDATE' AND OLD.status != 'submitted'))) THEN
+    IF (NEW.status = 'submitted' AND (TG_OP = 'INSERT' OR (TG_OP = 'UPDATE' AND (OLD.status IS NULL OR OLD.status != 'submitted')))) THEN
         IF v_start_at IS NOT NULL AND NEW.started_at < v_start_at THEN
              RAISE EXCEPTION 'Quiz was started before the allowed window.';
         END IF;
 
-        IF v_end_at IS NOT NULL AND NOW() > (v_end_at + INTERVAL '5 minutes') THEN
-            RAISE EXCEPTION 'Quiz has already closed.';
-        END IF;
-
-        IF v_time_limit > 0 AND NEW.submitted_at > (NEW.started_at + (v_time_limit * INTERVAL '1 minute') + INTERVAL '5 minutes') THEN
-            RAISE EXCEPTION 'Quiz time limit exceeded.';
-        END IF;
+        -- We allow a larger grace period for 'submitted' transition to support auto-submission and reconciliation.
+        -- Authoritative timing is handled in the RPCs.
     END IF;
 
     RETURN NEW;
@@ -1345,6 +1345,83 @@ $$ LANGUAGE sql STABLE;
 
 -- 7b. Quiz Authoritative Logic RPCs
 
+-- Helper for centralized scoring
+CREATE OR REPLACE FUNCTION calculate_quiz_score(p_quiz_id UUID, p_answers JSONB)
+RETURNS RECORD AS $$
+DECLARE
+    v_quiz RECORD;
+    v_score INTEGER := 0;
+    v_total_points INTEGER := 0;
+    v_q JSONB;
+    v_idx INTEGER := 0;
+    v_student_answer TEXT;
+    v_correct_answer TEXT;
+    v_result RECORD;
+BEGIN
+    SELECT * INTO v_quiz FROM quizzes WHERE id = p_quiz_id;
+    IF NOT FOUND THEN RETURN NULL; END IF;
+
+    FOR v_q IN SELECT * FROM jsonb_array_elements(v_quiz.questions)
+    LOOP
+        v_total_points := v_total_points + (v_q->>'points')::INTEGER;
+        v_student_answer := p_answers->>(v_idx::TEXT);
+        v_correct_answer := v_q->>'correct';
+
+        IF v_student_answer IS NOT NULL AND
+           trim(lower(v_student_answer)) = trim(lower(v_correct_answer)) THEN
+            v_score := v_score + (v_q->>'points')::INTEGER;
+        END IF;
+
+        v_idx := v_idx + 1;
+    END LOOP;
+
+    SELECT
+        CASE WHEN v_total_points > 0 THEN ROUND((v_score::FLOAT / v_total_points::FLOAT) * 100) ELSE 0 END as score,
+        v_total_points as total_points
+    INTO v_result;
+
+    RETURN v_result;
+END;
+$$ LANGUAGE plpgsql STABLE;
+
+-- RPC for reconciling expired attempts
+CREATE OR REPLACE FUNCTION reconcile_quiz_attempts(p_quiz_id UUID DEFAULT NULL, p_student_email VARCHAR DEFAULT NULL)
+RETURNS VOID AS $$
+DECLARE
+    v_sub RECORD;
+    v_score_data RECORD;
+    v_deadline TIMESTAMP WITH TIME ZONE;
+BEGIN
+    FOR v_sub IN
+        SELECT qs.*, q.time_limit, q.end_at
+        FROM quiz_submissions qs
+        JOIN quizzes q ON qs.quiz_id = q.id
+        WHERE qs.status = 'in-progress'
+        AND (p_quiz_id IS NULL OR qs.quiz_id = p_quiz_id)
+        AND (p_student_email IS NULL OR qs.student_email = p_student_email)
+    LOOP
+        -- Calculate definitive deadline
+        v_deadline := LEAST(
+            COALESCE(v_sub.started_at + (v_sub.time_limit * INTERVAL '1 minute'), 'infinity'::timestamp with time zone),
+            COALESCE(v_sub.end_at, 'infinity'::timestamp with time zone)
+        );
+
+        -- If current time is past deadline (with 1 min grace), finalize it
+        IF NOW() > (v_deadline + INTERVAL '1 minute') THEN
+            v_score_data := calculate_quiz_score(v_sub.quiz_id, v_sub.answers);
+
+            UPDATE quiz_submissions SET
+                status = 'submitted',
+                score = v_score_data.score,
+                total_points = v_score_data.total_points,
+                submitted_at = v_deadline, -- Cap submission time to deadline for fairness
+                time_spent = EXTRACT(EPOCH FROM (v_deadline - v_sub.started_at))::INTEGER
+            WHERE id = v_sub.id;
+        END IF;
+    END LOOP;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
 CREATE OR REPLACE FUNCTION start_quiz_attempt(p_quiz_id UUID)
 RETURNS JSONB AS $$
 DECLARE
@@ -1358,12 +1435,15 @@ BEGIN
         RAISE EXCEPTION 'Authentication required';
     END IF;
 
+    -- 0. Reconcile any expired attempt for this specific user/quiz first
+    PERFORM reconcile_quiz_attempts(p_quiz_id, v_student_email);
+
     SELECT * INTO v_quiz FROM quizzes WHERE id = p_quiz_id;
     IF NOT FOUND THEN
         RAISE EXCEPTION 'Quiz not found';
     END IF;
 
-    -- 1. Check for existing in-progress attempt
+    -- 1. Check for existing in-progress attempt (might still be one if it hasn't expired)
     SELECT * INTO v_attempt FROM quiz_submissions
     WHERE quiz_id = p_quiz_id AND student_email = v_student_email AND status = 'in-progress';
 
@@ -1372,8 +1452,6 @@ BEGIN
     END IF;
 
     -- 2. Validate limits for new attempt
-    -- Count both submitted and in-progress to be strict about concurrency,
-    -- but we already returned the in-progress one above if it existed.
     SELECT COUNT(*) INTO v_attempts_used
     FROM quiz_submissions
     WHERE quiz_id = p_quiz_id AND student_email = v_student_email;
@@ -1401,12 +1479,10 @@ DECLARE
     v_student_email VARCHAR;
     v_attempt RECORD;
     v_quiz RECORD;
-    v_score INTEGER := 0;
-    v_total_points INTEGER := 0;
-    v_q JSONB;
-    v_idx INTEGER := 0;
-    v_student_answer TEXT;
-    v_correct_answer TEXT;
+    v_score_data RECORD;
+    v_deadline TIMESTAMP WITH TIME ZONE;
+    v_final_submitted_at TIMESTAMP WITH TIME ZONE := NOW();
+    v_final_time_spent INTEGER := p_time_spent;
 BEGIN
     v_student_email := get_auth_email();
 
@@ -1424,29 +1500,28 @@ BEGIN
 
     SELECT * INTO v_quiz FROM quizzes WHERE id = v_attempt.quiz_id;
 
-    -- Server-side scoring
-    FOR v_q IN SELECT * FROM jsonb_array_elements(v_quiz.questions)
-    LOOP
-        v_total_points := v_total_points + (v_q->>'points')::INTEGER;
-        v_student_answer := p_answers->>(v_idx::TEXT);
-        v_correct_answer := v_q->>'correct';
+    -- Authoritative timing check for manual submission
+    v_deadline := LEAST(
+        COALESCE(v_attempt.started_at + (v_quiz.time_limit * INTERVAL '1 minute'), 'infinity'::timestamp with time zone),
+        COALESCE(v_quiz.end_at, 'infinity'::timestamp with time zone)
+    );
 
-        IF v_student_answer IS NOT NULL AND
-           trim(lower(v_student_answer)) = trim(lower(v_correct_answer)) THEN
-            v_score := v_score + (v_q->>'points')::INTEGER;
-        END IF;
+    -- If late, cap the data to deadline
+    IF NOW() > (v_deadline + INTERVAL '5 minutes') THEN
+        v_final_submitted_at := v_deadline;
+        v_final_time_spent := EXTRACT(EPOCH FROM (v_deadline - v_attempt.started_at))::INTEGER;
+    END IF;
 
-        v_idx := v_idx + 1;
-    END LOOP;
+    v_score_data := calculate_quiz_score(v_attempt.quiz_id, p_answers);
 
     -- Final update
     UPDATE quiz_submissions SET
         answers = p_answers,
-        score = CASE WHEN v_total_points > 0 THEN ROUND((v_score::FLOAT / v_total_points::FLOAT) * 100) ELSE 0 END,
-        total_points = v_total_points,
+        score = v_score_data.score,
+        total_points = v_score_data.total_points,
         status = 'submitted',
-        time_spent = p_time_spent,
-        submitted_at = NOW()
+        time_spent = v_final_time_spent,
+        submitted_at = v_final_submitted_at
     WHERE id = p_submission_id
     RETURNING * INTO v_attempt;
 

@@ -2283,19 +2283,56 @@ window.shuffleQuizQuestions = () => {
 
     try {
       const user = await SessionManager.getCurrentUser();
+
+      // Form Validation
+      const timeLimit = parseInt(document.getElementById('quizLimit').value) || 0;
+      const attemptsAllowed = parseInt(document.getElementById('quizAttempts').value) || 1;
+      const passingScore = parseInt(document.getElementById('quizPassingScore').value) || 60;
+      const startAt = document.getElementById('quizStartAt').value;
+      const endAt = document.getElementById('quizEndAt').value;
+
+      if (timeLimit < 0) throw new Error('Time limit cannot be negative.');
+      if (attemptsAllowed < 1) throw new Error('At least 1 attempt is required.');
+      if (passingScore < 0 || passingScore > 100) throw new Error('Passing score must be between 0 and 100.');
+      if (startAt && endAt && new Date(startAt) >= new Date(endAt)) throw new Error('Available Until date must be after Available From date.');
+
       const questions = [];
-      document.querySelectorAll('#quizQuestionsContainer .question').forEach(item => {
+      document.querySelectorAll('#quizQuestionsContainer .question').forEach((item, idx) => {
         const type = item.querySelector('.q-type').value;
-        const qData = { text: item.querySelector('.q-text').value, type, points: parseInt(item.querySelector('.q-points').value) || 0, hint: item.querySelector('.q-hint').value, explanation: item.querySelector('.q-explanation').value };
+        const text = item.querySelector('.q-text').value.trim();
+        const points = parseInt(item.querySelector('.q-points').value) || 0;
+
+        if (!text) throw new Error(`Question ${idx + 1} is missing text.`);
+        if (points < 0) throw new Error(`Question ${idx + 1} points cannot be negative.`);
+
+        const qData = {
+            text,
+            type,
+            points,
+            hint: item.querySelector('.q-hint').value,
+            explanation: item.querySelector('.q-explanation').value
+        };
+
         if (type === 'mcq') {
-          qData.options = Array.from(item.querySelectorAll('.opt-val')).map(i => i.value);
+          qData.options = Array.from(item.querySelectorAll('.opt-val')).map(i => i.value.trim());
+          if (qData.options.some(o => !o)) throw new Error(`Question ${idx + 1} has empty options.`);
           const checked = item.querySelector('input[type="radio"]:checked');
-          qData.correct = checked ? checked.value : '0';
-        } else {
+          if (!checked) throw new Error(`Question ${idx + 1} (MCQ) must have a correct answer selected.`);
+          qData.correct = checked.value;
+        } else if (type === 'tf') {
           qData.correct = item.querySelector('.q-correct').value;
+        } else {
+          qData.correct = item.querySelector('.q-correct').value.trim();
+          if (!qData.correct) throw new Error(`Question ${idx + 1} (Short Answer) requires a correct answer.`);
         }
         questions.push(qData);
       });
+
+      if (questions.length === 0) throw new Error('Quiz must have at least one question.');
+
+      const totalPoints = questions.reduce((sum, q) => sum + q.points, 0);
+      if (totalPoints <= 0) throw new Error('Total quiz points must be greater than zero.');
+
       const acConfig = JSON.parse(document.getElementById('antiCheatConfigData').value || '{}');
 
       await SupabaseDB.saveQuiz({
@@ -2305,11 +2342,11 @@ window.shuffleQuizQuestions = () => {
         teacher_email: user.email,
         title: document.getElementById('quizTitle').value,
         description: document.getElementById('quizDesc').value,
-        time_limit: parseInt(document.getElementById('quizLimit').value) || 0,
-        attempts_allowed: parseInt(document.getElementById('quizAttempts').value) || 1,
-        passing_score: parseInt(document.getElementById('quizPassingScore').value) || 60,
-        start_at: document.getElementById('quizStartAt').value ? new Date(document.getElementById('quizStartAt').value).toISOString() : null,
-        end_at: document.getElementById('quizEndAt').value ? new Date(document.getElementById('quizEndAt').value).toISOString() : null,
+        time_limit: timeLimit,
+        attempts_allowed: attemptsAllowed,
+        passing_score: passingScore,
+        start_at: startAt ? new Date(startAt).toISOString() : null,
+        end_at: endAt ? new Date(endAt).toISOString() : null,
         shuffle_questions: document.getElementById('quizShuffle').value === 'true',
         status: document.getElementById('quizStatus').value,
         anti_cheat_config: acConfig,
@@ -2346,6 +2383,9 @@ async function deleteQuizById(id) {
 }
 
 async function viewQuizResults(quizId) {
+  // Authoritative reconciliation before viewing results
+  try { await SupabaseDB.reconcileQuizAttempts(quizId); } catch(e) { console.warn('Reconciliation failed:', e); }
+
   const [{ data: subs }, quiz] = await Promise.all([
     SupabaseDB.getQuizSubmissions(quizId),
     SupabaseDB.getQuiz(quizId)
