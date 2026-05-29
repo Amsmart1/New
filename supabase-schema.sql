@@ -840,11 +840,11 @@ BEGIN
              RAISE EXCEPTION 'Quiz was started before the allowed window.';
         END IF;
 
-        IF v_end_at IS NOT NULL AND NOW() > (v_end_at + INTERVAL '1 minute') THEN
+        IF v_end_at IS NOT NULL AND NOW() > (v_end_at + INTERVAL '5 minutes') THEN
             RAISE EXCEPTION 'Quiz has already closed.';
         END IF;
 
-        IF v_time_limit > 0 AND NEW.submitted_at > (NEW.started_at + (v_time_limit * INTERVAL '1 minute') + INTERVAL '1 minute') THEN
+        IF v_time_limit > 0 AND NEW.submitted_at > (NEW.started_at + (v_time_limit * INTERVAL '1 minute') + INTERVAL '5 minutes') THEN
             RAISE EXCEPTION 'Quiz time limit exceeded.';
         END IF;
     END IF;
@@ -1372,9 +1372,11 @@ BEGIN
     END IF;
 
     -- 2. Validate limits for new attempt
+    -- Count both submitted and in-progress to be strict about concurrency,
+    -- but we already returned the in-progress one above if it existed.
     SELECT COUNT(*) INTO v_attempts_used
     FROM quiz_submissions
-    WHERE quiz_id = p_quiz_id AND student_email = v_student_email AND status = 'submitted';
+    WHERE quiz_id = p_quiz_id AND student_email = v_student_email;
 
     IF v_quiz.attempts_allowed IS NOT NULL AND v_attempts_used >= v_quiz.attempts_allowed THEN
         RAISE EXCEPTION 'You have reached the maximum number of attempts allowed for this quiz.';
