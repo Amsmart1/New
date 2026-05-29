@@ -675,6 +675,12 @@ class SupabaseDB {
                 .from('discussions')
                 .delete()
                 .match({ course_id: courseId, user_email: studentEmail });
+
+            // Delete violations
+            await supabaseClient
+                .from('violations')
+                .delete()
+                .match({ course_id: courseId, user_email: studentEmail });
         } catch (e) {
             console.warn('History cleanup during unenrollment partially failed:', e);
         }
@@ -684,8 +690,15 @@ class SupabaseDB {
             .delete()
             .match({ course_id: courseId, student_email: studentEmail });
         if (error) throw error;
+
+        // Invalidate relevant caches
         _cache.invalidate(`enrollments_${studentEmail}`);
         _cache.invalidate(`enrolled_courses_${studentEmail}`);
+        _cache.invalidate('submissions');
+        _cache.invalidate('violations');
+        _cache.invalidate('study_sessions');
+        _cache.invalidate('attendance');
+        _cache.invalidate(); // Broad invalidation for quizzes/discussions
     }
 
     static async markLessonComplete(courseId, studentEmail, lessonId) {
@@ -1665,11 +1678,23 @@ class SupabaseDB {
 
     static async deleteViolations(assessmentId = null, userEmail = null) {
         return this._request(async () => {
-            let query = supabaseClient.from('violations').delete();
-            if (assessmentId) query = query.eq('assessment_id', assessmentId);
-            if (userEmail) query = query.eq('user_email', userEmail);
+            let filters = {};
+            if (assessmentId) filters.assessment_id = assessmentId;
+            if (userEmail) filters.user_email = userEmail;
 
-            const { error } = await query;
+            // Security: Add teacher filter if current user is teacher to ensure RLS compliance and safety
+            try {
+                const currentUser = await SessionManager.getCurrentUser();
+                if (currentUser?.role === 'teacher') {
+                    filters.teacher_email = currentUser.email;
+                }
+            } catch(e) {}
+
+            const { error } = await supabaseClient
+                .from('violations')
+                .delete()
+                .match(filters);
+
             if (error) throw error;
             _cache.invalidate('violations');
         });
