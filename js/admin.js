@@ -924,16 +924,9 @@ async function approveReset(email) {
 
       // Hash the temporary password
       const hashedTemp = await window.hashPassword(tempPassword, email);
+      const expiresAt = new Date(Date.now() + 72 * 3600 * 1000).toISOString();
 
-      user.reset_request.status = 'approved';
-      user.reset_request.temp_password = hashedTemp;
-      user.reset_request.temp_password_plain = tempPassword; // Store for showing to user via auth errors
-      user.reset_request.expires_at = new Date(Date.now() + 72 * 3600 * 1000).toISOString();
-
-      // Ensure user.password is also updated to the hashed temp password so login RPC works
-      user.password = hashedTemp;
-
-      if (await SupabaseDB.saveUser(user)) {
+      if (await SupabaseDB.approvePasswordReset(email, hashedTemp, tempPassword, expiresAt)) {
         const backdrop = document.createElement('div');
         backdrop.className = 'modal-backdrop';
         backdrop.style.display = 'flex';

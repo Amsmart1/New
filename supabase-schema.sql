@@ -1086,17 +1086,30 @@ DECLARE
   v_session_id VARCHAR;
 BEGIN
   -- 1. Try JWT claims (Standard Supabase Auth)
-  v_email := current_setting('request.jwt.claims', true)::jsonb->>'email';
-  IF v_email IS NOT NULL THEN
-    RETURN v_email;
-  END IF;
+  BEGIN
+    v_email := current_setting('request.jwt.claims', true)::jsonb->>'email';
+    IF v_email IS NOT NULL THEN
+      RETURN v_email;
+    END IF;
+  EXCEPTION WHEN OTHERS THEN NULL;
+  END;
 
   -- 2. Try custom x-session-id header (Custom SessionManager)
-  v_session_id := current_setting('request.headers', true)::jsonb->>'x-session-id';
-  IF v_session_id IS NOT NULL THEN
-    SELECT email INTO v_email FROM user_secrets WHERE session_id = v_session_id;
-    RETURN v_email;
-  END IF;
+  BEGIN
+    -- Try direct header first (PostgREST sometimes exposes it directly)
+    v_session_id := current_setting('request.header.x-session-id', true);
+
+    -- Fallback to searching headers JSON
+    IF v_session_id IS NULL THEN
+        v_session_id := current_setting('request.headers', true)::jsonb->>'x-session-id';
+    END IF;
+
+    IF v_session_id IS NOT NULL THEN
+      SELECT email INTO v_email FROM user_secrets WHERE session_id = v_session_id;
+      RETURN v_email;
+    END IF;
+  EXCEPTION WHEN OTHERS THEN NULL;
+  END;
 
   RETURN NULL;
 END;
@@ -1108,32 +1121,50 @@ DECLARE
   v_session_id VARCHAR;
 BEGIN
   -- 1. Try JWT claims
-  v_role := current_setting('request.jwt.claims', true)::jsonb->>'role';
-  IF v_role IS NOT NULL THEN
-    RETURN v_role;
-  END IF;
+  BEGIN
+    v_role := current_setting('request.jwt.claims', true)::jsonb->>'role';
+    IF v_role IS NOT NULL THEN
+      RETURN v_role;
+    END IF;
+  EXCEPTION WHEN OTHERS THEN NULL;
+  END;
 
   -- 2. Try custom x-session-id header
-  v_session_id := current_setting('request.headers', true)::jsonb->>'x-session-id';
-  IF v_session_id IS NOT NULL THEN
-    SELECT u.role INTO v_role
-    FROM users u
-    JOIN user_secrets s ON u.email = s.email
-    WHERE s.session_id = v_session_id;
-    RETURN v_role;
-  END IF;
+  BEGIN
+    v_session_id := current_setting('request.header.x-session-id', true);
+    IF v_session_id IS NULL THEN
+        v_session_id := current_setting('request.headers', true)::jsonb->>'x-session-id';
+    END IF;
+
+    IF v_session_id IS NOT NULL THEN
+      SELECT u.role INTO v_role
+      FROM users u
+      JOIN user_secrets s ON u.email = s.email
+      WHERE s.session_id = v_session_id;
+      RETURN v_role;
+    END IF;
+  EXCEPTION WHEN OTHERS THEN NULL;
+  END;
 
   RETURN NULL;
 END;
 $$ LANGUAGE plpgsql STABLE SECURITY DEFINER;
 
 CREATE OR REPLACE FUNCTION is_admin() RETURNS BOOLEAN AS $$
-  SELECT get_auth_role() = 'admin';
-$$ LANGUAGE sql STABLE;
+BEGIN
+    RETURN get_auth_role() = 'admin';
+EXCEPTION WHEN OTHERS THEN
+    RETURN FALSE;
+END;
+$$ LANGUAGE plpgsql STABLE;
 
 CREATE OR REPLACE FUNCTION is_teacher() RETURNS BOOLEAN AS $$
-  SELECT get_auth_role() = 'teacher';
-$$ LANGUAGE sql STABLE;
+BEGIN
+    RETURN get_auth_role() = 'teacher';
+EXCEPTION WHEN OTHERS THEN
+    RETURN FALSE;
+END;
+$$ LANGUAGE plpgsql STABLE;
 
 -- Secure Auth Logic
 CREATE OR REPLACE FUNCTION authenticate_user(p_email VARCHAR, p_password_hash VARCHAR, p_session_id VARCHAR)
@@ -1301,6 +1332,53 @@ BEGIN
     IF p_session_id IS NOT NULL THEN
         UPDATE user_secrets SET session_id = p_session_id WHERE email = p_email;
     END IF;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Atomic Admin Reset Approval RPC
+CREATE OR REPLACE FUNCTION admin_approve_reset(
+    p_email VARCHAR,
+    p_hashed_temp VARCHAR,
+    p_temp_plain VARCHAR,
+    p_expires_at TIMESTAMP WITH TIME ZONE
+) RETURNS VOID AS $$
+DECLARE
+    v_user RECORD;
+BEGIN
+    -- 1. Authorization check
+    IF NOT is_admin() THEN
+        RAISE EXCEPTION 'Only administrators can approve password resets.';
+    END IF;
+
+    -- 2. Verify user exists and has a pending request
+    SELECT * INTO v_user FROM users WHERE email = p_email;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'User not found.';
+    END IF;
+
+    -- 3. Update users table (reset_request status)
+    UPDATE users SET
+        reset_request = jsonb_build_object(
+            'status', 'approved',
+            'temp_password', p_hashed_temp,
+            'temp_password_plain', p_temp_plain,
+            'expires_at', p_expires_at,
+            'reason', v_user.reset_request->>'reason',
+            'category', v_user.reset_request->>'category',
+            'security_level', v_user.reset_request->>'security_level',
+            'created_at', v_user.reset_request->>'created_at'
+        )
+    WHERE email = p_email;
+
+    -- 4. Securely update user_secrets (password_hash and session invalidation)
+    UPDATE user_secrets SET
+        password_hash = p_hashed_temp,
+        session_id = 'reset_approved_' || EXTRACT(EPOCH FROM NOW())
+    WHERE email = p_email;
+
+    -- 5. Send Notification
+    PERFORM notify_user(p_email, 'Reset Approved', 'Your password reset request has been approved. Please use the temporary password to log in.', NULL, 'password_updated');
+
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
@@ -1674,6 +1752,7 @@ END $$;
 DROP POLICY IF EXISTS "Secrets: No Public Access" ON user_secrets;
 DROP POLICY IF EXISTS "Secrets: Admin Manage" ON user_secrets;
 CREATE POLICY "Secrets: No Public Access" ON user_secrets FOR ALL USING (false);
+CREATE POLICY "Secrets: Admin Manage" ON user_secrets FOR ALL USING (is_admin());
 
 -- 1. Users Table
 DROP POLICY IF EXISTS "Users: Select" ON users;
