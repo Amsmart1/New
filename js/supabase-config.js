@@ -382,7 +382,7 @@ class SupabaseDB {
         return this._request(async () => {
             const { error } = await supabaseClient.rpc('admin_approve_reset', {
                 p_email: email,
-                p_hashed_temp: hashedTemp,
+                p_hashed_temp_password: hashedTemp,
                 p_temp_plain: tempPlain,
                 p_expires_at: expiresAt
             });

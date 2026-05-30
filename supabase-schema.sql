@@ -1336,9 +1336,10 @@ END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
 -- Atomic Admin Reset Approval RPC
+DROP FUNCTION IF EXISTS admin_approve_reset(VARCHAR, VARCHAR, VARCHAR, TIMESTAMP WITH TIME ZONE);
 CREATE OR REPLACE FUNCTION admin_approve_reset(
     p_email VARCHAR,
-    p_hashed_temp VARCHAR,
+    p_hashed_temp_password VARCHAR,
     p_temp_plain VARCHAR,
     p_expires_at TIMESTAMP WITH TIME ZONE
 ) RETURNS VOID AS $$
@@ -1360,7 +1361,7 @@ BEGIN
     UPDATE users SET
         reset_request = jsonb_build_object(
             'status', 'approved',
-            'temp_password', p_hashed_temp,
+            'temp_password', p_hashed_temp_password,
             'temp_password_plain', p_temp_plain,
             'expires_at', p_expires_at,
             'reason', v_user.reset_request->>'reason',
@@ -1372,7 +1373,7 @@ BEGIN
 
     -- 4. Securely update user_secrets (password_hash and session invalidation)
     UPDATE user_secrets SET
-        password_hash = p_hashed_temp,
+        password_hash = p_hashed_temp_password,
         session_id = 'reset_approved_' || EXTRACT(EPOCH FROM NOW())
     WHERE email = p_email;
 
