@@ -297,6 +297,31 @@ const Auth = {
         else if (role === 'admin') window.location.href = 'admin.html';
     },
 
+    /**
+     * Shared helper for handling auth form submissions.
+     * Prevents default, checks maintenance, and manages common error reporting.
+     */
+    async _handleAuthSubmit(e, email, errorElId, callback) {
+        e.preventDefault();
+        const errorEl = document.getElementById(errorElId);
+        if (errorEl) errorEl.innerText = '';
+
+        const maint = await this._checkMaintenance(email);
+        if (maint.active) {
+            if (errorEl) errorEl.innerText = maint.message;
+            else alert(maint.message);
+            return;
+        }
+
+        try {
+            await callback(errorEl);
+        } catch (err) {
+            console.error('Auth action error:', err);
+            const msg = err.message || 'An unexpected error occurred. Please try again.';
+            if (errorEl) errorEl.innerText = msg;
+            else UI.showNotification(msg, 'error');
+        }
+    }
 };
 
 // Global helpers (accessible from onclick)
@@ -322,119 +347,86 @@ document.addEventListener('DOMContentLoaded', () => {
     const signupForm = document.getElementById('signupForm');
     if (signupForm) {
         signupForm.addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const maint = await Auth._checkMaintenance();
-            if (maint.active) {
-                alert(maint.message);
-                return;
-            }
-
-            const fullName = (document.getElementById('fullName').value || '').trim();
             const email = normalizeEmail(document.getElementById('email').value);
-            const phone = (document.getElementById('phone').value || '').trim();
-            const password = document.getElementById('password').value;
-            const confirm = document.getElementById('confirmPassword').value;
-            const role = (document.getElementById('role').value || 'student');
+            await Auth._handleAuthSubmit(e, email, 'signupError', async (errorEl) => {
+                const fullName = (document.getElementById('fullName').value || '').trim();
+                const phone = (document.getElementById('phone').value || '').trim();
+                const password = document.getElementById('password').value;
+                const confirm = document.getElementById('confirmPassword').value;
+                const role = (document.getElementById('role').value || 'student');
 
-            const errorEl = document.getElementById('signupError');
-            errorEl.innerText = '';
+                if (!fullName) throw new Error('Full name is required.');
+                if (!isValidEmail(email)) throw new Error('Please enter a valid email address.');
 
-            if (!fullName) {
-                errorEl.innerText = 'Full name is required.';
-                return;
-            }
-            if (!isValidEmail(email)) {
-                errorEl.innerText = 'Please enter a valid email address.';
-                return;
-            }
+                if (phone && !/^\+?[\d\s-]{10,}$/.test(phone)) {
+                    throw new Error('Please enter a valid phone number (at least 10 digits).');
+                }
 
-            if (phone && !/^\+?[\d\s-]{10,}$/.test(phone)) {
-                errorEl.innerText = 'Please enter a valid phone number (at least 10 digits).';
-                return;
-            }
+                // Enforce limit of 1 account for admin and teacher roles for landing page signups
+                // Bypassed if using a valid invitation
+                const activeInviteRaw = sessionStorage.getItem('activeInvite');
+                let activeInvite = null;
+                if (activeInviteRaw) {
+                    try { activeInvite = JSON.parse(activeInviteRaw); } catch (e) { console.warn('Corrupt invite session data'); }
+                }
 
-            // Enforce limit of 1 account for admin and teacher roles for landing page signups
-            // Bypassed if using a valid invitation
-            const activeInviteRaw = sessionStorage.getItem('activeInvite');
-            let activeInvite = null;
-            if (activeInviteRaw) {
-                try { activeInvite = JSON.parse(activeInviteRaw); } catch (e) { console.warn('Corrupt invite session data'); }
-            }
-
-            if ((role === 'admin' || role === 'teacher') && !activeInvite) {
-                try {
+                if ((role === 'admin' || role === 'teacher') && !activeInvite) {
                     const roleCount = await SupabaseDB.getCount('users', q => q.eq('role', role));
                     if (roleCount >= 1) {
                         const roleName = role.charAt(0).toUpperCase() + role.slice(1);
-                        errorEl.innerText = `The maximum number of ${roleName} accounts has been reached. Please contact an existing admin to create more accounts.`;
-                        return;
-                    }
-                } catch (e) {
-                    console.error(`Error checking ${role} count:`, e);
-                }
-            }
-
-            const existing = await SupabaseDB.getUser(email);
-            if (existing) {
-                if (existing.reset_request) {
-                    if (existing.reset_request.status === 'pending') {
-                        errorEl.innerText = 'This account has an active password reset request pending admin review. You cannot sign up again.';
-                        return;
-                    }
-                    if (existing.reset_request.status === 'approved') {
-                        errorEl.innerHTML = 'This account has an approved password reset. Please use the temporary password provided by your administrator to login.';
-                        return;
+                        throw new Error(`The maximum number of ${roleName} accounts has been reached. Please contact an existing admin to create more accounts.`);
                     }
                 }
-                errorEl.innerText = 'Account with this email already exists.';
-                return;
-            }
-            if (password !== confirm) {
-                errorEl.innerText = 'Passwords do not match.';
-                return;
-            }
-            if (!isStrongPassword(password)) {
-                errorEl.innerText = 'Password must be 8+ chars, include upper, lower, number, and special char.';
-                return;
-            }
 
-            const hashedPassword = await window.hashPassword(password, email);
-
-            // Generate a fresh session ID for the new signup
-            const sid = SessionManager.getSessionId(true);
-
-            const user = {
-                full_name: fullName,
-                email,
-                phone,
-                password: hashedPassword,
-                role,
-                session_id: sid,
-                invite_token: activeInvite?.token || null
-            };
-            
-            const savedUser = await SupabaseDB.saveUser(user);
-            if (!savedUser) {
-                errorEl.innerText = 'Failed to create account. Please try again.';
-                return;
-            }
-
-            // Establish RLS session context
-            window.setSupabaseSession(sid);
-
-            // Mark invite as used if applicable
-            if (activeInvite) {
-                try {
-                    await SupabaseDB.markInviteUsed(activeInvite.token);
-                    sessionStorage.removeItem('activeInvite');
-                } catch (e) {
-                    console.warn('Failed to mark invite as used:', e);
+                const existing = await SupabaseDB.getUser(email);
+                if (existing) {
+                    if (existing.reset_request) {
+                        if (existing.reset_request.status === 'pending') {
+                            throw new Error('This account has an active password reset request pending admin review. You cannot sign up again.');
+                        }
+                        if (existing.reset_request.status === 'approved') {
+                            errorEl.innerHTML = 'This account has an approved password reset. Please use the temporary password provided by your administrator to login.';
+                            return;
+                        }
+                    }
+                    throw new Error('Account with this email already exists.');
                 }
-            }
-            
-            await SessionManager.setCurrentUser(savedUser);
-            alert(`Welcome ${fullName}! Your ${role} account has been created.`);
-            Auth.redirectByRole(role);
+                if (password !== confirm) throw new Error('Passwords do not match.');
+                if (!isStrongPassword(password)) throw new Error('Password must be 8+ chars, include upper, lower, number, and special char.');
+
+                const hashedPassword = await window.hashPassword(password, email);
+                const sid = SessionManager.getSessionId(true);
+
+                const user = {
+                    full_name: fullName,
+                    email,
+                    phone,
+                    password: hashedPassword,
+                    role,
+                    session_id: sid,
+                    invite_token: activeInvite?.token || null
+                };
+
+                const savedUser = await SupabaseDB.saveUser(user);
+                if (!savedUser) throw new Error('Failed to create account. Please try again.');
+
+                // Establish RLS session context
+                window.setSupabaseSession(sid);
+
+                // Mark invite as used if applicable
+                if (activeInvite) {
+                    try {
+                        await SupabaseDB.markInviteUsed(activeInvite.token);
+                        sessionStorage.removeItem('activeInvite');
+                    } catch (e) {
+                        console.warn('Failed to mark invite as used:', e);
+                    }
+                }
+
+                await SessionManager.setCurrentUser(savedUser);
+                alert(`Welcome ${fullName}! Your ${role} account has been created.`);
+                Auth.redirectByRole(role);
+            });
         });
     }
 
@@ -442,75 +434,54 @@ document.addEventListener('DOMContentLoaded', () => {
     const loginForm = document.getElementById('loginForm');
     if (loginForm) {
         loginForm.addEventListener('submit', async (e) => {
-            e.preventDefault();
             const email = normalizeEmail(document.getElementById('loginEmail').value);
-            const emailErr = document.getElementById('loginEmailError');
-            if (emailErr) emailErr.innerText = '';
+            await Auth._handleAuthSubmit(e, email, 'loginPasswordError', async (passErr) => {
+                const loginEmailErr = document.getElementById('loginEmailError');
+                if (loginEmailErr) loginEmailErr.innerText = '';
 
-            if (!isValidEmail(email)) {
-                if (emailErr) emailErr.innerText = 'Please enter a valid email address.';
-                return;
-            }
-
-            const maint = await Auth._checkMaintenance(email);
-            if (maint.active) {
-                alert(maint.message);
-                return;
-            }
-
-            const password = document.getElementById('loginPassword').value;
-            const passErr = document.getElementById('loginPasswordError');
-            if (emailErr) emailErr.innerText = '';
-            if (passErr) passErr.innerText = '';
-
-            const user = await SupabaseDB.getUser(email);
-
-            if (!user) {
-                if (emailErr) emailErr.innerText = 'No account found with this email';
-                return;
-            }
-
-            if (isAccountLocked(user)) {
-                const mins = Math.ceil((new Date(user.locked_until).getTime() - Date.now()) / 60000);
-                if (passErr) passErr.innerText = `Account is locked. Try again in ${mins} minutes`;
-                return;
-            }
-
-            // Handle expired reset requests
-            if (user.reset_request && user.reset_request.expires_at && Date.now() > new Date(user.reset_request.expires_at).getTime()) {
-                user.reset_request = null;
-                await SupabaseDB.saveUser(user);
-            }
-
-            if (user.reset_request) {
-                if (user.reset_request.status === 'pending') {
-                    if (passErr) passErr.innerText = 'Password reset request pending admin review.';
+                if (!isValidEmail(email)) {
+                    if (loginEmailErr) loginEmailErr.innerText = 'Please enter a valid email address.';
                     return;
                 }
-                if (user.reset_request.status === 'approved') {
-                    if (user.reset_request.expires_at && Date.now() > new Date(user.reset_request.expires_at).getTime()) {
-                        user.reset_request = null;
-                        await SupabaseDB.saveUser(user);
-                        if (passErr) passErr.innerText = 'Temporary password expired. Please request a new reset.';
-                        return;
-                    }
 
+                const password = document.getElementById('loginPassword').value;
+                const user = await SupabaseDB.getUser(email);
+
+                if (!user) {
+                    if (loginEmailErr) loginEmailErr.innerText = 'No account found with this email';
+                    return;
                 }
-            }
 
-            const hashedInput = await window.hashPassword(password, email);
+                if (isAccountLocked(user)) {
+                    const mins = Math.ceil((new Date(user.locked_until).getTime() - Date.now()) / 60000);
+                    throw new Error(`Account is locked. Try again in ${mins} minutes`);
+                }
 
-            try {
-                // Clear existing session and generate a fresh one BEFORE authentication
+                // Handle expired reset requests
+                if (user.reset_request && user.reset_request.expires_at && Date.now() > new Date(user.reset_request.expires_at).getTime()) {
+                    user.reset_request = null;
+                    await SupabaseDB.saveUser(user);
+                }
+
+                if (user.reset_request) {
+                    if (user.reset_request.status === 'pending') {
+                        throw new Error('Password reset request pending admin review.');
+                    }
+                    if (user.reset_request.status === 'approved') {
+                        if (user.reset_request.expires_at && Date.now() > new Date(user.reset_request.expires_at).getTime()) {
+                            user.reset_request = null;
+                            await SupabaseDB.saveUser(user);
+                            throw new Error('Temporary password expired. Please request a new reset.');
+                        }
+                    }
+                }
+
+                const hashedInput = await window.hashPassword(password, email);
                 const sid = SessionManager.getSessionId(true);
-
                 const authResult = await SupabaseDB.authenticateUser(email, hashedInput, sid);
 
                 if (!authResult.success) {
-                    if (passErr) {
-                        passErr.innerText = authResult.message || 'Login failed';
-                    }
-                    return;
+                    throw new Error(authResult.message || 'Login failed');
                 }
 
                 const authUser = authResult.user;
@@ -527,11 +498,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 alert(`Welcome back ${authUser.full_name}!`);
                 Auth.redirectByRole(authUser.role);
-
-            } catch (err) {
-                console.error('Auth error:', err);
-                if (passErr) passErr.innerText = 'An error occurred during login. Please try again.';
-            }
+            });
         });
     }
 
@@ -539,87 +506,50 @@ document.addEventListener('DOMContentLoaded', () => {
     const resetForm = document.getElementById('resetForm');
     if (resetForm) {
         resetForm.addEventListener('submit', async (e) => {
-            e.preventDefault();
             const email = normalizeEmail(document.getElementById('resetEmail').value);
-            const reason = document.getElementById('resetReason').value;
-            const customReason = document.getElementById('resetCustomReason')?.value || '';
+            await Auth._handleAuthSubmit(e, email, 'resetError', async (err) => {
+                const reason = document.getElementById('resetReason').value;
+                const customReason = document.getElementById('resetCustomReason')?.value || '';
 
-            const err = document.getElementById('resetError');
-            if (err) err.innerText = '';
+                if (!isValidEmail(email)) throw new Error('Please enter a valid email address.');
+                if (!reason) throw new Error('Please select a reason.');
 
-            if (!isValidEmail(email)) {
-                if (err) err.innerText = 'Please enter a valid email address.';
-                return;
-            }
+                const user = await SupabaseDB.getUser(email);
+                if (!user) throw new Error('No account found with this email');
+                if (!user.active) throw new Error('Your account has been deactivated.');
+                if (user.flagged) throw new Error('Your account is flagged for suspicious activities. Contact admin for support.');
+                if (isAccountLocked(user)) throw new Error('Your account is locked due to failed attempts. Try again later.');
 
-            if (!reason) {
-                if (err) err.innerText = 'Please select a reason.';
-                return;
-            }
-
-            const maint = await Auth._checkMaintenance(email);
-            if (maint.active) {
-                if (err) err.innerText = maint.message;
-                else alert(maint.message);
-                return;
-            }
-
-            const user = await SupabaseDB.getUser(email);
-            if (!user) {
-                if (err) err.innerText = 'No account found with this email';
-                return;
-            }
-            if (!user.active) {
-                if (err) err.innerText = 'Your account has been deactivated.';
-                return;
-            }
-            if (user.flagged) {
-                if (err) err.innerText = 'Your account is flagged for suspicious activities. Contact admin for support.';
-                return;
-            }
-            if (isAccountLocked(user)) {
-                if (err) err.innerText = 'Your account is locked due to failed attempts. Try again later.';
-                return;
-            }
-
-            // Expire old reset automatically
-            if (user.reset_request && user.reset_request.expires_at && Date.now() > new Date(user.reset_request.expires_at).getTime()) {
-                user.reset_request = null;
-            }
-
-            if (user.reset_request) {
-                if (user.reset_request.status === 'pending') {
-                    if (err) err.innerText = 'Reset request already pending review.';
-                    return;
+                // Expire old reset automatically
+                if (user.reset_request && user.reset_request.expires_at && Date.now() > new Date(user.reset_request.expires_at).getTime()) {
+                    user.reset_request = null;
                 }
-                if (user.reset_request.status === 'approved') {
-                    if (err) err.innerHTML = 'Reset already approved. Use temporary password provided by administrator to login.';
-                    return;
+
+                if (user.reset_request) {
+                    if (user.reset_request.status === 'pending') throw new Error('Reset request already pending review.');
+                    if (user.reset_request.status === 'approved') {
+                        err.innerHTML = 'Reset already approved. Use temporary password provided by administrator to login.';
+                        return;
+                    }
                 }
-            }
 
-            user.reset_request = {
-                status: 'pending',
-                reason: reason,
-                custom_reason: customReason,
-                temp_password: null,
-                created_at: new Date().toISOString(),
-                expires_at: null,
-                denial_reason: null
-            };
+                user.reset_request = {
+                    status: 'pending', reason, custom_reason: customReason,
+                    temp_password: null, created_at: new Date().toISOString(),
+                    expires_at: null, denial_reason: null
+                };
 
-            await Promise.all([
-                SupabaseDB.saveUser(user),
-                SupabaseDB.createNotification(
-                    user.email,
-                    'Reset Requested',
-                    'Password reset requested and pending admin review.',
-                    null,
-                    'reset_requested'
-                )
-            ]);
-            alert('Password reset request submitted. Admin will review it.');
-            Auth.showLogin();
+                await Promise.all([
+                    SupabaseDB.saveUser(user),
+                    SupabaseDB.createNotification(
+                        user.email, 'Reset Requested',
+                        'Password reset requested and pending admin review.',
+                        null, 'reset_requested'
+                    )
+                ]);
+                alert('Password reset request submitted. Admin will review it.');
+                Auth.showLogin();
+            });
         });
     }
 
@@ -627,72 +557,53 @@ document.addEventListener('DOMContentLoaded', () => {
     const newPasswordForm = document.getElementById('newPasswordForm');
     if (newPasswordForm) {
         newPasswordForm.addEventListener('submit', async (e) => {
-            e.preventDefault();
-            let user = await SessionManager.getCurrentUser();
+            const currentUser = await SessionManager.getCurrentUser();
+            const email = currentUser?.email;
+            await Auth._handleAuthSubmit(e, email, 'newPasswordError', async (err) => {
+                if (!currentUser) {
+                    Auth.showLogin();
+                    throw new Error('Session expired. Please login again with temporary password.');
+                }
 
-            const newPass = document.getElementById('newPass').value;
-            const confirm = document.getElementById('confirmNewPass').value;
+                const newPass = document.getElementById('newPass').value;
+                const confirm = document.getElementById('confirmNewPass').value;
 
-            const err = document.getElementById('newPasswordError');
-            if (err) err.innerText = '';
+                // Validate reset approval still valid
+                const freshUser = await SupabaseDB.getUser(email);
+                if (!freshUser.reset_request || freshUser.reset_request.status !== 'approved') {
+                    Auth.showReset();
+                    throw new Error('No active reset found. Please request a new reset.');
+                }
+                if (freshUser.reset_request.expires_at && Date.now() > new Date(freshUser.reset_request.expires_at).getTime()) {
+                    freshUser.reset_request = null;
+                    await SupabaseDB.saveUser(freshUser);
+                    Auth.showReset();
+                    throw new Error('Temporary password expired. Please request a new reset.');
+                }
 
-            if (!user) {
-                if (err) err.innerText = 'Session expired. Please login again with temporary password.';
-                Auth.showLogin();
-                return;
-            }
+                if (newPass !== confirm) throw new Error('Passwords do not match.');
+                if (!isStrongPassword(newPass)) throw new Error('Password must be at least 8 chars, include upper, lower, number, and special char.');
 
-            // Validate reset approval still valid
-            const freshUser = await SupabaseDB.getUser(user.email);
-            if (!freshUser.reset_request || freshUser.reset_request.status !== 'approved') {
-                if (err) err.innerText = 'No active reset found. Please request a new reset.';
-                Auth.showReset();
-                return;
-            }
-            if (freshUser.reset_request.expires_at && Date.now() > new Date(freshUser.reset_request.expires_at).getTime()) {
+                // Update password and clear reset request
+                freshUser.password = await window.hashPassword(newPass, email);
                 freshUser.reset_request = null;
-                await SupabaseDB.saveUser(freshUser);
-                if (err) err.innerText = 'Temporary password expired. Please request a new reset.';
-                Auth.showReset();
-                return;
-            }
 
-            if (newPass !== confirm) {
-                if (err) err.innerText = 'Passwords do not match.';
-                return;
-            }
-            if (!isStrongPassword(newPass)) {
-                if (err) err.innerText = 'Password must be at least 8 chars, include upper, lower, number, and special char.';
-                return;
-            }
+                const sid = SessionManager.getSessionId(true);
+                freshUser.session_id = sid;
+                freshUser.metadata = { ...(freshUser.metadata || {}), last_invalidation_reason: 'password_change' };
 
-            // Update password and clear reset request
-            freshUser.password = await window.hashPassword(newPass, freshUser.email);
-            freshUser.reset_request = null;
+                const updatedUser = await SupabaseDB.saveUser(freshUser);
+                window.setSupabaseSession(sid);
+                await SessionManager.setCurrentUser(updatedUser);
 
-            // After updating the password, generate a fresh session ID
-            const sid = SessionManager.getSessionId(true);
-            freshUser.session_id = sid;
-            freshUser.metadata = { ...(freshUser.metadata || {}), last_invalidation_reason: 'password_change' };
+                await SupabaseDB.createNotification(
+                    email, 'Password Updated',
+                    'Password updated after reset.', null, 'password_updated'
+                );
 
-            // Persist changes and get authoritative user object
-            const updatedUser = await SupabaseDB.saveUser(freshUser);
-
-            // Establish RLS session context and persist updated user data
-            window.setSupabaseSession(sid);
-            await SessionManager.setCurrentUser(updatedUser);
-
-            // Notify user of update
-            await SupabaseDB.createNotification(
-                freshUser.email,
-                'Password Updated',
-                'Password updated after reset.',
-                null,
-                'password_updated'
-            );
-
-            alert('Password successfully reset. You can now login with your new password.');
-            Auth.showLogin();
+                alert('Password successfully reset. You can now login with your new password.');
+                Auth.showLogin();
+            });
         });
     }
 });
