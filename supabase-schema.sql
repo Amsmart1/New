@@ -1250,8 +1250,12 @@ BEGIN
   SELECT password_hash, temp_password, session_id INTO v_secret FROM user_secrets WHERE email = p_email;
 
   IF v_secret.password_hash = p_password_hash OR v_secret.temp_password = p_password_hash THEN
-    -- If they used the temporary password, check expiration first
+    -- If they used the temporary password, check expiration and status
     IF v_secret.temp_password = p_password_hash THEN
+      IF v_user.reset_request->>'status' IS DISTINCT FROM 'approved' THEN
+        RETURN jsonb_build_object('success', false, 'message', 'Temporary password login is not currently permitted.');
+      END IF;
+
       IF v_user.reset_request->>'expires_at' IS NOT NULL AND (v_user.reset_request->>'expires_at')::TIMESTAMP WITH TIME ZONE < NOW() THEN
         -- Temporary password expired
         UPDATE users SET reset_request = NULL WHERE email = p_email;
@@ -1259,12 +1263,9 @@ BEGIN
         RETURN jsonb_build_object('success', false, 'message', 'Temporary password has expired. Please request a new reset.');
       END IF;
 
-      -- Promote it to the primary password hash and clear temp
-      UPDATE user_secrets SET
-        password_hash = p_password_hash,
-        temp_password = NULL,
-        session_id = p_session_id
-      WHERE email = p_email;
+      -- Update session only. Do NOT promote to password_hash.
+      -- The user must perform a manual password change to clear temp_password and set a new password_hash.
+      UPDATE user_secrets SET session_id = p_session_id WHERE email = p_email;
     ELSE
       -- Normal login, update session
       UPDATE user_secrets SET session_id = p_session_id WHERE email = p_email;
