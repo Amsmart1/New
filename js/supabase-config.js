@@ -14,8 +14,8 @@ const clientOptions = {
     global: {
         fetch: (url, options) => {
             const sid = sessionStorage.getItem('sessionId');
-            // Only inject sid if it matches the activated session to avoid auth regressions
-            if (sid && sid === _lastSessionId) {
+            // Inject sid if present to allow server-side identity resolution via x-session-id
+            if (sid) {
                 options = options || {};
                 const headers = new Headers(options.headers || {});
                 headers.set('x-session-id', sid);
@@ -219,14 +219,13 @@ class SupabaseDB {
 
         // Update secrets via secure RPC if provided
         if (user.password || user.session_id) {
-            try {
-                await supabaseClient.rpc('update_user_secret_secure', {
-                    p_email: user.email,
-                    p_password_hash: user.password || null,
-                    p_session_id: user.session_id || (user.password ? 'invalidated_' + Date.now() : null)
-                });
-            } catch (e) {
-                console.warn('Failed to update user secrets:', e);
+            const { error: rpcError } = await supabaseClient.rpc('update_user_secret_secure', {
+                p_email: user.email,
+                p_password_hash: user.password || null,
+                p_session_id: user.session_id || (user.password ? 'invalidated_' + Date.now() : null)
+            });
+            if (rpcError) {
+                throw new Error('Failed to update user authentication secrets: ' + rpcError.message);
             }
         }
 
@@ -262,6 +261,16 @@ class SupabaseDB {
             .eq('email', oldEmail)
             .select();
         if (error) throw error;
+
+        // Ensure secrets are synced with the new email if auth data changed
+        if (userData.password || userData.session_id) {
+            await supabaseClient.rpc('update_user_secret_secure', {
+                p_email: newEmail,
+                p_password_hash: userData.password || null,
+                p_session_id: userData.session_id || null
+            });
+        }
+
         _cache.invalidate('users');
         _cache.invalidate(`user_${oldEmail}`);
         _cache.invalidate(`user_${newEmail}`);
@@ -1886,7 +1895,11 @@ class SessionManager {
         let sid = sessionStorage.getItem('sessionId');
         if (!sid) {
             sid = 's_' + Math.random().toString(36).slice(2) + Date.now().toString(36);
-            sessionStorage.setItem('sessionId', sid);
+            if (typeof window.setSupabaseSession === 'function') {
+                window.setSupabaseSession(sid);
+            } else {
+                sessionStorage.setItem('sessionId', sid);
+            }
         }
         return sid;
     }
