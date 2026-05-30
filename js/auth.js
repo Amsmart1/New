@@ -57,14 +57,16 @@ const RESET_TAXONOMY = {
 const Auth = {
     async init() {
         // Parallelize initial checks
-        const [m, user] = await Promise.all([
-            this.getMaintenance(),
-            SessionManager.getCurrentUser()
+        const [user] = await Promise.all([
+            SessionManager.getCurrentUser(),
+            SupabaseDB.getMaintenance() // Still fetch to keep it in cache/warmup
         ]);
 
         // Start maintenance banner polling (30s is enough for landing page)
-        this.updateMaintBanners(m);
-        setInterval(() => this.updateMaintBanners(), 30000);
+        if (typeof updateMaintBanner === 'function') {
+            updateMaintBanner();
+            setInterval(updateMaintBanner, 30000);
+        }
 
         // Check for reason or invite token in URL
         const urlParams = new URLSearchParams(window.location.search);
@@ -94,19 +96,19 @@ const Auth = {
         try {
             const invite = await SupabaseDB.getInvite(token);
             if (!invite) {
-                alert('Invalid invitation link.');
+                UI.showNotification('Invalid invitation link.', 'error');
                 window.location.href = 'index.html';
                 return;
             }
 
             if (invite.used_at) {
-                alert('This invitation has already been used.');
+                UI.showNotification('This invitation has already been used.', 'warn');
                 window.location.href = 'index.html';
                 return;
             }
 
             if (new Date(invite.expires_at) < new Date()) {
-                alert('This invitation has expired.');
+                UI.showNotification('This invitation has expired.', 'warn');
                 window.location.href = 'index.html';
                 return;
             }
@@ -137,19 +139,38 @@ const Auth = {
 
         } catch (e) {
             console.error('Invite handling error:', e);
-            alert('An error occurred while validating your invite.');
+            UI.showNotification('An error occurred while validating your invite.', 'error');
             window.location.href = 'index.html';
         }
     },
 
-    // ---- Maintenance helpers ----
-    async getMaintenance() {
-        try {
-            return await SupabaseDB.getMaintenance();
-        } catch (error) {
-            console.error('Error fetching maintenance:', error);
-            return { enabled: false, schedules: [] };
+    /**
+     * Centralized maintenance check for auth actions.
+     * Allows admin bypass if user email is provided.
+     */
+    async _checkMaintenance(email = null) {
+        const m = await SupabaseDB.getMaintenance();
+        if (isActiveMaintenance(m)) {
+            let allow = false;
+            if (email) {
+                try {
+                    const user = await SupabaseDB.getUser(email);
+                    allow = !!(user && user.role === 'admin');
+                } catch (_) { allow = false; }
+            }
+
+            if (!allow) {
+                const untilTs = getActiveMaintenanceEnd(m);
+                const untilStr = untilTs ? new Date(untilTs).toLocaleString() : 'the scheduled end time';
+                return { active: true, message: `System is currently undergoing maintenance. Access is restricted until ${untilStr}.` };
+            }
         }
+
+        const upcoming = getUpcomingMaintenance(m);
+        if (upcoming) {
+            UI.showNotification(`Upcoming system maintenance: ${new Date(upcoming.startAt).toLocaleString()}`, 'warn');
+        }
+        return { active: false };
     },
 
     // ---- Section Switching ----
@@ -269,22 +290,6 @@ const Auth = {
         if (emailEl) emailEl.readOnly = false;
     },
 
-    // ---- Maintenance Banners ----
-    mountMaintBanners() {
-        return {
-            landing: document.getElementById('maintBanner'),
-            signup: document.getElementById('maintBannerSignup'),
-            login: document.getElementById('maintBannerLogin'),
-            reset: document.getElementById('maintBannerReset'),
-        };
-    },
-
-    async updateMaintBanners(existingM = null) {
-        // Delegate to global updateMaintBanner if core.js is loaded
-        if (typeof updateMaintBanner === 'function') {
-            return updateMaintBanner();
-        }
-    },
 
     redirectByRole(role) {
         if (role === 'student') window.location.href = 'student.html';
@@ -318,16 +323,12 @@ document.addEventListener('DOMContentLoaded', () => {
     if (signupForm) {
         signupForm.addEventListener('submit', async (e) => {
             e.preventDefault();
-            const m = await Auth.getMaintenance();
-            if (isActiveMaintenance(m)) {
-                const untilTs = getActiveMaintenanceEnd(m);
-                const untilStr = untilTs ? new Date(untilTs).toLocaleString() : 'the scheduled end time';
-                alert(`System is currently undergoing maintenance. Signups are disabled until ${untilStr}.`);
+            const maint = await Auth._checkMaintenance();
+            if (maint.active) {
+                alert(maint.message);
                 return;
             }
-            const upcoming = getUpcomingMaintenance(m);
-            if(upcoming){ alert(`Upcoming system maintenance: ${new Date(upcoming.startAt).toLocaleString()}`); }
-            
+
             const fullName = (document.getElementById('fullName').value || '').trim();
             const email = normalizeEmail(document.getElementById('email').value);
             const phone = (document.getElementById('phone').value || '').trim();
@@ -451,23 +452,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
 
-            const m = await Auth.getMaintenance();
-            if (isActiveMaintenance(m)) {
-                let allow = false;
-                try {
-                    const user = await SupabaseDB.getUser(email);
-                    allow = !!(user && user.role === 'admin');
-                } catch (_) { allow = false; }
-                if (!allow) {
-                    const untilTs = getActiveMaintenanceEnd(m);
-                    const untilStr = untilTs ? new Date(untilTs).toLocaleString() : 'the scheduled end time';
-                    alert(`System is currently undergoing maintenance. Only admin login allowed until ${untilStr}.`);
-                    return;
-                }
+            const maint = await Auth._checkMaintenance(email);
+            if (maint.active) {
+                alert(maint.message);
+                return;
             }
-            const upcoming = getUpcomingMaintenance(m);
-            if (upcoming) { alert(`Upcoming system maintenance: ${new Date(upcoming.startAt).toLocaleString()}`); }
-            
+
             const password = document.getElementById('loginPassword').value;
             const passErr = document.getElementById('loginPasswordError');
             if (emailErr) emailErr.innerText = '';
@@ -554,7 +544,6 @@ document.addEventListener('DOMContentLoaded', () => {
             const reason = document.getElementById('resetReason').value;
             const customReason = document.getElementById('resetCustomReason')?.value || '';
 
-            const m = await Auth.getMaintenance();
             const err = document.getElementById('resetError');
             if (err) err.innerText = '';
 
@@ -568,25 +557,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
 
-            if (isActiveMaintenance(m)) {
-                try {
-                    const user = await SupabaseDB.getUser(email);
-                    if (!(user && user.role === 'admin')) {
-                        const untilTs = getActiveMaintenanceEnd(m);
-                        const untilStr = untilTs ? new Date(untilTs).toLocaleString() : 'the scheduled end time';
-                        if (err) err.innerText = `System is currently undergoing maintenance. No reset allowed until ${untilStr}.`;
-                        return;
-                    }
-                } catch (_) {
-                    const untilTs = getActiveMaintenanceEnd(m);
-                    const untilStr = untilTs ? new Date(untilTs).toLocaleString() : 'the scheduled end time';
-                    if (err) err.innerText = `System is currently undergoing maintenance. No reset allowed until ${untilStr}.`;
-                    return;
-                }
+            const maint = await Auth._checkMaintenance(email);
+            if (maint.active) {
+                if (err) err.innerText = maint.message;
+                else alert(maint.message);
+                return;
             }
-            const upcoming = getUpcomingMaintenance(m);
-            if (upcoming) { if (err) err.innerText = `Upcoming system maintenance: ${new Date(upcoming.startAt).toLocaleString()}`; }
-            
+
             const user = await SupabaseDB.getUser(email);
             if (!user) {
                 if (err) err.innerText = 'No account found with this email';
