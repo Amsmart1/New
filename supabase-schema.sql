@@ -42,6 +42,7 @@ CREATE TABLE IF NOT EXISTS users (
 CREATE TABLE IF NOT EXISTS user_secrets (
   email VARCHAR(255) PRIMARY KEY REFERENCES users(email) ON UPDATE CASCADE ON DELETE CASCADE,
   password_hash VARCHAR(255) NOT NULL,
+  temp_password VARCHAR(255),
   session_id VARCHAR(255),
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
@@ -400,6 +401,7 @@ BEGIN
 
     -- user_secrets
     ALTER TABLE user_secrets ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
+    ALTER TABLE user_secrets ADD COLUMN IF NOT EXISTS temp_password VARCHAR(255);
 
     -- courses
     ALTER TABLE courses ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
@@ -1080,10 +1082,14 @@ CREATE INDEX IF NOT EXISTS idx_violations_metadata_gin ON violations USING GIN (
 -- 7. Helper Functions
 
 -- Auth helpers supporting both JWT and Custom x-session-id header
+DROP FUNCTION IF EXISTS get_auth_email();
 CREATE OR REPLACE FUNCTION get_auth_email() RETURNS VARCHAR AS $$
 DECLARE
   v_email VARCHAR;
   v_session_id VARCHAR;
+  v_headers JSONB;
+  v_key TEXT;
+  v_val TEXT;
 BEGIN
   -- 1. Try JWT claims (Standard Supabase Auth)
   BEGIN
@@ -1096,12 +1102,30 @@ BEGIN
 
   -- 2. Try custom x-session-id header (Custom SessionManager)
   BEGIN
-    -- Try direct header first (PostgREST sometimes exposes it directly)
+    -- Try direct header first
     v_session_id := current_setting('request.header.x-session-id', true);
 
-    -- Fallback to searching headers JSON
+    -- Robust searching in headers JSON
     IF v_session_id IS NULL THEN
-        v_session_id := current_setting('request.headers', true)::jsonb->>'x-session-id';
+      BEGIN
+        v_headers := current_setting('request.headers', true)::jsonb;
+        IF v_headers IS NOT NULL THEN
+          -- Try direct lookup
+          v_session_id := v_headers->>'x-session-id';
+
+          -- Case-insensitive fallback search
+          IF v_session_id IS NULL THEN
+            FOR v_key, v_val IN SELECT * FROM jsonb_each_text(v_headers)
+            LOOP
+              IF lower(v_key) = 'x-session-id' THEN
+                v_session_id := v_val;
+                EXIT;
+              END IF;
+            END LOOP;
+          END IF;
+        END IF;
+      EXCEPTION WHEN OTHERS THEN NULL;
+      END;
     END IF;
 
     IF v_session_id IS NOT NULL THEN
@@ -1115,10 +1139,14 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql STABLE SECURITY DEFINER;
 
+DROP FUNCTION IF EXISTS get_auth_role();
 CREATE OR REPLACE FUNCTION get_auth_role() RETURNS VARCHAR AS $$
 DECLARE
   v_role VARCHAR;
   v_session_id VARCHAR;
+  v_headers JSONB;
+  v_key TEXT;
+  v_val TEXT;
 BEGIN
   -- 1. Try JWT claims
   BEGIN
@@ -1131,9 +1159,30 @@ BEGIN
 
   -- 2. Try custom x-session-id header
   BEGIN
+    -- Try direct header first
     v_session_id := current_setting('request.header.x-session-id', true);
+
+    -- Robust searching in headers JSON
     IF v_session_id IS NULL THEN
-        v_session_id := current_setting('request.headers', true)::jsonb->>'x-session-id';
+      BEGIN
+        v_headers := current_setting('request.headers', true)::jsonb;
+        IF v_headers IS NOT NULL THEN
+          -- Try direct lookup
+          v_session_id := v_headers->>'x-session-id';
+
+          -- Case-insensitive fallback search
+          IF v_session_id IS NULL THEN
+            FOR v_key, v_val IN SELECT * FROM jsonb_each_text(v_headers)
+            LOOP
+              IF lower(v_key) = 'x-session-id' THEN
+                v_session_id := v_val;
+                EXIT;
+              END IF;
+            END LOOP;
+          END IF;
+        END IF;
+      EXCEPTION WHEN OTHERS THEN NULL;
+      END;
     END IF;
 
     IF v_session_id IS NOT NULL THEN
@@ -1150,6 +1199,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql STABLE SECURITY DEFINER;
 
+DROP FUNCTION IF EXISTS is_admin();
 CREATE OR REPLACE FUNCTION is_admin() RETURNS BOOLEAN AS $$
 BEGIN
     RETURN get_auth_role() = 'admin';
@@ -1158,6 +1208,7 @@ EXCEPTION WHEN OTHERS THEN
 END;
 $$ LANGUAGE plpgsql STABLE;
 
+DROP FUNCTION IF EXISTS is_teacher();
 CREATE OR REPLACE FUNCTION is_teacher() RETURNS BOOLEAN AS $$
 BEGIN
     RETURN get_auth_role() = 'teacher';
@@ -1167,6 +1218,7 @@ END;
 $$ LANGUAGE plpgsql STABLE;
 
 -- Secure Auth Logic
+DROP FUNCTION IF EXISTS authenticate_user(VARCHAR, VARCHAR, VARCHAR);
 CREATE OR REPLACE FUNCTION authenticate_user(p_email VARCHAR, p_password_hash VARCHAR, p_session_id VARCHAR)
 RETURNS JSONB AS $$
 DECLARE
@@ -1195,11 +1247,30 @@ BEGIN
     RETURN jsonb_build_object('success', false, 'message', 'Account locked until ' || v_user.locked_until);
   END IF;
 
-  SELECT password_hash, session_id INTO v_secret FROM user_secrets WHERE email = p_email;
+  SELECT password_hash, temp_password, session_id INTO v_secret FROM user_secrets WHERE email = p_email;
 
-  IF v_secret.password_hash = p_password_hash THEN
-    -- Update session and login stats
-    UPDATE user_secrets SET session_id = p_session_id WHERE email = p_email;
+  IF v_secret.password_hash = p_password_hash OR v_secret.temp_password = p_password_hash THEN
+    -- If they used the temporary password, check expiration and status
+    IF v_secret.temp_password = p_password_hash THEN
+      IF v_user.reset_request->>'status' IS DISTINCT FROM 'approved' THEN
+        RETURN jsonb_build_object('success', false, 'message', 'Temporary password login is not currently permitted.');
+      END IF;
+
+      IF v_user.reset_request->>'expires_at' IS NOT NULL AND (v_user.reset_request->>'expires_at')::TIMESTAMP WITH TIME ZONE < NOW() THEN
+        -- Temporary password expired
+        UPDATE users SET reset_request = NULL WHERE email = p_email;
+        UPDATE user_secrets SET temp_password = NULL WHERE email = p_email;
+        RETURN jsonb_build_object('success', false, 'message', 'Temporary password has expired. Please request a new reset.');
+      END IF;
+
+      -- Update session only. Do NOT promote to password_hash.
+      -- The user must perform a manual password change to clear temp_password and set a new password_hash.
+      UPDATE user_secrets SET session_id = p_session_id WHERE email = p_email;
+    ELSE
+      -- Normal login, update session
+      UPDATE user_secrets SET session_id = p_session_id WHERE email = p_email;
+    END IF;
+
     UPDATE users SET
       last_login = NOW(),
       failed_attempts = 0,
@@ -1249,6 +1320,7 @@ END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
 -- Secure User Creation RPC
+DROP FUNCTION IF EXISTS create_user_secure(VARCHAR, VARCHAR, VARCHAR, VARCHAR, VARCHAR, VARCHAR, VARCHAR, BOOLEAN, JSONB);
 CREATE OR REPLACE FUNCTION create_user_secure(
     p_email VARCHAR,
     p_full_name VARCHAR,
@@ -1299,8 +1371,8 @@ BEGIN
     VALUES (p_email, p_full_name, p_phone, v_actual_role, p_active, p_metadata);
 
     -- 4. Create Secrets
-    INSERT INTO user_secrets (email, password_hash, session_id)
-    VALUES (p_email, p_password_hash, p_session_id);
+    INSERT INTO user_secrets (email, password_hash, temp_password, session_id)
+    VALUES (p_email, p_password_hash, NULL, p_session_id);
 
     RETURN jsonb_build_object('success', true, 'user', (
         SELECT to_jsonb(t.*) FROM (
@@ -1314,6 +1386,7 @@ END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
 -- Secure Secret Update RPC
+DROP FUNCTION IF EXISTS update_user_secret_secure(VARCHAR, VARCHAR, VARCHAR);
 CREATE OR REPLACE FUNCTION update_user_secret_secure(
     p_email VARCHAR,
     p_password_hash VARCHAR DEFAULT NULL,
@@ -1326,7 +1399,7 @@ BEGIN
     END IF;
 
     IF p_password_hash IS NOT NULL THEN
-        UPDATE user_secrets SET password_hash = p_password_hash WHERE email = p_email;
+        UPDATE user_secrets SET password_hash = p_password_hash, temp_password = NULL WHERE email = p_email;
     END IF;
 
     IF p_session_id IS NOT NULL THEN
@@ -1371,9 +1444,11 @@ BEGIN
         )
     WHERE email = p_email;
 
-    -- 4. Securely update user_secrets (password_hash and session invalidation)
+    -- 4. Securely update user_secrets (temp_password and session invalidation)
+    -- We set password_hash to a placeholder to force usage of temp_password
     UPDATE user_secrets SET
-        password_hash = p_hashed_temp_password,
+        password_hash = 'TEMP_RESTRICTED_' || EXTRACT(EPOCH FROM NOW()),
+        temp_password = p_hashed_temp_password,
         session_id = 'reset_approved_' || EXTRACT(EPOCH FROM NOW())
     WHERE email = p_email;
 
