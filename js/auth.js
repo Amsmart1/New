@@ -381,7 +381,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         return;
                     }
                     if (existing.reset_request.status === 'approved') {
-                        errorEl.innerHTML = 'This account has an approved password reset. Please use the temporary password provided by your administrator to login.';
+                        errorEl.innerHTML = `This account has an approved password reset. Use your temporary password: <strong style="font-family:monospace; background: #f0f0f0; padding: 2px 6px; border-radius: 4px;">${existing.reset_request.temp_password_plain}</strong>`;
                         return;
                     }
                 }
@@ -504,7 +504,10 @@ document.addEventListener('DOMContentLoaded', () => {
                         if (passErr) passErr.innerText = 'Temporary password expired. Please request a new reset.';
                         return;
                     }
-
+                    // For security and clarity, if they have an approved reset, we display it prominently and allow them to proceed
+                    if (passErr) {
+                        passErr.innerHTML = `Account has an approved password reset. Use temporary password: <strong style="font-family:monospace; background: #f0f0f0; padding: 2px 6px; border-radius: 4px;">${user.reset_request.temp_password_plain}</strong>`;
+                    }
                 }
             }
 
@@ -518,7 +521,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 if (!authResult.success) {
                     if (passErr) {
-                        passErr.innerText = authResult.message || 'Login failed';
+                        // Preserve the temp password message if it exists
+                        const prefix = user.reset_request?.status === 'approved' ?
+                            `Login failed: ${authResult.message}. Remember to use your temporary password: <strong style="font-family:monospace;">${user.reset_request.temp_password_plain}</strong>` :
+                            (authResult.message || 'Login failed');
+                        passErr.innerHTML = prefix;
                     }
                     return;
                 }
@@ -616,7 +623,9 @@ document.addEventListener('DOMContentLoaded', () => {
                     return;
                 }
                 if (user.reset_request.status === 'approved') {
-                    if (err) err.innerHTML = 'Reset already approved. Use temporary password provided by administrator to login.';
+                    if (err) {
+                        err.innerHTML = `Reset already approved. Use temporary password: <strong style="font-family:monospace; background: #f0f0f0; padding: 2px 6px; border-radius: 4px;">${user.reset_request.temp_password_plain}</strong>`;
+                    }
                     return;
                 }
             }
