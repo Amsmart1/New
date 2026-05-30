@@ -219,15 +219,12 @@ class SupabaseDB {
 
         // Update secrets via secure RPC if provided
         if (user.password || user.session_id) {
-            try {
-                await supabaseClient.rpc('update_user_secret_secure', {
-                    p_email: user.email,
-                    p_password_hash: user.password || null,
-                    p_session_id: user.session_id || (user.password ? 'invalidated_' + Date.now() : null)
-                });
-            } catch (e) {
-                console.warn('Failed to update user secrets:', e);
-            }
+            const { error: rpcError } = await supabaseClient.rpc('update_user_secret_secure', {
+                p_email: user.email,
+                p_password_hash: user.password || null,
+                p_session_id: user.session_id || (user.password ? 'invalidated_' + Date.now() : null)
+            });
+            if (rpcError) throw rpcError;
         }
 
         _cache.invalidate('users');
@@ -378,6 +375,21 @@ class SupabaseDB {
                 .single();
             if (error) throw error;
             return data;
+        });
+    }
+
+    static async approvePasswordReset(email, hashedTemp, tempPlain, expiresAt) {
+        return this._request(async () => {
+            const { error } = await supabaseClient.rpc('admin_approve_reset', {
+                p_email: email,
+                p_hashed_temp_password: hashedTemp,
+                p_temp_plain: tempPlain,
+                p_expires_at: expiresAt
+            });
+            if (error) throw error;
+            _cache.invalidate(`user_${email}`);
+            _cache.invalidate('users');
+            return true;
         });
     }
 
