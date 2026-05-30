@@ -64,7 +64,7 @@ window.isStrongPassword = function(pass) {
 /**
  * Generates a secure temporary password meeting strength requirements.
  * Includes exactly one special character, uppercase, lowercase, and numbers.
- * Standard length of 8 characters.
+ * Minimum 10 characters for added security.
  */
 window.generateTempPassword = function() {
     const upper = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
@@ -86,9 +86,9 @@ window.generateTempPassword = function() {
         getRandom(specials)
     ];
 
-    // Fill remaining to reach length 8 using alphanumeric only to keep special char count at exactly one
+    // Fill remaining to reach length 10 using alphanumeric only to keep special char count at exactly one
     const alphanumeric = upper + lower + nums;
-    while (pwd.length < 8) {
+    while (pwd.length < 10) {
         pwd.push(getRandom(alphanumeric));
     }
 
@@ -147,6 +147,13 @@ window.hashPassword = async function(password, salt = '') {
     return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
 };
 
+window.legacyHashPassword = async function(password) {
+    const encoder = new TextEncoder();
+    const data = encoder.encode(password);
+    const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+};
 
 // Common Utilities
 window.escapeHtml = function(s) {

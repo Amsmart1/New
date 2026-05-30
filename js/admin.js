@@ -918,8 +918,6 @@ async function approveReset(email) {
 
       // Ensure user.password is also updated to the hashed temp password so login RPC works
       user.password = hashedTemp;
-      // Invalidate existing sessions
-      user.session_id = 'reset_' + Date.now();
 
       if (await SupabaseDB.saveUser(user)) {
         const backdrop = document.createElement('div');
