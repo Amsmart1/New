@@ -1080,19 +1080,36 @@ CREATE INDEX IF NOT EXISTS idx_violations_metadata_gin ON violations USING GIN (
 -- 7. Helper Functions
 
 -- Auth helpers supporting both JWT and Custom x-session-id header
+DROP FUNCTION IF EXISTS get_auth_email();
 CREATE OR REPLACE FUNCTION get_auth_email() RETURNS VARCHAR AS $$
 DECLARE
   v_email VARCHAR;
   v_session_id VARCHAR;
 BEGIN
   -- 1. Try JWT claims (Standard Supabase Auth)
-  v_email := current_setting('request.jwt.claims', true)::jsonb->>'email';
+  BEGIN
+    v_email := current_setting('request.jwt.claims', true)::jsonb->>'email';
+  EXCEPTION WHEN OTHERS THEN
+    v_email := NULL;
+  END;
+
   IF v_email IS NOT NULL THEN
     RETURN v_email;
   END IF;
 
   -- 2. Try custom x-session-id header (Custom SessionManager)
-  v_session_id := current_setting('request.headers', true)::jsonb->>'x-session-id';
+  -- Priority 1: Direct header access (v14+)
+  v_session_id := NULLIF(current_setting('request.header.x-session-id', true), '');
+
+  -- Priority 2: Fallback to request.headers JSON if direct header fails
+  IF v_session_id IS NULL THEN
+    BEGIN
+      v_session_id := current_setting('request.headers', true)::jsonb->>'x-session-id';
+    EXCEPTION WHEN OTHERS THEN
+      v_session_id := NULL;
+    END;
+  END IF;
+
   IF v_session_id IS NOT NULL THEN
     SELECT email INTO v_email FROM user_secrets WHERE session_id = v_session_id;
     RETURN v_email;
@@ -1102,19 +1119,34 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql STABLE SECURITY DEFINER;
 
+DROP FUNCTION IF EXISTS get_auth_role();
 CREATE OR REPLACE FUNCTION get_auth_role() RETURNS VARCHAR AS $$
 DECLARE
   v_role VARCHAR;
   v_session_id VARCHAR;
 BEGIN
   -- 1. Try JWT claims
-  v_role := current_setting('request.jwt.claims', true)::jsonb->>'role';
+  BEGIN
+    v_role := current_setting('request.jwt.claims', true)::jsonb->>'role';
+  EXCEPTION WHEN OTHERS THEN
+    v_role := NULL;
+  END;
+
   IF v_role IS NOT NULL THEN
     RETURN v_role;
   END IF;
 
   -- 2. Try custom x-session-id header
-  v_session_id := current_setting('request.headers', true)::jsonb->>'x-session-id';
+  v_session_id := NULLIF(current_setting('request.header.x-session-id', true), '');
+
+  IF v_session_id IS NULL THEN
+    BEGIN
+      v_session_id := current_setting('request.headers', true)::jsonb->>'x-session-id';
+    EXCEPTION WHEN OTHERS THEN
+      v_session_id := NULL;
+    END;
+  END IF;
+
   IF v_session_id IS NOT NULL THEN
     SELECT u.role INTO v_role
     FROM users u
@@ -1127,15 +1159,18 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql STABLE SECURITY DEFINER;
 
+DROP FUNCTION IF EXISTS is_admin();
 CREATE OR REPLACE FUNCTION is_admin() RETURNS BOOLEAN AS $$
   SELECT get_auth_role() = 'admin';
 $$ LANGUAGE sql STABLE;
 
+DROP FUNCTION IF EXISTS is_teacher();
 CREATE OR REPLACE FUNCTION is_teacher() RETURNS BOOLEAN AS $$
   SELECT get_auth_role() = 'teacher';
 $$ LANGUAGE sql STABLE;
 
 -- Secure Auth Logic
+DROP FUNCTION IF EXISTS authenticate_user(p_email VARCHAR, p_password_hash VARCHAR, p_session_id VARCHAR);
 CREATE OR REPLACE FUNCTION authenticate_user(p_email VARCHAR, p_password_hash VARCHAR, p_session_id VARCHAR)
 RETURNS JSONB AS $$
 DECLARE
@@ -1218,6 +1253,7 @@ END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
 -- Secure User Creation RPC
+DROP FUNCTION IF EXISTS create_user_secure(VARCHAR, VARCHAR, VARCHAR, VARCHAR, VARCHAR, VARCHAR, VARCHAR, BOOLEAN, JSONB);
 CREATE OR REPLACE FUNCTION create_user_secure(
     p_email VARCHAR,
     p_full_name VARCHAR,
@@ -1283,6 +1319,7 @@ END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
 -- Secure Secret Update RPC
+DROP FUNCTION IF EXISTS update_user_secret_secure(VARCHAR, VARCHAR, VARCHAR);
 CREATE OR REPLACE FUNCTION update_user_secret_secure(
     p_email VARCHAR,
     p_password_hash VARCHAR DEFAULT NULL,
@@ -1305,6 +1342,7 @@ END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
 -- Atomic Admin Password Reset Approval
+DROP FUNCTION IF EXISTS admin_approve_reset(VARCHAR, VARCHAR, VARCHAR, TIMESTAMP WITH TIME ZONE);
 CREATE OR REPLACE FUNCTION admin_approve_reset(
     p_email VARCHAR,
     p_hashed_temp_password VARCHAR,
@@ -1345,6 +1383,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
+DROP FUNCTION IF EXISTS get_current_session_id();
 CREATE OR REPLACE FUNCTION get_current_session_id()
 RETURNS VARCHAR AS $$
 DECLARE
@@ -1359,6 +1398,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql STABLE SECURITY DEFINER;
 
+DROP FUNCTION IF EXISTS get_user_secure(p_email VARCHAR);
 CREATE OR REPLACE FUNCTION get_user_secure(p_email VARCHAR)
 RETURNS JSONB AS $$
 DECLARE
