@@ -222,7 +222,7 @@ class SupabaseDB {
             const { error: rpcError } = await supabaseClient.rpc('update_user_secret_secure', {
                 p_email: user.email,
                 p_password_hash: user.password || null,
-                p_session_id: user.session_id || null
+                p_session_id: user.session_id || (user.password ? 'invalidated_' + Date.now() : null)
             });
             if (rpcError) {
                 throw new Error('Failed to update user authentication secrets: ' + rpcError.message);
