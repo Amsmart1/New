@@ -903,13 +903,27 @@ async function updateSidebarBadges() {
 
 async function approveReset(email) {
   try {
-    const normalizedEmail = normalizeEmail(email);
-    const user = await SupabaseDB.getUser(normalizedEmail);
+    const user = await SupabaseDB.getUser(email);
     if (user && user.reset_request) {
-      const tempPassword = window.generateTempPassword();
+      const generateStrongPassword = () => {
+          const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*()_+";
+          const array = new Uint8Array(12);
+          crypto.getRandomValues(array);
+          let pass = "";
+          for (let i = 0; i < array.length; i++) {
+              pass += chars[array[i] % chars.length];
+          }
+          // Basic heuristic to ensure all required types are present, if not, retry
+          if (!/[A-Z]/.test(pass) || !/[a-z]/.test(pass) || !/[0-9]/.test(pass) || !/[!@#$%^&*()_+]/.test(pass)) {
+              return generateStrongPassword();
+          }
+          return pass;
+      };
 
-      // Hash the temporary password using normalized email as salt
-      const hashedTemp = await window.hashPassword(tempPassword, normalizedEmail);
+      const tempPassword = generateStrongPassword();
+
+      // Hash the temporary password
+      const hashedTemp = await window.hashPassword(tempPassword, email);
 
       user.reset_request.status = 'approved';
       user.reset_request.temp_password = hashedTemp;
@@ -1526,19 +1540,18 @@ function showUserForm(user = null) {
     if (!fullName) return UI.showNotification('Full name is required.', 'warn');
     if (!isValidEmail(email)) return UI.showNotification('Please enter a valid email address.', 'warn');
 
-      const normalizedEmail = normalizeEmail(email);
       let hashedPassword = isEdit ? user.password : '';
       if (password) {
         if (!isStrongPassword(password)) {
         UI.showNotification('Password must be 8+ chars, include upper, lower, number, and special char.', 'warn');
           return;
         }
-        hashedPassword = await window.hashPassword(password, normalizedEmail);
+        hashedPassword = await window.hashPassword(password, email);
       }
       const userData = {
           ...user,
           full_name: fullName,
-          email: normalizedEmail,
+          email: email,
           phone: document.getElementById('phone').value,
           password: hashedPassword,
           role: document.getElementById('role').value,

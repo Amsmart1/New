@@ -61,46 +61,6 @@ window.isStrongPassword = function(pass) {
     return hasUpper && hasLower && hasNumber && hasSpecial;
 };
 
-/**
- * Generates a secure temporary password meeting strength requirements.
- * Includes exactly one special character, uppercase, lowercase, and numbers.
- * Minimum 10 characters for added security.
- */
-window.generateTempPassword = function() {
-    const upper = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
-    const lower = "abcdefghijklmnopqrstuvwxyz";
-    const nums = "0123456789";
-    const specials = "!@#$%^&*()_+"; // Defined safe subset of predefined characters
-
-    const getRandom = (chars) => {
-        const array = new Uint32Array(1);
-        crypto.getRandomValues(array);
-        return chars[array[0] % chars.length];
-    };
-
-    // Ensure at least one of each required category (except special which is exactly one)
-    let pwd = [
-        getRandom(upper),
-        getRandom(lower),
-        getRandom(nums),
-        getRandom(specials)
-    ];
-
-    // Fill remaining to reach length 10 using alphanumeric only to keep special char count at exactly one
-    const alphanumeric = upper + lower + nums;
-    while (pwd.length < 10) {
-        pwd.push(getRandom(alphanumeric));
-    }
-
-    // Fisher-Yates shuffle
-    for (let i = pwd.length - 1; i > 0; i--) {
-        const j = crypto.getRandomValues(new Uint32Array(1))[0] % (i + 1);
-        [pwd[i], pwd[j]] = [pwd[j], pwd[i]];
-    }
-
-    return pwd.join('');
-};
-
 window.updatePasswordStrength = function(password) {
     const meter = document.getElementById('passwordStrength');
     const container = document.getElementById('passwordStrengthContainer');
