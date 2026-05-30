@@ -1080,6 +1080,7 @@ CREATE INDEX IF NOT EXISTS idx_violations_metadata_gin ON violations USING GIN (
 -- 7. Helper Functions
 
 -- Auth helpers supporting both JWT and Custom x-session-id header
+DROP FUNCTION IF EXISTS get_auth_email();
 CREATE OR REPLACE FUNCTION get_auth_email() RETURNS VARCHAR AS $$
 DECLARE
   v_email VARCHAR;
@@ -1096,8 +1097,8 @@ BEGIN
     RETURN v_email;
   END IF;
 
-  -- 2. Try custom x-session-id header (Custom SessionManager)
-  -- Priority 1: Direct header access (v14+)
+  -- 2. Try custom x-session-id header
+  -- Priority 1: Direct header access (PostgREST v14+)
   v_session_id := NULLIF(current_setting('request.header.x-session-id', true), '');
 
   -- Priority 2: Fallback to request.headers JSON if direct header fails
@@ -1118,6 +1119,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql STABLE SECURITY DEFINER;
 
+DROP FUNCTION IF EXISTS get_auth_role();
 CREATE OR REPLACE FUNCTION get_auth_role() RETURNS VARCHAR AS $$
 DECLARE
   v_role VARCHAR;
@@ -1157,15 +1159,18 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql STABLE SECURITY DEFINER;
 
+DROP FUNCTION IF EXISTS is_admin();
 CREATE OR REPLACE FUNCTION is_admin() RETURNS BOOLEAN AS $$
   SELECT get_auth_role() = 'admin';
 $$ LANGUAGE sql STABLE;
 
+DROP FUNCTION IF EXISTS is_teacher();
 CREATE OR REPLACE FUNCTION is_teacher() RETURNS BOOLEAN AS $$
   SELECT get_auth_role() = 'teacher';
 $$ LANGUAGE sql STABLE;
 
 -- Secure Auth Logic
+DROP FUNCTION IF EXISTS authenticate_user(VARCHAR, VARCHAR, VARCHAR);
 CREATE OR REPLACE FUNCTION authenticate_user(p_email VARCHAR, p_password_hash VARCHAR, p_session_id VARCHAR)
 RETURNS JSONB AS $$
 DECLARE
@@ -1248,6 +1253,7 @@ END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
 -- Secure User Creation RPC
+DROP FUNCTION IF EXISTS create_user_secure(VARCHAR, VARCHAR, VARCHAR, VARCHAR, VARCHAR, VARCHAR, VARCHAR, BOOLEAN, JSONB);
 CREATE OR REPLACE FUNCTION create_user_secure(
     p_email VARCHAR,
     p_full_name VARCHAR,
@@ -1313,6 +1319,7 @@ END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
 -- Secure Secret Update RPC
+DROP FUNCTION IF EXISTS update_user_secret_secure(VARCHAR, VARCHAR, VARCHAR);
 CREATE OR REPLACE FUNCTION update_user_secret_secure(
     p_email VARCHAR,
     p_password_hash VARCHAR DEFAULT NULL,
@@ -1335,6 +1342,7 @@ END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
 -- Atomic Admin Password Reset Approval
+DROP FUNCTION IF EXISTS admin_approve_reset(VARCHAR, VARCHAR, VARCHAR, TIMESTAMP WITH TIME ZONE);
 CREATE OR REPLACE FUNCTION admin_approve_reset(
     p_email VARCHAR,
     p_hashed_temp_password VARCHAR,
@@ -1375,6 +1383,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
+DROP FUNCTION IF EXISTS get_current_session_id();
 CREATE OR REPLACE FUNCTION get_current_session_id()
 RETURNS VARCHAR AS $$
 DECLARE
@@ -1389,6 +1398,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql STABLE SECURITY DEFINER;
 
+DROP FUNCTION IF EXISTS get_user_secure(VARCHAR);
 CREATE OR REPLACE FUNCTION get_user_secure(p_email VARCHAR)
 RETURNS JSONB AS $$
 DECLARE
@@ -1401,6 +1411,7 @@ BEGIN
     END IF;
 
     -- Only include session_id if requester is admin or the user themselves
+    v_session_id := NULL;
     IF (is_admin() OR get_auth_email() = p_email) THEN
         SELECT session_id INTO v_session_id FROM user_secrets WHERE email = p_email;
     END IF;
@@ -1409,6 +1420,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql STABLE SECURITY DEFINER;
 
+DROP FUNCTION IF EXISTS get_server_time();
 CREATE OR REPLACE FUNCTION get_server_time()
 RETURNS TIMESTAMP WITH TIME ZONE AS $$
   SELECT NOW();
@@ -1417,6 +1429,7 @@ $$ LANGUAGE sql STABLE;
 -- 7b. Quiz Authoritative Logic RPCs
 
 -- Helper for centralized scoring
+DROP FUNCTION IF EXISTS calculate_quiz_score(UUID, JSONB);
 CREATE OR REPLACE FUNCTION calculate_quiz_score(p_quiz_id UUID, p_answers JSONB)
 RETURNS RECORD AS $$
 DECLARE
@@ -1456,6 +1469,7 @@ END;
 $$ LANGUAGE plpgsql STABLE;
 
 -- RPC for reconciling expired attempts
+DROP FUNCTION IF EXISTS reconcile_quiz_attempts(UUID, VARCHAR);
 CREATE OR REPLACE FUNCTION reconcile_quiz_attempts(p_quiz_id UUID DEFAULT NULL, p_student_email VARCHAR DEFAULT NULL)
 RETURNS VOID AS $$
 DECLARE
@@ -1493,6 +1507,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
+DROP FUNCTION IF EXISTS start_quiz_attempt(UUID);
 CREATE OR REPLACE FUNCTION start_quiz_attempt(p_quiz_id UUID)
 RETURNS JSONB AS $$
 DECLARE
@@ -1550,6 +1565,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
+DROP FUNCTION IF EXISTS submit_quiz_attempt(UUID, JSONB, INTEGER);
 CREATE OR REPLACE FUNCTION submit_quiz_attempt(
     p_submission_id UUID,
     p_answers JSONB,
@@ -1641,6 +1657,7 @@ DROP TRIGGER IF EXISTS tr_purge_violations ON violations;
 CREATE TRIGGER tr_purge_violations AFTER INSERT ON violations FOR EACH STATEMENT EXECUTE PROCEDURE purge_expired_records();
 
 
+DROP FUNCTION IF EXISTS enroll_in_course(UUID, VARCHAR, VARCHAR);
 CREATE OR REPLACE FUNCTION enroll_in_course(p_course_id UUID, p_student_email VARCHAR, p_enrollment_id VARCHAR DEFAULT NULL)
 RETURNS VOID AS $$
 DECLARE
@@ -1667,6 +1684,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+DROP FUNCTION IF EXISTS notify_user(VARCHAR, TEXT, TEXT, TEXT, TEXT);
 CREATE OR REPLACE FUNCTION notify_user(target_email VARCHAR, n_title TEXT, n_msg TEXT, n_link TEXT DEFAULT NULL, n_type TEXT DEFAULT 'system')
 RETURNS VOID AS $$
 BEGIN
@@ -1675,6 +1693,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
+DROP FUNCTION IF EXISTS broadcast_data(UUID, VARCHAR, TEXT, TEXT, TEXT, TEXT, INTERVAL);
 CREATE OR REPLACE FUNCTION broadcast_data(n_course_id UUID, n_role VARCHAR, n_title TEXT, n_msg TEXT, n_link TEXT DEFAULT NULL, n_type TEXT DEFAULT 'system', n_expires_in INTERVAL DEFAULT INTERVAL '30 days')
 RETURNS VOID AS $$
 BEGIN
@@ -1688,6 +1707,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
+DROP FUNCTION IF EXISTS fan_out_course_notif(UUID, VARCHAR, TEXT, TEXT, TEXT, TEXT);
 CREATE OR REPLACE FUNCTION fan_out_course_notif(n_course_id UUID, n_role VARCHAR, n_title TEXT, n_msg TEXT, n_link TEXT DEFAULT NULL, n_type TEXT DEFAULT 'system')
 RETURNS VOID AS $$
 BEGIN
@@ -1740,10 +1760,7 @@ END $$;
 -- RLS POLICIES
 
 -- 0. User Secrets (Strictly restricted)
--- 0. User Secrets
--- 0. User Secrets (Strictly restricted)
 DROP POLICY IF EXISTS "Secrets: No Public Access" ON user_secrets;
-DROP POLICY IF EXISTS "Secrets: Admin Manage" ON user_secrets;
 CREATE POLICY "Secrets: No Public Access" ON user_secrets FOR ALL USING (false);
 
 -- 1. Users Table
@@ -1751,10 +1768,8 @@ DROP POLICY IF EXISTS "Users: Select" ON users;
 CREATE POLICY "Users: Select" ON users FOR SELECT USING (true);
 DROP POLICY IF EXISTS "Users: Update" ON users;
 CREATE POLICY "Users: Update" ON users FOR UPDATE USING (email = get_auth_email() OR is_admin());
-DROP POLICY IF EXISTS "Users: No Direct Insert" ON users;
 DROP POLICY IF EXISTS "Users: Admin Manage" ON users;
 CREATE POLICY "Users: Admin Manage" ON users FOR ALL USING (is_admin());
-DROP POLICY IF EXISTS "Users: Admin Delete" ON users;
 
 -- 2. Courses Table
 DROP POLICY IF EXISTS "Courses: Select" ON courses;
@@ -1958,8 +1973,6 @@ DROP POLICY IF EXISTS "Maintenance: Select" ON maintenance;
 CREATE POLICY "Maintenance: Select" ON maintenance FOR SELECT USING (true);
 DROP POLICY IF EXISTS "Maintenance: Manage for Admins" ON maintenance;
 CREATE POLICY "Maintenance: Manage for Admins" ON maintenance FOR ALL USING (is_admin());
-
--- 16. System Logs Table
 
 -- 17. Violations Table
 DROP POLICY IF EXISTS "Violations: User Access" ON violations;
