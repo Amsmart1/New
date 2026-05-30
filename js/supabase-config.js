@@ -1165,6 +1165,21 @@ class SupabaseDB {
         return data;
     }
 
+    static async approvePasswordReset(email, hashedTempPassword, plainTempPassword, expiresAt) {
+        return this._request(async () => {
+            const { error } = await supabaseClient.rpc('admin_approve_reset', {
+                p_email: email,
+                p_hashed_temp_password: hashedTempPassword,
+                p_plain_temp_password: plainTempPassword,
+                p_expires_at: expiresAt
+            });
+            if (error) throw error;
+            _cache.invalidate('users');
+            _cache.invalidate(`user_${email}`);
+            return true;
+        });
+    }
+
     static async invokeFunction(name, payload) {
         const { data, error } = await supabaseClient.functions.invoke(name, {
             body: payload
