@@ -1224,6 +1224,7 @@ RETURNS JSONB AS $$
 DECLARE
   v_user RECORD;
   v_secret RECORD;
+  v_require_password_change BOOLEAN := FALSE;
 BEGIN
   SELECT
     id, email, full_name, phone, role, created_at, updated_at, last_login,
@@ -1266,6 +1267,7 @@ BEGIN
       -- Update session only. Do NOT promote to password_hash.
       -- The user must perform a manual password change to clear temp_password and set a new password_hash.
       UPDATE user_secrets SET session_id = p_session_id WHERE email = p_email;
+      v_require_password_change := TRUE;
     ELSE
       -- Normal login, update session
       UPDATE user_secrets SET session_id = p_session_id WHERE email = p_email;
@@ -1297,7 +1299,8 @@ BEGIN
         'active', v_user.active,
         'notification_preferences', v_user.notification_preferences,
         'metadata', v_user.metadata,
-        'session_id', p_session_id
+        'session_id', p_session_id,
+        'require_password_change', v_require_password_change
       )
     );
   ELSE
@@ -1400,6 +1403,8 @@ BEGIN
 
     IF p_password_hash IS NOT NULL THEN
         UPDATE user_secrets SET password_hash = p_password_hash, temp_password = NULL WHERE email = p_email;
+        -- Finalize forced password change state cleanup
+        UPDATE users SET reset_request = NULL WHERE email = p_email;
     END IF;
 
     IF p_session_id IS NOT NULL THEN
