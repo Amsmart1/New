@@ -1304,47 +1304,6 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
--- Atomic Admin Password Reset Approval
-CREATE OR REPLACE FUNCTION admin_approve_reset(
-    p_email VARCHAR,
-    p_hashed_temp_password VARCHAR,
-    p_plain_temp_password VARCHAR,
-    p_expires_at TIMESTAMP WITH TIME ZONE
-) RETURNS VOID AS $$
-DECLARE
-    v_admin_email VARCHAR;
-BEGIN
-    -- Strict Admin Authorization
-    IF NOT is_admin() THEN
-        RAISE EXCEPTION 'Unauthorized: Only administrators can approve reset requests.';
-    END IF;
-
-    v_admin_email := get_auth_email();
-
-    -- 1. Update user record with reset metadata and invalidation reason
-    UPDATE users SET
-        reset_request = COALESCE(reset_request, '{}'::jsonb) || jsonb_build_object(
-            'status', 'approved',
-            'temp_password', p_hashed_temp_password,
-            'temp_password_plain', p_plain_temp_password,
-            'expires_at', p_expires_at,
-            'approved_at', NOW(),
-            'approved_by', v_admin_email
-        ),
-        metadata = COALESCE(metadata, '{}'::jsonb) || jsonb_build_object('last_invalidation_reason', 'password_change')
-    WHERE email = p_email;
-
-    -- 2. Force update authentication secrets (effectively force-changing to temp password)
-    UPDATE user_secrets SET
-        password_hash = p_hashed_temp_password,
-        session_id = 'reset_' || extract(epoch from now())::text
-    WHERE email = p_email;
-
-    -- 3. Trigger notification for the student/teacher
-    PERFORM notify_user(p_email, 'Password Reset Approved', 'Your password reset request has been approved. Use the temporary password to login.', 'index.html', 'password_updated');
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
-
 CREATE OR REPLACE FUNCTION get_current_session_id()
 RETURNS VARCHAR AS $$
 DECLARE
