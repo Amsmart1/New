@@ -1080,6 +1080,7 @@ CREATE INDEX IF NOT EXISTS idx_violations_metadata_gin ON violations USING GIN (
 -- 7. Helper Functions
 
 -- Auth helpers supporting both JWT and Custom x-session-id header
+DROP FUNCTION IF EXISTS get_auth_email();
 CREATE OR REPLACE FUNCTION get_auth_email() RETURNS VARCHAR AS $$
 DECLARE
   v_email VARCHAR;
@@ -1118,6 +1119,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql STABLE SECURITY DEFINER;
 
+DROP FUNCTION IF EXISTS get_auth_role();
 CREATE OR REPLACE FUNCTION get_auth_role() RETURNS VARCHAR AS $$
 DECLARE
   v_role VARCHAR;
@@ -1157,15 +1159,18 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql STABLE SECURITY DEFINER;
 
+DROP FUNCTION IF EXISTS is_admin();
 CREATE OR REPLACE FUNCTION is_admin() RETURNS BOOLEAN AS $$
   SELECT get_auth_role() = 'admin';
 $$ LANGUAGE sql STABLE;
 
+DROP FUNCTION IF EXISTS is_teacher();
 CREATE OR REPLACE FUNCTION is_teacher() RETURNS BOOLEAN AS $$
   SELECT get_auth_role() = 'teacher';
 $$ LANGUAGE sql STABLE;
 
 -- Secure Auth Logic
+DROP FUNCTION IF EXISTS authenticate_user(p_email VARCHAR, p_password_hash VARCHAR, p_session_id VARCHAR);
 CREATE OR REPLACE FUNCTION authenticate_user(p_email VARCHAR, p_password_hash VARCHAR, p_session_id VARCHAR)
 RETURNS JSONB AS $$
 DECLARE
@@ -1248,6 +1253,7 @@ END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
 -- Secure User Creation RPC
+DROP FUNCTION IF EXISTS create_user_secure(VARCHAR, VARCHAR, VARCHAR, VARCHAR, VARCHAR, VARCHAR, VARCHAR, BOOLEAN, JSONB);
 CREATE OR REPLACE FUNCTION create_user_secure(
     p_email VARCHAR,
     p_full_name VARCHAR,
@@ -1313,6 +1319,7 @@ END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
 -- Secure Secret Update RPC
+DROP FUNCTION IF EXISTS update_user_secret_secure(VARCHAR, VARCHAR, VARCHAR);
 CREATE OR REPLACE FUNCTION update_user_secret_secure(
     p_email VARCHAR,
     p_password_hash VARCHAR DEFAULT NULL,
@@ -1335,6 +1342,7 @@ END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
 -- Atomic Admin Password Reset Approval
+DROP FUNCTION IF EXISTS admin_approve_reset(VARCHAR, VARCHAR, VARCHAR, TIMESTAMP WITH TIME ZONE);
 CREATE OR REPLACE FUNCTION admin_approve_reset(
     p_email VARCHAR,
     p_hashed_temp_password VARCHAR,
@@ -1375,6 +1383,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
+DROP FUNCTION IF EXISTS get_current_session_id();
 CREATE OR REPLACE FUNCTION get_current_session_id()
 RETURNS VARCHAR AS $$
 DECLARE
@@ -1389,6 +1398,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql STABLE SECURITY DEFINER;
 
+DROP FUNCTION IF EXISTS get_user_secure(p_email VARCHAR);
 CREATE OR REPLACE FUNCTION get_user_secure(p_email VARCHAR)
 RETURNS JSONB AS $$
 DECLARE
