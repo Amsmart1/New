@@ -1317,16 +1317,35 @@ async function executeCleanup() {
   }
 }
 
+const BACKUP_TABLES_PRIORITY = [
+    'users',
+    'maintenance',
+    'invites',
+    'support_tickets',
+    'planner',
+    'notifications',
+    'courses',
+    'topics',
+    'lessons',
+    'materials',
+    'assignments',
+    'quizzes',
+    'live_classes',
+    'broadcasts',
+    'enrollments',
+    'submissions',
+    'quiz_submissions',
+    'attendance',
+    'discussions',
+    'certificates',
+    'study_sessions',
+    'violations'
+];
+
 async function exportBackup() {
   UI.showNotification('Preparing full system backup...', 'info');
   try {
-    const tables = [
-        'users', 'courses', 'lessons', 'materials', 'assignments', 'quizzes',
-        'live_classes', 'submissions', 'quiz_submissions', 'attendance',
-        'enrollments', 'discussions', 'notifications', 'broadcasts',
-        'planner', 'certificates', 'study_sessions', 'violations',
-        'invites', 'support_tickets', 'maintenance'
-    ];
+    const tables = BACKUP_TABLES_PRIORITY;
     const backupData = {
         exportedAt: new Date().toISOString(),
         version: '1.1.1',
@@ -1364,7 +1383,8 @@ async function importBackup(event) {
     try {
       const data = JSON.parse(e.target.result);
       const tables = data.tables || {};
-      const tableList = Object.keys(tables);
+      // Use the priority list for importing to respect foreign keys
+      const tableList = BACKUP_TABLES_PRIORITY.filter(t => tables[t]);
 
       if (await UI.confirm(`Restore data from ${tableList.length} tables? This may overwrite existing records.`, 'System Restore')) {
         UI.showLoading('mgt-area', 'Restoring system data...');
@@ -1377,15 +1397,9 @@ async function importBackup(event) {
 
             for (let i = 0; i < records.length; i += batchSize) {
                 const batch = records.slice(i, i + batchSize);
-                if (table === 'users') {
-                    // Users require special handling to sync to secrets if password_hash exists
-                    await Promise.all(batch.map(r => {
-                        if (r.password_hash && !r.password) r.password = r.password_hash;
-                        return SupabaseDB.saveUser(r);
-                    }));
-                } else {
-                    await supabaseClient.from(table).upsert(batch);
-                }
+                // Directly upsert to tables to avoid complex side effects during restore
+                // user_secrets are NOT included in backup as per security policy
+                await supabaseClient.from(table).upsert(batch);
             }
         }
 

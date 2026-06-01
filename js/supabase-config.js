@@ -1349,12 +1349,28 @@ class SupabaseDB {
 
     // Backup helper
     static async getAllTableData(table) {
+        const orderMap = {
+            'enrollments': 'enrolled_at',
+            'submissions': 'submitted_at',
+            'quiz_submissions': 'started_at',
+            'certificates': 'issued_at',
+            'study_sessions': 'started_at'
+        };
+        const orderBy = orderMap[table] || 'created_at';
+
         return this._request(async () => {
-            const { data, error } = await supabaseClient
-                .from(table)
-                .select('*')
-                .order('created_at', { ascending: true, nullsFirst: true });
-            if (error) throw error;
+            let query = supabaseClient.from(table).select('*');
+            const { data, error } = await query.order(orderBy, { ascending: true, nullsFirst: true });
+
+            if (error) {
+                // Fallback: fetch without order if the specified column doesn't exist (Error 42703)
+                if (error.code === '42703') {
+                    const { data: fallbackData, error: fallbackError } = await supabaseClient.from(table).select('*');
+                    if (fallbackError) throw fallbackError;
+                    return fallbackData || [];
+                }
+                throw error;
+            }
             return data || [];
         });
     }
